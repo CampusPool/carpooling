@@ -1,0 +1,32 @@
+name: Student story
+description: Add a student user story to the SE product backlog
+title: "[STORY] "
+labels: ["story", "course:se"]
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: As a / I want / so that
+      description: Describe user value, not just a technical task.
+    validations:
+      required: true
+  - type: input
+    id: points
+    attributes:
+      label: Story points (Fibonacci)
+      placeholder: "3"
+    validations:
+      required: true
+  - type: dropdown
+    id: sprint
+    attributes:
+      label: Sprint
+      options: ["Sprint 1", "Sprint 2", "Not planned"]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria (Given/When/Then or checklist)
+    validations:
+      required: true
