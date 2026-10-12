@@ -1,0 +1,54 @@
+name: CampusPool CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  planning-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SE planning and DBMS traceability
+        run: |
+          test -f docs/PRODUCT_BACKLOG.md
+          test -f docs/SPRINT_PLAN.md
+          test -f docs/DBMS_TRACEABILITY.md
+          test -f docs/DEVIATIONS.md
+          python3 - <<'PY'
+          import json
+          with open("docs/backlog.json") as f: rows=json.load(f)["issues"]
+          assert len(rows)==37
+          assert len([r for r in rows if r["epic"] is not None])==28
+          assert sum(r["points"] for r in rows if r["sprint"]=="Sprint 1")==61
+          assert sum(r["points"] for r in rows if r["sprint"]=="Sprint 2")==73
+          print("CampusPool planning baseline checks passed")
+          PY
+  application-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        name: Detect implemented application
+        run: |
+          if [ -f package.json ]; then echo 'app=true' >> "$GITHUB_OUTPUT"; else echo 'app=false' >> "$GITHUB_OUTPUT"; fi
+      - name: Warn until Next.js is scaffolded
+        if: steps.detect.outputs.app == 'false'
+        run: echo '::warning::No Next.js package.json yet; no app checks executed.'
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.app == 'true'
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        if: steps.detect.outputs.app == 'true'
+        run: npm ci
+      - name: Lint
+        if: steps.detect.outputs.app == 'true'
+        run: npm run lint --if-present
+      - name: Test
+        if: steps.detect.outputs.app == 'true'
+        run: npm test --if-present
+      - name: Build
+        if: steps.detect.outputs.app == 'true'
+        run: npm run build
