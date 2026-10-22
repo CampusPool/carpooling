@@ -10,12 +10,14 @@ CampusPool supports verified students offering or requesting a car or bike ride,
 
 The private prototype organizes extension work under `backend/extensions/carpoolear/` and `backend/integrations/carpoolear/`. Laravel routes, migrations, views and tests remain in that private source tree.
 
+Paths in the table are relative to `backend/extensions/carpoolear/`.
+
 | Capability | Issue slice | Baseline and review target |
 |---|---|---|
-| Booking architecture and release coordination | #23, #44; #8/#9/#10/#38 in Sprint 2 | `CommuteService.php`, `CommuteController.php`, `routes/commute.php`; verify booking correctness and integration order. |
-| Rider/driver interface and pickup UX | #12, #21; #42 in Sprint 2 | `web/commute.mjs`, `commute-map.mjs`, `commute.html`, `commute.css`; verify usability, accessibility and evidence capture. |
-| Search, route/time matching and pickup behavior | #22; #17/#19 in Sprint 2 | `CommuteMatchingService.php`, `Mobility/Routing/`, `Mobility/Pickup/`; verify route, time-window and failure boundaries. |
-| Booking lifecycle and integrity | #24, #37, #39, #43; #36/#40 in Sprint 2 | Lifecycle tests and migrations; verify atomic seat changes and prepare DBMS evidence. |
+| Booking architecture and release coordination | #23, #44; #8/#9/#10/#38 in Sprint 2 | `Mobility/Commute/{CommuteService.php,CommuteController.php}`, `routes/commute.php`; verify booking correctness and integration order. |
+| Rider/driver interface and pickup UX | #12, #21; #42 in Sprint 2 | `web/{commute.mjs,commute-map.mjs,commute.html,commute.css}`; verify usability, accessibility and evidence capture. |
+| Search, route/time matching and pickup behavior | #22; #17/#19 in Sprint 2 | `Mobility/Commute/CommuteMatchingService.php`, `Mobility/Routing/`, `Mobility/Pickup/`; verify route, time-window and failure boundaries. |
+| Booking lifecycle and integrity | #24, #37, #39, #43; #36/#40 in Sprint 2 | `tests/{MobilityCommuteProductTest.php,MobilityLifecycleTest.php,MobilityFinancialInvariantsTest.php}`, `migrations/`; verify atomic seat changes and prepare DBMS evidence. |
 
 ## Source of truth
 

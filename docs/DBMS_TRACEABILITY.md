@@ -4,17 +4,17 @@ Source: `DBMS Level 3 Project Requirements (1).pdf` (five pages). This table def
 
 | Requirement | Planned CampusPool evidence | Issues |
 |---|---|---|
-| Meaningful beyond-CRUD problem | Route/time matching, capacity-safe booking and ride/cost analytics | 3.2, 3.5, 4.3, 7.1 |
-| Two database paradigms | MySQL transactional state plus MongoDB activity/notification documents | N1, N5 |
-| ERD and relational schema | Student, role, vehicle, ride, request, booking, contribution and report entities | N1 |
-| DDL, keys and constraints | Versioned migrations with checks and indexes | N1, N2 |
-| DML, joins, grouping and subqueries | Ride search, remaining seats, campus utilization and repeat activity queries | 4.2, 5.5, N1 |
-| At least four advanced SQL concepts | Transaction, view, stored function, trigger and index demonstrations | N2, 4.3, N6, 7.1 |
-| NoSQL or vector concept | MongoDB event/notification aggregation and indexes | N5, 6.1 |
-| Next.js web UI through an API | Responsive client and protected routes over documented adapters | N7, 1.1–4.4 |
-| Login and two roles | Verified student and administrator roles | 1.3, N3 |
-| Database validation | CHECK, FK, UNIQUE, transaction isolation and self-booking prevention | N2 |
-| Documentation and demonstration | ERD, data dictionary, query set, architecture, screenshots, tests and contribution records | N8, N9 |
+| Meaningful beyond-CRUD problem | Route/time matching, capacity-safe booking and ride/cost analytics | #17, #20, #23, #34 |
+| Two database paradigms | MySQL transactional state plus MongoDB activity/notification documents | #36, #40 |
+| ERD and relational schema | Student, role, vehicle, ride, request, booking, contribution and report entities | #36 |
+| DDL, keys and constraints | Versioned migrations with checks and indexes | #36, #37 |
+| DML, joins, grouping and subqueries | Ride search, remaining seats, campus utilization and repeat activity queries | #22, #30, #36 |
+| At least four advanced SQL concepts | Transaction, view, stored function, trigger and index demonstrations | #37, #23, #41, #34 |
+| NoSQL or vector concept | MongoDB event/notification aggregation and indexes | #40, #31 |
+| Next.js web UI through an API | Responsive client and protected routes over documented adapters | #42, #8–#24 |
+| Login and two roles | Verified student and administrator roles | #10, #38 |
+| Database validation | CHECK, FK, UNIQUE, transaction isolation and self-booking prevention | #37 |
+| Documentation and demonstration | ERD, data dictionary, query set, architecture, screenshots, tests and contribution records | #43, #44 |
 
 ## Database ownership
 

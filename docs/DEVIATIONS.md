@@ -21,3 +21,16 @@ These entries are proposed interpretations against the submitted SRS, SAD and Te
 ## Review record
 
 The original SE sprint handout, DBMS Level 3 requirements and existing SE/DBMS backlog design were reviewed on 23 October 2026. Submitted CampusPool SRS, SAD and Test Plan files were not located. No mandatory course requirement is removed by this register.
+
+## Sprint allocation changes
+
+The 12 October baseline assigned 61 points to Sprint 1, 73 to Sprint 2 and 17 to unplanned stories. The 23 October allocation selects nine Sprint 1 issue slices (41 full-issue points), assigns 24 issues to Sprint 2 (93 points) and retains the unplanned backlog. Original acceptance criteria and estimates remain unchanged.
+
+| Change | Issues | Reason |
+|---|---|---|
+| Sprint 1 → Sprint 2 | #8, #9, #10, #19, #31, #36, #38, #40 | Preserve the working browser journey while completing authentication, advanced matching, notifications and DBMS requirements in the follow-on sprint. |
+| Sprint 2 → Sprint 1, with final acceptance continuing in Sprint 2 | #43, #44 | Bring focused tests, the one-minute video and delivery evidence into Sprint 1. |
+| Split within the existing issue | #24 | Cancellation is the Sprint 1 slice; ordered waitlist and rematching remain unfinished Sprint 2 work. |
+| Assessment priority within Sprint 2 | #8, #9, #10, #36, #38, #40, #41, #42 | Next.js, secure API/auth, two database paradigms, advanced SQL and schema documentation precede stretch features. |
+
+Other Sprint 2 features are delivery stretch scope, not removed requirements. Submitted SRS/SAD/Test Plan reconciliation and instructor approval remain necessary where deferral changes an assessed commitment.
