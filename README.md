@@ -1,28 +1,28 @@
-# CampusPool — Student Carpooling and Bikepooling
+# CampusPool
 
-**SE + DBMS college mini-project**. Student-exclusive campus commuting platform designed to reduce parking pressure through transparent, safer ride sharing among verified students (estimated student population ~4,000). This repository currently contains **planning and workflow assets only**; do not mistake a green planning CI check for a deployed working product.
+CampusPool is a student-only carpooling and bikepooling project for shared campus commuting. This repository is the official planning and documentation surface for the SE + DBMS submission. The current Sprint 1 baseline is an existing Laravel 12 / MySQL / HTML-CSS-JavaScript prototype; this repository does not claim that a production application is deployed.
 
-## Planning and course evidence
-- [Product backlog and issue links](docs/PRODUCT_BACKLOG.md) — 7 epics, 28 source user stories, 9 NFR/enablers
-- [Sprint plan](docs/SPRINT_PLAN.md) — dry run, Sprint 1 (Oct 19–23), Sprint 2 (Oct 26–30)
-- [DBMS Level 3 requirements mapping](docs/DBMS_TRACEABILITY.md)
-- [Proposed SRS/SAD/Test Plan deviations](docs/DEVIATIONS.md)
-- [GitHub Issues](https://github.com/CampusPool/carpooling/issues)
+## Current baseline
 
-## Proposed stack (to be implemented)
-- Next.js app with protected backend/API endpoints.
-- PostgreSQL for transactional students, vehicles, rides, bookings, payments.
-- MongoDB for notifications, ride event records and optional chat.
-- GitHub Actions for PR checks and release/demo readiness.
+- Existing prototype: Laravel 12 backend, MySQL authority, browser UI, Google Maps and OSRM integrations.
+- Official issue tracker: [CampusPool/carpooling](https://github.com/CampusPool/carpooling/issues) (44 existing issues: 7 epics, 28 stories, 9 NFR/enablers). Issues and [Project #2](https://github.com/orgs/CampusPool/projects/2) are authoritative; no duplicate backlog is kept here.
+- Staging: [private team workspace](https://github.com/CampusPool/carpooling-workspace). Prototype source remains private until the owner authorizes an attributed upload.
+- Proposed Sprint 2 direction: preserve the Laravel/MySQL foundation while adding a Next.js/React/TypeScript client, explicit API contracts, MongoDB event/notification aggregation, and required DBMS demonstrations.
 
-## GitHub collaboration
-- Work from a linked issue on a feature branch.
-- Open PR with screenshots/test results and linked issue.
-- Another team member reviews; a repo owner merges after checks pass.
-- Do not commit university credentials, real student addresses, personal identifiers or production environment variables.
+## Documents
 
-## Demo milestones
-- Sprint 1: one-minute end-to-end working product video by Oct 23.
-- Sprint 2: two-minute working product video and completed documentation by Oct 30.
+- [Requirements and architecture](docs/REQUIREMENTS_ARCHITECTURE.md)
+- [Sprint plan and Sprint 1 report](docs/SPRINT_PLAN.md)
+- [Prototype distribution manifest](docs/PROTOTYPE_DISTRIBUTION.md)
+- [DBMS traceability](docs/DBMS_TRACEABILITY.md)
+- [Deviations](docs/DEVIATIONS.md)
 
-**Outstanding:** synchronize with previously approved SRS, SAD, and Test Plan; confirm actual two-person DBMS team, course reuse approval, and issue owners; create/link a GitHub Projects board.
+## Contribution workflow
+
+Use the existing issue number in a short-lived feature branch, open a focused PR in the private staging repository, and obtain an independent review before integration. Keep original prototype attribution and do not claim prior work as a teammate contribution. Link staging PRs back to the official issue; merge into the official submission only through a separately reviewed integration PR.
+
+Do not commit credentials, private keys, real student addresses, personal identifiers, database dumps or production environment files. Use synthetic fixtures and an isolated test database.
+
+## Checks
+
+The pull-request workflow validates required documentation, local links only. It intentionally does not report application tests until application source and an approved test command are present in this repository.

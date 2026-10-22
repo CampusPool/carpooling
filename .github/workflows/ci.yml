@@ -1,4 +1,4 @@
-name: CampusPool CI
+name: CampusPool documentation checks
 on:
   pull_request:
   push:
@@ -6,49 +6,36 @@ on:
 permissions:
   contents: read
 jobs:
-  planning-validation:
+  documentation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate SE planning and DBMS traceability
+      - name: Validate required documentation and links
         run: |
-          test -f docs/PRODUCT_BACKLOG.md
-          test -f docs/SPRINT_PLAN.md
-          test -f docs/DBMS_TRACEABILITY.md
-          test -f docs/DEVIATIONS.md
+          test -s README.md
+          test -s docs/REQUIREMENTS_ARCHITECTURE.md
+          test -s docs/SPRINT_PLAN.md
+          test -s docs/PROTOTYPE_DISTRIBUTION.md
+          test -s docs/DBMS_TRACEABILITY.md
+          test -s docs/DEVIATIONS.md
+          if rg -n "docs/(PRODUCT_BACKLOG|PROJECT_BOARD_SETUP|backlog\.json)" README.md docs; then exit 1; fi
+          rg -n "CampusPool/carpooling/issues|carpooling-workspace" README.md docs
           python3 - <<'PY'
-          import json
-          with open("docs/backlog.json") as f: rows=json.load(f)["issues"]
-          assert len(rows)==37
-          assert len([r for r in rows if r["epic"] is not None])==28
-          assert sum(r["points"] for r in rows if r["sprint"]=="Sprint 1")==61
-          assert sum(r["points"] for r in rows if r["sprint"]=="Sprint 2")==73
-          print("CampusPool planning baseline checks passed")
+          import pathlib, re, sys
+          root = pathlib.Path('.')
+          bad = []
+          pattern = re.compile(r'\[[^]]+\]\(([^)]+)\)')
+          for source in [root / 'README.md', *sorted((root / 'docs').glob('*.md')), root / '.github' / 'pull_request_template.md']:
+              for target in pattern.findall(source.read_text()):
+                  target = target.split('#', 1)[0].strip().strip('<>')
+                  if not target or '://' in target or target.startswith('mailto:'):
+                      continue
+                  if not (source.parent / target).resolve().exists():
+                      bad.append(f'{source}: {target}')
+          if bad:
+              print('Broken local Markdown links:')
+              print('\n'.join(bad))
+              sys.exit(1)
+          print('Local Markdown links passed')
           PY
-  application-checks:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - id: detect
-        name: Detect implemented application
-        run: |
-          if [ -f package.json ]; then echo 'app=true' >> "$GITHUB_OUTPUT"; else echo 'app=false' >> "$GITHUB_OUTPUT"; fi
-      - name: Warn until Next.js is scaffolded
-        if: steps.detect.outputs.app == 'false'
-        run: echo '::warning::No Next.js package.json yet; no app checks executed.'
-      - uses: actions/setup-node@v4
-        if: steps.detect.outputs.app == 'true'
-        with:
-          node-version: '22'
-      - name: Install dependencies
-        if: steps.detect.outputs.app == 'true'
-        run: npm ci
-      - name: Lint
-        if: steps.detect.outputs.app == 'true'
-        run: npm run lint --if-present
-      - name: Test
-        if: steps.detect.outputs.app == 'true'
-        run: npm test --if-present
-      - name: Build
-        if: steps.detect.outputs.app == 'true'
-        run: npm run build
+          echo "Documentation checks passed; no application tests are run by this workflow." | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,13 +1,13 @@
 # Resume
 
 ## Current objective
-Convert published SE backlog and DBMS Level 3 requirements into a workable student ride-sharing application.
+Define the first real project milestone.
 
 ## Exact state
-44 issues created on 2026-10-12 under CampusPool/carpooling, with labels/points/sprints/assignments as proposals. Read docs/PRODUCT_BACKLOG.md and docs/SPRINT_PLAN.md.
+Jarvis project state has been initialized; repository evidence has not yet been reconciled.
 
 ## Next action
-Verify live GitHub Project linked to repository; request SRS/SAD/Test Plan and team roster; implement Sprint 1 vertical slice.
+Inspect the repository and PROJECT.md, then define the active milestone and acceptance criteria.
 
 ## Blocker
-Issue management and repo writes enabled, but GitHub Projects creation is not exposed in the current ChatGPT GitHub connector.
+None.
