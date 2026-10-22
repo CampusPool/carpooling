@@ -18,12 +18,17 @@ jobs:
           test -s docs/PROTOTYPE_DISTRIBUTION.md
           test -s docs/DBMS_TRACEABILITY.md
           test -s docs/DEVIATIONS.md
-          if rg -n "docs/(PRODUCT_BACKLOG|PROJECT_BOARD_SETUP|backlog\.json)" README.md docs; then exit 1; fi
-          rg -n "CampusPool/carpooling/issues|carpooling-workspace" README.md docs
           python3 - <<'PY'
           import pathlib, re, sys
           root = pathlib.Path('.')
           bad = []
+          documents = [root / 'README.md', *sorted((root / 'docs').glob('*.md'))]
+          text = '\n'.join(path.read_text() for path in documents)
+          if re.search(r'docs/(PRODUCT_BACKLOG|PROJECT_BOARD_SETUP|backlog\.json)', text):
+              sys.exit('Removed duplicate-backlog references remain')
+          for required in ('CampusPool/carpooling/issues', 'carpooling-workspace'):
+              if required not in text:
+                  sys.exit(f'Missing collaboration link: {required}')
           pattern = re.compile(r'\[[^]]+\]\(([^)]+)\)')
           for source in [root / 'README.md', *sorted((root / 'docs').glob('*.md')), root / '.github' / 'pull_request_template.md']:
               for target in pattern.findall(source.read_text()):
