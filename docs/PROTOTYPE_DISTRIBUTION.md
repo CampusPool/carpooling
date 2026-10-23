@@ -1,6 +1,6 @@
-# Private prototype distribution
+# Prototype distribution and attribution
 
-The review package contains the Laravel 12/MySQL campus-booking baseline. Application source remains outside the official repository. Upload to the private workspace requires approval of the exact manifest and resolution of the licensing and academic reuse questions below.
+The shared workspace contains the Laravel 12/MySQL campus-booking baseline. The same runnable, attributed prototype is staged in [official PR #46](https://github.com/CampusPool/carpooling/pull/46), not yet merged into official `main`. Individual teammate implementation PRs and academic reuse approval remain outstanding.
 
 ## Package structure
 
@@ -20,10 +20,10 @@ Credentials, real account records, database dumps, dependency directories, local
 
 Reproduction must start from the frozen local baseline, install its locked dependencies and use an isolated MySQL database with synthetic accounts. The package verifier checks source hashes, migration/startup behavior and the focused campus tests. Browser startup and provider configuration are documented separately; fixture-backed tests do not establish live routing-provider behavior.
 
-Each contributor PR must identify its baseline revision, linked official issues, changed files, verification commands and results. The existing private prototype's verification summary is in [the Sprint 1 report](SPRINT_PLAN.md#verification-results).
+Each contributor PR must identify its baseline revision, linked official issues, changed files, verification commands and results. The existing workspace prototype's verification summary is in [the Sprint 1 report](SPRINT_PLAN.md#verification-results).
 
 ## Licensing and provenance
 
 The pinned upstream tree contains GPL-3.0 license text while `composer.json` declares MIT. The extension and combined distribution have no concluded license decision, and individual authorship has not been established. Preserve upstream attribution, notices, revision identifiers and the modified-files list. Record subsequent student contributions separately from the imported baseline.
 
-Before distribution, clarify upstream and extension terms, review transitive dependency and routing-data obligations, and obtain the required academic reuse/originality approval. The exact manifest, source map, dependency inventory and audit findings form the owner's approval package.
+Before final assessed submission, confirm faculty originality/reuse approval and review combined-distribution licensing and routing-data obligations. The exact manifest, source map, dependency inventory and audit findings form the owner's approval package.
