@@ -1,0 +1,46 @@
+name: CampusPool documentation checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required documentation and links
+        run: |
+          test -s README.md
+          test -s docs/REQUIREMENTS_ARCHITECTURE.md
+          test -s docs/SPRINT_PLAN.md
+          test -s docs/PROTOTYPE_DISTRIBUTION.md
+          test -s docs/DBMS_TRACEABILITY.md
+          test -s docs/DEVIATIONS.md
+          python3 - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path('.')
+          bad = []
+          documents = [root / 'README.md', *sorted((root / 'docs').glob('*.md'))]
+          text = '\n'.join(path.read_text() for path in documents)
+          if re.search(r'docs/(PRODUCT_BACKLOG|PROJECT_BOARD_SETUP|backlog\.json)', text):
+              sys.exit('Removed duplicate-backlog references remain')
+          for required in ('CampusPool/carpooling/issues', 'carpooling-workspace'):
+              if required not in text:
+                  sys.exit(f'Missing collaboration link: {required}')
+          pattern = re.compile(r'\[[^]]+\]\(([^)]+)\)')
+          for source in [root / 'README.md', *sorted((root / 'docs').glob('*.md')), root / '.github' / 'pull_request_template.md']:
+              for target in pattern.findall(source.read_text()):
+                  target = target.split('#', 1)[0].strip().strip('<>')
+                  if not target or '://' in target or target.startswith('mailto:'):
+                      continue
+                  if not (source.parent / target).resolve().exists():
+                      bad.append(f'{source}: {target}')
+          if bad:
+              print('Broken local Markdown links:')
+              print('\n'.join(bad))
+              sys.exit(1)
+          print('Local Markdown links passed')
+          PY
+          echo "Documentation checks passed; no application tests are run by this workflow." | tee -a "$GITHUB_STEP_SUMMARY"
