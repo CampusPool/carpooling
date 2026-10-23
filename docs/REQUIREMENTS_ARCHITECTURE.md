@@ -1,23 +1,23 @@
 # Requirements and architecture baseline
 
-The submitted SRS, SAD and Test Plan remain the contractual baseline. The current implementation boundary is a private Laravel 12 / MySQL / HTML-CSS-JavaScript prototype; the Next.js and MongoDB requirements are planned Sprint 2 work.
+The submitted SRS, SAD and Test Plan remain the contractual baseline. The current implementation is a Laravel 12/MySQL/HTML-CSS-JavaScript prototype in the shared workspace and [official source PR #46](https://github.com/CampusPool/carpooling/pull/46). Next.js and MongoDB remain planned Sprint 2 work.
 
 ## Product boundary
 
-CampusPool supports verified students offering or requesting a car or bike ride, matching by campus, route and time, seat requests, host approval, cancellation and safety reporting. Faculty, staff and employee mode are outside the current student scope. The prototype uses synthetic, nonredeemable wallet holds/refunds; this is not real-money collection or settlement.
+The target CampusPool product supports verified students offering or requesting car/bike rides. The current demo supports synthetic profiles, offers, matching, seat requests, driver approval and cancellation; real student verification and live safety workflows are not demonstrated. Faculty, staff and employee mode are outside the current student scope. The prototype uses synthetic, nonredeemable wallet holds/refunds; this is not real-money collection or settlement.
 
 ## Current prototype map
 
-The private prototype organizes extension work under `backend/extensions/carpoolear/` and `backend/integrations/carpoolear/`. Laravel routes, migrations, views and tests remain in that private source tree.
+The runnable package lives under `prototype/`. Custom commute services, routes, browser assets and migrations are under `prototype/campuspool-extension/`; integration glue is under `prototype/integration-patches/`, and the inherited Carpoolear code remains attributed.
 
-Paths in the table are relative to `backend/extensions/carpoolear/`.
+Paths in the table are relative to `prototype/campuspool-extension/` unless otherwise specified.
 
 | Capability | Issue slice | Baseline and review target |
 |---|---|---|
-| Booking architecture and release coordination | #23, #44; #8/#9/#10/#38 in Sprint 2 | `Mobility/Commute/{CommuteService.php,CommuteController.php}`, `routes/commute.php`; verify booking correctness and integration order. |
+| Booking, CI and release coordination | #23, #39, #44; #8/#9/#10/#38 in Sprint 2 | `Mobility/Commute/{CommuteService.php,CommuteController.php}`, `routes/commute.php`; verify booking correctness and integration order. |
 | Rider/driver interface and pickup UX | #12, #21; #42 in Sprint 2 | `web/{commute.mjs,commute-map.mjs,commute.html,commute.css}`; verify usability, accessibility and evidence capture. |
-| Search, route/time matching and pickup behavior | #22; #17/#19 in Sprint 2 | `Mobility/Commute/CommuteMatchingService.php`, `Mobility/Routing/`, `Mobility/Pickup/`; verify route, time-window and failure boundaries. |
-| Booking lifecycle and integrity | #24, #37, #39, #43; #36/#40 in Sprint 2 | `tests/{MobilityCommuteProductTest.php,MobilityLifecycleTest.php,MobilityFinancialInvariantsTest.php}`, `migrations/`; verify atomic seat changes and prepare DBMS evidence. |
+| Search, test-plan coverage and pickup behavior | #22, #43; #17/#19 in Sprint 2 | `Mobility/Commute/CommuteMatchingService.php`, `Mobility/Routing/`, `Mobility/Pickup/`; verify route, time-window and failure boundaries. |
+| Booking lifecycle and SQL integrity | #24, #37; #36/#40 in Sprint 2 | `tests/{MobilityCommuteProductTest.php,MobilityLifecycleTest.php,MobilityFinancialInvariantsTest.php}`, `migrations/`; verify atomic seat changes and prepare DBMS evidence. |
 
 ## Source of truth
 
