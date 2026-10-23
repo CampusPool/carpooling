@@ -44,7 +44,7 @@ Open `http://127.0.0.1:18180/mobility/?demo=campus-route` in separate rider and 
 
 | Slice | Owner | Implementation PR | Evidence | Status |
 |---|---|---|---|---|
-| Booking/CI/release (#23, #39, #44) | Arjun | Pending | New booking regression suite and real HTTP/MySQL race probe; review pending | In review |
+| Booking/CI/release (#23, #39, #44) | Arjun | [PR #47](https://github.com/CampusPool/carpooling/pull/47) | [5 new tests / 109 assertions and 12 MySQL races](SPRINT1_BOOKING_EVIDENCE.md); review and video pending | In review |
 | Driver/rider and pickup UI (#12, #21) | Zayaan | Pending | Browser journey screenshots and frontend harness pass; implementation PR pending | Partial |
 | Matching and test-plan cases (#22, #43) | Nikhil | Pending | Covered by focused commute run; implementation PR pending | Partial |
 | Cancellation/integrity (#24, #37) | Nithesh | Pending | Backend focused run passed; individual integrity review pending | Partial |

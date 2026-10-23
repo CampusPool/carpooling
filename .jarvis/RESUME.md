@@ -1,13 +1,9 @@
 # Resume
 
-## Current objective
-Define the first real project milestone.
+Current task: Arjun’s CampusPool Sprint 1 contribution on `s1/arjun-booking-release`, official [PR #47](https://github.com/CampusPool/carpooling/pull/47).
 
-## Exact state
-Jarvis project state has been initialized; repository evidence has not yet been reconciled.
+Baseline: official `main` merge `140654c1`. Implementation commit: `7e17476`, authored and mapped by GitHub to `arjunsrikanthh`. Booking services, migrations and Nikhil’s matcher are preserved.
 
-## Next action
-Inspect the repository and PROJECT.md, then define the active milestone and acceptance criteria.
+Verified: committed verifier exit 0 (25 frontend checks; 38 PHP tests / 384 assertions; 14 matcher assertions; 12 overlapping HTTP/MySQL races). Fresh official clone smoke and stop exit 0. Exact commands and limits: `docs/SPRINT1_BOOKING_EVIDENCE.md`.
 
-## Blocker
-None.
+Next: confirm both Actions jobs on the final PR head, obtain teammate review, then merge through the normal review workflow. Do not merge automatically. #44 remains open; user will record the video. Academic reuse approval and submitted-document reconciliation are unconfirmed.

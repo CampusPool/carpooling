@@ -22,17 +22,20 @@ Local Docker execution on 24 October 2026 passed the following components agains
 | Preserved route matcher standalone suite | 14 assertions passed |
 | Source-map path coverage and hashes | All inventoried files verified; test copies identical |
 
-The complete verifier and fresh-clone smoke result will be recorded after the committed snapshot runs. The earlier development run had a shell error after its passing tests because its runner was edited while executing; that run is not counted as a complete verifier success.
+The committed snapshot `7e17476c910bc022529565dbdedd0602eba836bd` passed the complete verifier with **exit 0**, including cleanup. It verified **1,576 package files**, migrations, MySQL health, `/mobility/` HTTP 200, all checks above and the concurrency probe.
+
+A new clone from the official `s1/arjun-booking-release` branch at that commit passed `start-local.sh` and `smoke-booking.py` with **exit 0**: offer 1 → quote → request 1 → accepted state 1 → cancelled state 3 → `PORTABLE_INTERACTIVE_BOOKING_PASS`. `stop-local.sh` exited 0. The clone used a separately named synthetic MySQL volume; the existing pilot was preserved.
 
 ```text
 python3 prototype/scripts/check-package.py
 node --test prototype/tests/frontend/test-commute-ui.mjs prototype/tests/frontend/test-commute-map.mjs prototype/tests/frontend/test-place-search.mjs prototype/campuspool-extension/web/driver-onboarding-ui.test.mjs prototype/campuspool-extension/web/tracking-state.test.mjs
 sh prototype/reproduction/verify-package.sh
-sh prototype/reproduction/start-local.sh
+COMPOSE_PROJECT_NAME=campuspool-arjun-fresh-20261024 sh prototype/reproduction/start-local.sh
 python3 prototype/reproduction/smoke-booking.py
+sh prototype/reproduction/stop-local.sh
 ```
 
-The application (`portable-campus-tests`) and documentation (`documentation`) jobs must run on the actual feature PR. Teammate review remains required before merge.
+The official [PR #47 checks](https://github.com/CampusPool/carpooling/pull/47/checks) run application (`portable-campus-tests`) and documentation (`documentation`) jobs through `pull_request` triggers. Both workflows also run on pushes to official `main`. Each job must succeed on the PR head, and teammate review remains required before merge.
 
 ## Contribution provenance
 
