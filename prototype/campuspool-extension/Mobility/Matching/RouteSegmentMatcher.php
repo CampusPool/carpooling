@@ -28,6 +28,7 @@ final class RouteSegmentMatcher
         self::requireNonnegativeInt($query, 'latest_pickup_epoch');
         self::requireNonnegativeInt($query, 'preferred_pickup_epoch');
         self::requirePositiveInt($query, 'max_results');
+        $womenOnlyOptIn = self::optionalBool($query, 'women_only_opt_in');
         $date = self::requireDate($query);
         if ($query['origin_stop_id'] === $query['destination_stop_id']
             || $query['earliest_pickup_epoch'] > $query['latest_pickup_epoch']
@@ -50,6 +51,16 @@ final class RouteSegmentMatcher
                 || !is_array($offer['stops']) || !array_is_list($offer['stops'])
                 || !is_array($offer['arrival_epochs']) || !array_is_list($offer['arrival_epochs'])
                 || !is_array($offer['segment_free_seats']) || !array_is_list($offer['segment_free_seats'])) {
+                continue;
+            }
+            // The women-only mode is an explicit, two-sided opt-in. Do not
+            // infer consent from missing, truthy, or identity-related fields.
+            if (array_key_exists('women_only_opt_in', $offer)
+                && !is_bool($offer['women_only_opt_in'])) {
+                continue;
+            }
+            if ($womenOnlyOptIn
+                && self::optionalBool($offer, 'women_only_opt_in') !== true) {
                 continue;
             }
             $stops = $offer['stops'];
@@ -129,6 +140,18 @@ final class RouteSegmentMatcher
         if (!isset($input[$key]) || !is_int($input[$key]) || $input[$key] < 0) {
             throw new InvalidArgumentException("Invalid {$key}.");
         }
+    }
+
+    /** @param array<string,mixed> $input */
+    private static function optionalBool(array $input, string $key): bool
+    {
+        if (!array_key_exists($key, $input)) {
+            return false;
+        }
+        if (!is_bool($input[$key])) {
+            throw new InvalidArgumentException("Invalid {$key}.");
+        }
+        return $input[$key];
     }
 
     /** @param array<string,mixed> $input */
