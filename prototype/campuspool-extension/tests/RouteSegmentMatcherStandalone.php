@@ -46,6 +46,22 @@ check($results[0]['segment_available_seats'] === 2, 'minimum seat availability a
 check($results[0]['pickup_difference_seconds'] === 10, 'time score is absolute difference');
 check($results[0]['ride_duration_seconds'] === 120, 'duration is calculated from stop timestamps');
 
+$womenOnly = $query;
+$womenOnly['women_only_opt_in'] = true;
+$womenOffers = [
+    $host(21, [20, 30, 40], [1080, 1130, 1200], [3, 3]) + ['women_only_opt_in' => true],
+    $host(22, [20, 30, 40], [1080, 1130, 1200], [3, 3]),
+];
+check(array_column(RouteSegmentMatcher::rank($womenOnly, $womenOffers), 'trip_id') === [21], 'women-only search requires explicit offer opt-in');
+$womenOnly['women_only_opt_in'] = 'true';
+$thrown = false;
+try {
+    RouteSegmentMatcher::rank($womenOnly, $womenOffers);
+} catch (InvalidArgumentException $e) {
+    $thrown = true;
+}
+check($thrown, 'women-only query rejects non-boolean values');
+
 $boundary = $query;
 $boundary['earliest_pickup_epoch'] = 1080;
 $boundary['latest_pickup_epoch'] = 1080;

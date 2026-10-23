@@ -7,6 +7,12 @@
 | Integration | `backend/integrations/carpoolear/*.patch` and `MobilityIntegration/` | authored integration materials; attribution to current workspace owner is unverified |
 | Test/runtime support | focused extension tests, probes and package reproduction scripts | authored support material; attribution to current workspace owner is unverified |
 
+The official repository `main` also contains direct teammate commits by Nikhil Suhas Joshi.
+The merge keeps those changes; in particular, `RouteSegmentMatcher.php` includes the
+`women_only_opt_in` validation and two-sided filtering from commit
+`ac340db21738da6976beb03b425ab52318d23a73`. This code is recorded as an official-main
+merge in `SOURCE_MAP.tsv` and is not credited to the imported prototype or to Arjun.
+
 The pinned vendor checkout was inspected before packaging. Its tracked working
 tree was clean. The separate hardened evaluation checkout contained unrelated
 working changes and generated lock files; it was not copied. Only the named
