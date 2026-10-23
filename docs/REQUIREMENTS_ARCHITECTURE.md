@@ -1,6 +1,6 @@
 # Requirements and architecture baseline
 
-The submitted SRS, SAD and Test Plan remain the contractual baseline. The current implementation is a Laravel 12/MySQL/HTML-CSS-JavaScript prototype in the shared workspace and [official source PR #46](https://github.com/CampusPool/carpooling/pull/46). Next.js and MongoDB remain planned Sprint 2 work.
+The submitted SRS, SAD and Test Plan remain the contractual baseline. The current implementation is a Laravel 12/MySQL/HTML-CSS-JavaScript prototype integrated on official `main`; the [shared workspace](https://github.com/CampusPool/carpooling-workspace) is used for development/reference work. Next.js and MongoDB remain planned Sprint 2 work.
 
 ## Product boundary
 
