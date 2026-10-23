@@ -14,7 +14,7 @@ These entries are proposed interpretations against the submitted SRS, SAD and Te
 | D-08 | MySQL remains the relational authority. | The handout permits MySQL or PostgreSQL; this is a project choice. |
 | D-09 | Sprint 1 uses the Laravel/browser journey; Next.js and MongoDB move to Sprint 2. | Complete the mandatory follow-on requirements. |
 | D-10 | Sprint 1 demonstration uses synthetic authentication and data. | Real college authentication remains follow-on work. |
-| D-11 | Prototype upload, reviewed code PRs and the one-minute video remain pending. | Complete attribution, licensing and evidence review first. |
+| D-11 | Prototype uploaded to the team workspace and staged in [official PR #46](https://github.com/CampusPool/carpooling/pull/46). Teammate implementation PRs and one-minute video remain pending. | Complete reviewed contributions and final evidence before submission. |
 | D-12 | Sprint 1 focuses on #12, #21, #22, #23, #24, #37, #39, #43 and #44. | Keep each issue's full acceptance criteria. |
 | D-13 | The approved DBMS pair and course reuse/originality position are unconfirmed. | Confirm both before final submission. |
 
