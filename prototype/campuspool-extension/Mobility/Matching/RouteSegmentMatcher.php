@@ -16,7 +16,7 @@ final class RouteSegmentMatcher
     /**
      * @param array<string,mixed> $query
      * @param list<array<string,mixed>> $offers
-     * @return list<array<string,int>>
+     * @return list<array<string,mixed>>
      */
     public static function rank(array $query, array $offers): array
     {
@@ -123,6 +123,18 @@ final class RouteSegmentMatcher
         usort($ranked, static fn (array $a, array $b): int =>
             [$a['pickup_difference_seconds'], $a['ride_duration_seconds'], $a['trip_id']]
             <=> [$b['pickup_difference_seconds'], $b['ride_duration_seconds'], $b['trip_id']]);
+        foreach ($ranked as $index => &$candidate) {
+            $candidate['ranking'] = [
+                'rank' => $index + 1,
+                'strategy' => 'pickup_time_difference_then_ride_duration_then_trip_id',
+                'scope' => 'deterministic_order_over_validated_candidates',
+                'tradeoff' => 'Pickup-time closeness is preferred; shorter rides break ties; trip ID makes ties deterministic.',
+                'pickup_difference_seconds' => $candidate['pickup_difference_seconds'],
+                'ride_duration_seconds' => $candidate['ride_duration_seconds'],
+                'tie_breaker_trip_id' => $candidate['trip_id'],
+            ];
+        }
+        unset($candidate);
         return array_slice($ranked, 0, $query['max_results']);
     }
 
