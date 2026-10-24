@@ -45,6 +45,15 @@ check(array_column($results, 'trip_id') === [7, 8], 'deterministic candidate ord
 check($results[0]['segment_available_seats'] === 2, 'minimum seat availability along full route');
 check($results[0]['pickup_difference_seconds'] === 10, 'time score is absolute difference');
 check($results[0]['ride_duration_seconds'] === 120, 'duration is calculated from stop timestamps');
+check($results[0]['ranking'] === [
+    'rank' => 1,
+    'strategy' => 'pickup_time_difference_then_ride_duration_then_trip_id',
+    'scope' => 'deterministic_order_over_validated_candidates',
+    'tradeoff' => 'Pickup-time closeness is preferred; shorter rides break ties; trip ID makes ties deterministic.',
+    'pickup_difference_seconds' => 10,
+    'ride_duration_seconds' => 120,
+    'tie_breaker_trip_id' => 7,
+], 'ranking contract explains factors and tradeoffs');
 check(array_key_exists('pickup_stop_id', $results[0])
     && array_key_exists('dropoff_stop_id', $results[0])
     && array_key_exists('pickup_epoch', $results[0])
