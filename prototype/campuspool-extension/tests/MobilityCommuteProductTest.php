@@ -29,7 +29,7 @@ final class MobilityCommuteProductTest extends TestCase {
   $r=$this->demo('rider');$this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',$this->prefs())->assertOk()->assertJsonPath('profile.role','rider');
   $d=$this->demo('driver');$this->actingAsApiUser($d)->putJson('/api/mobility/commute/profile',$this->prefs('driver'))->assertOk();
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',['date'=>now('Asia/Kolkata')->addDay()->toDateString(),'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'],['Idempotency-Key'=>'publish-first'])->assertOk();
-  $cards=$this->actingAsApiUser($r)->getJson('/api/mobility/commute/rides?direction=outbound&date='.now('Asia/Kolkata')->addDay()->toDateString().'&vehicle_type=car')->assertOk()->json('data');$this->assertCount(1,$cards);$c=$cards[0];
+  $cards=$this->actingAsApiUser($r)->getJson('/api/mobility/commute/rides?direction=outbound&date='.now('Asia/Kolkata')->addDay()->toDateString().'&start_time=08:00&end_time=09:00&vehicle_type=car')->assertOk()->json('data');$this->assertCount(1,$cards);$c=$cards[0];
   $this->assertSame('Demo home',$c['route_map']['points']['origin']['label']);$this->assertNotEmpty($c['route_map']['driver_geometry']);$this->assertCount(4,$c['route_map']['driver_waypoints']);
   $id=$this->actingAsApiUser($r)->postJson('/api/mobility/commute/rides/'.$c['trip_id'].'/request',['quote_token'=>$c['quote_token']],['Idempotency-Key'=>'commute-request'])->assertOk()->json('data.booking_id');
   $this->assertDatabaseHas('trip_passengers',['id'=>$id,'request_state'=>0]);$d=$this->demo('driver');
@@ -68,7 +68,7 @@ final class MobilityCommuteProductTest extends TestCase {
 
  public function test_search_needs_driver_publication_and_matches_vehicle_direction_and_time():void{
   $r=$this->demo('rider');$this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',$this->prefs())->assertOk();$date=now('Asia/Kolkata')->addDay()->toDateString();
-  $base='/api/mobility/commute/rides?date='.$date;
+  $base='/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00';
   $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');$this->assertDatabaseCount('trips',0);
   $body=['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'];
   $this->actingAsApiUser($r)->postJson('/api/mobility/commute/offers',$body,['Idempotency-Key'=>'rider-cannot-publish'])->assertForbidden();
@@ -76,6 +76,8 @@ final class MobilityCommuteProductTest extends TestCase {
   $first=$this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',$body,['Idempotency-Key'=>'publish-repeat'])->assertOk()->json('data.trip_id');
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',$body,['Idempotency-Key'=>'publish-repeat'])->assertOk()->assertJsonPath('data.trip_id',$first);$this->assertDatabaseCount('trips',1);
   $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.trip_id',$first);
+  $this->actingAsApiUser($r)->getJson($base.'&start_time=09:00&end_time=10:00&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
+  $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=car&start_time=09:00&end_time=08:00')->assertStatus(422);
   $this->actingAsApiUser($r)->getJson($base.'&direction=return&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
   $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=bike')->assertOk()->assertJsonCount(0,'data');
   $this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',array_replace($this->prefs(),['outbound_time'=>'15:30']))->assertOk();
@@ -85,7 +87,7 @@ final class MobilityCommuteProductTest extends TestCase {
   $r=$this->demo('rider');$d=$this->demo('driver');$date=now('Asia/Kolkata')->addDay()->toDateString();
   foreach([[$r,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'],['Idempotency-Key'=>'publish'])->assertOk();
-  $card=$this->actingAsApiUser($r)->getJson('/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car')->assertOk()->json('data.0');
+  $card=$this->actingAsApiUser($r)->getJson('/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car')->assertOk()->json('data.0');
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/rides/'.$card['trip_id'].'/request',['quote_token'=>$card['quote_token']],['Idempotency-Key'=>'not-own-quote'])->assertStatus(409);
   $p=$this->prefs();$p['home']['label']='Changed pickup';$this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',$p)->assertOk();
   $this->actingAsApiUser($r)->postJson('/api/mobility/commute/rides/'.$card['trip_id'].'/request',['quote_token'=>$card['quote_token']],['Idempotency-Key'=>'stale'])->assertStatus(409);
@@ -104,7 +106,7 @@ final class MobilityCommuteProductTest extends TestCase {
   foreach([[$r,'rider'],[$other,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
   $date=now('Asia/Kolkata')->addDay()->toDateString();
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP','max_detour_meters'=>5000,'max_detour_seconds'=>600],['Idempotency-Key'=>'publish'])->assertOk()->assertJsonPath('data.max_detour_meters',5000);
-  $ids=[];foreach([$r,$other]as$u){$card=$this->actingAsApiUser($u)->getJson('/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car')->assertOk()->json('data.0');$ids[]=$this->actingAsApiUser($u)->postJson('/api/mobility/commute/rides/'.$card['trip_id'].'/request',['quote_token'=>$card['quote_token']],['Idempotency-Key'=>'request'])->assertOk()->json('data.booking_id');}
+  $ids=[];foreach([$r,$other]as$u){$card=$this->actingAsApiUser($u)->getJson('/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car')->assertOk()->json('data.0');$ids[]=$this->actingAsApiUser($u)->postJson('/api/mobility/commute/rides/'.$card['trip_id'].'/request',['quote_token'=>$card['quote_token']],['Idempotency-Key'=>'request'])->assertOk()->json('data.booking_id');}
   DB::table('mobility_memberships')->where('user_id',$d->id)->update(['status'=>'pending']);
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[0].'/accept',[],['Idempotency-Key'=>'approval-revoked'])->assertForbidden();
   DB::table('mobility_memberships')->where('user_id',$d->id)->update(['status'=>'approved']);
@@ -114,6 +116,15 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[0].'/accept',[],['Idempotency-Key'=>'accept-first'])->assertOk();
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[1].'/accept',[],['Idempotency-Key'=>'accept-second'])->assertStatus(422)->assertJsonPath('error.code','NOT_SEAT_AVAILABLE');
   $this->assertDatabaseHas('trip_passengers',['id'=>$ids[1],'request_state'=>0]);
+  $this->actingAsApiUser($other)->getJson('/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
+ }
+
+ public function test_provider_failure_is_reported_as_excluded_search_result():void{
+  $r=$this->demo('rider');$d=$this->demo('driver');$date=now('Asia/Kolkata')->addDay()->toDateString();
+  foreach([[$r,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
+  $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'],['Idempotency-Key'=>'provider-search-publish'])->assertOk();
+  app()->bind(PathProvider::class,fn()=>new class implements PathProvider{public function path(array$p,string$m,float$timeoutSeconds=5):array{throw new \STS\Mobility\Routing\RoutingException('ROUTE_PROVIDER_UNAVAILABLE');}});
+  $this->actingAsApiUser($r)->getJson('/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data')->assertJsonPath('excluded.0.reason','ROUTE_PROVIDER_UNAVAILABLE');
  }
 
  public function test_meeting_match_preserves_route_and_binds_walk_limit_consent_and_zero_pickup_extra():void{
@@ -122,7 +133,7 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',$prefs)->assertOk();$this->actingAsApiUser($d)->putJson('/api/mobility/commute/profile',$this->prefs('driver'))->assertOk();
   $trip=$this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'ON_ROUTE_MEETING_POINT','max_detour_meters'=>0,'max_detour_seconds'=>0],['Idempotency-Key'=>'meeting-publish'])->assertOk()->json('data.trip_id');
   $base=json_decode(DB::table('mobility_commute_demo_trips')->where('trip_id',$trip)->value('journey'),true);
-  $url='/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car&pickup_choice=ON_ROUTE_MEETING_POINT';
+  $url='/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car&pickup_choice=ON_ROUTE_MEETING_POINT';
   $c=$this->actingAsApiUser($r)->getJson($url)->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.surcharge_minor',0)->assertJsonPath('data.0.detour_meters',0)->json('data.0');
   $this->assertGreaterThan(50,$c['access_meters']);$this->assertSame($base['driver_path']['geometry'],$c['route_map']['driver_geometry']);$this->assertNotEmpty($c['meeting_details']['leave_by']);
   $this->actingAsApiUser($r)->getJson(str_replace('pickup_choice=ON_ROUTE_MEETING_POINT','pickup_choice=DIRECT_RIDER_PICKUP',$url))->assertOk()->assertJsonCount(0,'data');
@@ -142,7 +153,7 @@ final class MobilityCommuteProductTest extends TestCase {
   foreach([[$r,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
   $publish=['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'];
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',$publish,['Idempotency-Key'=>'first-offer'])->assertOk();
-  $url='/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car';$c=$this->actingAsApiUser($r)->getJson($url)->assertOk()->json('data.0');
+  $url='/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car';$c=$this->actingAsApiUser($r)->getJson($url)->assertOk()->json('data.0');
   $id=$this->actingAsApiUser($r)->postJson('/api/mobility/commute/rides/'.$c['trip_id'].'/request',['quote_token'=>$c['quote_token']],['Idempotency-Key'=>'first-request'])->assertOk()->json('data.booking_id');
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$id.'/accept',[],['Idempotency-Key'=>'first-accept'])->assertOk();
   foreach([[$r,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',array_replace($this->prefs($role),['outbound_time'=>'08:35']))->assertOk();
