@@ -1,6 +1,6 @@
 # SE Mini Project — Sprint plan and Sprint 1 report
 
-**Status date:** 23 October 2026. The submitted SRS, SAD and Test Plan remain the contractual baseline. This plan covers the Laravel 12/MySQL/browser prototype maintained in `CampusPool/carpooling-workspace`. The official repository is `CampusPool/carpooling`.
+**Status date:** 24 October 2026. The submitted SRS, SAD and Test Plan remain the contractual baseline. This plan covers the Laravel 12/MySQL/browser prototype integrated on official `CampusPool/carpooling:main`. The [shared workspace](https://github.com/CampusPool/carpooling-workspace) is a development/reference checkout.
 
 ## Schedule and scope
 
@@ -10,7 +10,7 @@ The demo path is driver publication → rider search → seat request → driver
 
 ## Responsibility packages
 
-Source paths below are relative to `carpooling-workspace/prototype/`. The custom extension lives in `campuspool-extension/`; upstream Carpoolear code is separately attributed.
+Source paths below are relative to official `prototype/`. The custom extension lives in `campuspool-extension/`; upstream Carpoolear code is separately attributed.
 
 | Owner / branch | Issues | Paths and Sprint 1 work |
 |---|---|---|
@@ -23,10 +23,10 @@ Arjun also uses the `noqtar` account.
 
 ## Integration order and review
 
-1. Each member branches independently from the workspace `main` and changes only their assigned module.
+1. Each member branches independently from the latest official `main` and changes only their assigned module.
 2. Nithesh verifies cancellation and DB integrity (#24, #37); Nikhil verifies matching and test-plan cases (#22, #43).
 3. Arjun verifies booking/CI and prepares release evidence (#23, #39, #44); Zayaan fixes the ride UI and map fallback (#12, #21).
-4. Teammates review each other's PRs before the accepted workspace revision is synchronized to the official submission repository.
+4. Teammates review each other's PRs in the official repository before merge.
 
 Each PR must identify its changed files, exact command and result, synthetic fixtures, acceptance evidence and linked official issue. A teammate must review it before integration. These are sequencing constraints, not a commitment to the historical issue-point total.
 
@@ -44,19 +44,19 @@ Open `http://127.0.0.1:18180/mobility/?demo=campus-route` in separate rider and 
 
 | Slice | Owner | Implementation PR | Evidence | Status |
 |---|---|---|---|---|
-| Booking/CI/release (#23, #39, #44) | Arjun | Pending | Covered by focused commute run; implementation PR pending | Partial |
+| Booking/CI/release (#23, #39, #44) | Arjun | [PR #47](https://github.com/CampusPool/carpooling/pull/47) | [5 new tests / 109 assertions and 12 MySQL races](SPRINT1_BOOKING_EVIDENCE.md); review and video pending | In review |
 | Driver/rider and pickup UI (#12, #21) | Zayaan | Pending | Browser journey screenshots and frontend harness pass; implementation PR pending | Partial |
 | Matching and test-plan cases (#22, #43) | Nikhil | Pending | Covered by focused commute run; implementation PR pending | Partial |
-| Cancellation/integrity (#24, #37) | Nithesh | Pending | Backend focused run passed; dedicated runtime self-booking test absent | Partial |
+| Cancellation/integrity (#24, #37) | Nithesh | Pending | Backend focused run passed; individual integrity review pending | Partial |
 | One-minute working-product video | Team | Pending | Pending course submission | Pending |
 
-The focused run is an isolated synthetic suite, not a full repository-suite result. Waitlist behavior is not implemented or evidenced. No implementation PR or video is claimed by this planning PR.
+The earlier focused run was an isolated synthetic suite, not a full repository-suite result. The Arjun booking PR adds dedicated runtime self-booking, authorization, duplicate-request, state-transition and multi-worker last-seat evidence. Waitlist behavior is not implemented or evidenced. The one-minute video remains pending and is not claimed here.
 
 ## Verification results
 
 The 23 October verification at prototype revision `faccb66ebb65512cfca41116109609a7120111de` recorded **10 backend tests / 208 assertions** and **25 frontend checks**, all with passing exit status. The backend runner used disposable Docker/Colima infrastructure; the frontend checks covered the commute UI, map, place search, driver onboarding and tracking-state harnesses. The browser journey captured publication, search, request, driver acceptance, booking confirmation, cancellation/history and seat restoration. Google Maps initially rendered the search route, then showed a provider rendering error in detail/home views. This remains a UI/configuration defect; the booking flow continued successfully.
 
-The run did not establish production provider behavior, college authentication or a complete repository suite. Self-booking is represented by static coverage in the focused material; a dedicated runtime self-booking test and simultaneous last-seat race test remain to be added. Raw logs and source hashes are retained with the local verification package; the summary here is linked from [issue #43](https://github.com/CampusPool/carpooling/issues/43).
+That historical run did not establish production provider behavior, college authentication or a complete repository suite. Its missing runtime self-booking and simultaneous last-seat checks are addressed by [Arjun’s subsequent booking evidence](SPRINT1_BOOKING_EVIDENCE.md). Raw logs and source hashes are retained with the local verification package; the summary here is linked from [issue #43](https://github.com/CampusPool/carpooling/issues/43).
 
 The recorded commands and result excerpt were:
 
@@ -80,7 +80,7 @@ The published prototype includes an isolated backend runner and its test configu
 
 | Owner | Existing functionality | Required contribution and acceptance | Verification / expected PR |
 |---|---|---|---|
-| Arjun | Request, owner acceptance and capacity guards | Add dedicated self-booking, foreign-driver and competing-last-seat regressions. Rejected requests must leave capacity unchanged; only one competing acceptance may succeed. Own shared service/controller/route edits. | Isolated backend suite; PR `test: cover booking authorization and capacity contention` references #23 and #39; include CI verification. Coordinate fixtures with Nithesh. |
+| Arjun | Request, owner acceptance and capacity guards | Add dedicated self-booking, foreign-driver, duplicate-request, state-transition and competing-last-seat regressions. Rejected requests must leave capacity unchanged; only one competing acceptance may succeed. Keep functioning service/controller/route code unchanged unless a test exposes a defect. | Isolated backend suite; PR `test: strengthen booking correctness and CI` references #23 and #39; include CI verification. Coordinate fixtures with Nithesh. |
 | Zayaan | Publish/search/request screens and route detail UI | Add Maps failure handling that preserves readable pickup/fare details; verify car/bike validation, form errors and pending/accepted/cancelled states. | `node --test scripts/test-commute-ui.mjs scripts/test-commute-map.mjs scripts/test-place-search.mjs`; PR `fix: improve commute forms and map failure states` references #12 and #21. |
 | Nikhil | Date/direction/vehicle matching, walking consent and route quotes | Add boundary and provider-failure cases. No unpublished, full, incompatible or out-of-window ride may appear; a stale quote or changed profile must be rejected. | Isolated backend search tests plus map/place-search harnesses; PR `test: cover route matching boundaries and failures` references #22 and #43; include Test Plan traceability. |
 | Nithesh | Cancellation, idempotent refund, schema and test isolation | Add post-cancellation history and repeat-cancellation regressions; prove capacity restoration and one refund. Validate migration order on an empty test database. Waitlist implementation remains a Sprint 2 follow-on in #24. | Isolated backend/migration suite; PR `test: verify cancellation history and database integrity` references #24 and #37. Coordinate test evidence with Nikhil. |

@@ -1,6 +1,6 @@
 # Prototype distribution and attribution
 
-The shared workspace contains the Laravel 12/MySQL campus-booking baseline. The same runnable, attributed prototype is staged in [official PR #46](https://github.com/CampusPool/carpooling/pull/46), not yet merged into official `main`. Individual teammate implementation PRs and academic reuse approval remain outstanding.
+The official `main` contains the integrated Laravel 12/MySQL campus-booking baseline from PR #46. The [shared workspace](https://github.com/CampusPool/carpooling-workspace) is a development/reference checkout; individual feature work is submitted as focused PRs to the official repository. Academic reuse approval remains outstanding and is not implied by the merge.
 
 ## Package structure
 
@@ -18,7 +18,7 @@ Credentials, real account records, database dumps, dependency directories, local
 
 ## Verification
 
-Reproduction must start from the frozen local baseline, install its locked dependencies and use an isolated MySQL database with synthetic accounts. The package verifier checks source hashes, migration/startup behavior and the focused campus tests. Browser startup and provider configuration are documented separately; fixture-backed tests do not establish live routing-provider behavior.
+Reproduction must start from the frozen local baseline, install its locked dependencies and use an isolated MySQL database with synthetic accounts. The package verifier checks source hashes, migration/startup behavior, frontend checks, focused campus tests and the real HTTP/MySQL last-seat concurrency probe. Browser startup and provider configuration are documented separately; fixture-backed tests do not establish live routing-provider behavior.
 
 Each contributor PR must identify its baseline revision, linked official issues, changed files, verification commands and results. The existing workspace prototype's verification summary is in [the Sprint 1 report](SPRINT_PLAN.md#verification-results).
 
