@@ -45,22 +45,33 @@ check(array_column($results, 'trip_id') === [7, 8], 'deterministic candidate ord
 check($results[0]['segment_available_seats'] === 2, 'minimum seat availability along full route');
 check($results[0]['pickup_difference_seconds'] === 10, 'time score is absolute difference');
 check($results[0]['ride_duration_seconds'] === 120, 'duration is calculated from stop timestamps');
+check(array_key_exists('pickup_stop_id', $results[0])
+    && array_key_exists('dropoff_stop_id', $results[0])
+    && array_key_exists('pickup_epoch', $results[0])
+    && array_key_exists('dropoff_epoch', $results[0]),
+    'match result exposes explainable route endpoints and times');
+
+$intersecting = $query;
+$intersecting['origin_stop_id'] = 30;
+$intersecting['destination_stop_id'] = 40;
+check(array_column(RouteSegmentMatcher::rank($intersecting, $offers), 'trip_id') === [7, 8],
+    'intersecting ordered route segment is eligible');
+$nonIntersecting = $query;
+$nonIntersecting['origin_stop_id'] = 40;
+$nonIntersecting['destination_stop_id'] = 20;
+check(RouteSegmentMatcher::rank($nonIntersecting, $offers) === [],
+    'non-intersecting reverse route segment is excluded');
 
 $womenOnly = $query;
 $womenOnly['women_only_opt_in'] = true;
-$womenOffers = [
-    $host(21, [20, 30, 40], [1080, 1130, 1200], [3, 3]) + ['women_only_opt_in' => true],
-    $host(22, [20, 30, 40], [1080, 1130, 1200], [3, 3]),
-];
-check(array_column(RouteSegmentMatcher::rank($womenOnly, $womenOffers), 'trip_id') === [21], 'women-only search requires explicit offer opt-in');
-$womenOnly['women_only_opt_in'] = 'true';
-$thrown = false;
-try {
-    RouteSegmentMatcher::rank($womenOnly, $womenOffers);
-} catch (InvalidArgumentException $e) {
-    $thrown = true;
-}
-check($thrown, 'women-only query rejects non-boolean values');
+$womenOffers = $offers;
+$womenOffers[0]['women_only_opt_in'] = true;
+$womenOffers[1]['women_only_opt_in'] = false;
+check(array_column(RouteSegmentMatcher::rank($womenOnly, $womenOffers), 'trip_id') === [7],
+    'women-only matching requires explicit offer opt-in');
+$womenOffers[1]['women_only_opt_in'] = 'true';
+check(array_column(RouteSegmentMatcher::rank($womenOnly, $womenOffers), 'trip_id') === [7],
+    'invalid offer preference is fail-closed');
 
 $boundary = $query;
 $boundary['earliest_pickup_epoch'] = 1080;
