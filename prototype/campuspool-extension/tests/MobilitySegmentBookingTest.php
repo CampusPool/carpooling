@@ -273,7 +273,12 @@ final class MobilitySegmentBookingTest extends TestCase
             'service_date' => now('Asia/Kolkata')->addDays(2)->format('Y-m-d'),
             'pickup_point_id' => $pickup, 'dropoff_point_id' => $dropoff,
             'from_time' => '00:00', 'to_time' => '23:59', 'preferred_time' => '12:00', 'vehicle_type' => 'car',
-        ])->assertOk()->assertJsonCount(1, 'data');
+        ])->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.ranking.rank', 1)
+            ->assertJsonPath('data.0.ranking.strategy', 'pickup_time_difference_then_ride_duration_then_trip_id')
+            ->assertJsonPath('data.0.ranking.scope', 'deterministic_order_over_validated_candidates')
+            ->assertJsonPath('data.0.ranking.pickup_difference_seconds', fn ($value) => is_int($value))
+            ->assertJsonPath('data.0.ranking.ride_duration_seconds', fn ($value) => is_int($value));
 
         return [$response->json('data.0.match_id'), $rider];
     }
