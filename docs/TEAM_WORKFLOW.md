@@ -6,10 +6,10 @@
 
 | Contributor | Sprint 1 issues | Area | Suggested branch |
 | --- | --- | --- | --- |
-| Arjun | [#23](../issues/23), [#39](../issues/39), [#44](../issues/44) | Booking authorization/concurrency tests, CI, demo evidence | `s1/arjun-booking-release` |
-| Nikhil | [#22](../issues/22), [#43](../issues/43) | Ride matching, time-window search tests and Test Plan evidence | `s1/nikhil-matching` |
-| Zayaan | [#12](../issues/12), [#21](../issues/21) | Driver details, offer forms, map-unavailable fallback and frontend tests | `s1/zayaan-web-commute` |
-| Nithesh | [#24](../issues/24), [#37](../issues/37) | Cancellation, repeat-action idempotency and MySQL integrity | `s1/nithesh-integrity` |
+| Arjun | [#23](https://github.com/CampusPool/carpooling/issues/23), [#39](https://github.com/CampusPool/carpooling/issues/39), [#44](https://github.com/CampusPool/carpooling/issues/44) | Booking authorization/concurrency tests, CI, demo evidence | `s1/arjun-booking-release` |
+| Nikhil | [#22](https://github.com/CampusPool/carpooling/issues/22), [#43](https://github.com/CampusPool/carpooling/issues/43) | Ride matching, time-window search tests and Test Plan evidence | `s1/nikhil-matching` |
+| Zayaan | [#12](https://github.com/CampusPool/carpooling/issues/12), [#21](https://github.com/CampusPool/carpooling/issues/21) | Driver details, offer forms, map-unavailable fallback and frontend tests | `s1/zayaan-web-commute` |
+| Nithesh | [#24](https://github.com/CampusPool/carpooling/issues/24), [#37](https://github.com/CampusPool/carpooling/issues/37) | Cancellation, repeat-action idempotency and MySQL integrity | `s1/nithesh-integrity` |
 
 These are **assignments, not claims of completed individual work**. Check your issue for acceptance criteria. Coordinate edits to shared PHP services and migrations.
 
