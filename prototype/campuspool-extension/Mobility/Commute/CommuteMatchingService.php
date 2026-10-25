@@ -7,6 +7,7 @@ use STS\Mobility\Communications\PairBlockPolicy;
 use STS\Mobility\Journeys\JourneyPlanner;
 use STS\Mobility\Pickup\PathProvider;
 use STS\Mobility\Routing\RoutingException;
+use STS\Mobility\Pickup\PickupException;
 use STS\Mobility\Segments\SegmentException;
 use STS\Models\{User,Trip,Passenger};
 
@@ -80,7 +81,7 @@ final class CommuteMatchingService {
    $available=1-Passenger::where('trip_id',$m->trip_id)->where('request_state',1)->count();if($available<1)continue;
    $source=json_decode($m->journey,true,512,JSON_THROW_ON_ERROR);
    if($pickupChoice!=='both'&&$source['choice']!==$pickupChoice)continue;
-   try{$j=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$m->vehicle_type,$source['choice'],min((int)($p['max_walk_meters']??999),$source['max_walk_meters']),$source['max_detour_meters'],$source['max_detour_seconds']);}catch(RoutingException$e){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>$e->machineCode];continue;}
+   try{$j=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$m->vehicle_type,$source['choice'],min((int)($p['max_walk_meters']??999),$source['max_walk_meters']),$source['max_detour_meters'],$source['max_detour_seconds']);}catch(RoutingException|PickupException $e){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>$e->machineCode];continue;}
    if(!($j['available']??false)){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>$j['code']??'NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS'];continue;}
    $start=CarbonImmutable::parse($m->trip_date,'Asia/Kolkata');$pickup=$start->addSeconds($j['driver_path']['legs'][0]['duration_seconds']);
    if($pickup->lt($windowStart)||$pickup->gt($windowEnd)||$pickup->lte(now('Asia/Kolkata')->addMinutes(15))){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>'PICKUP_TIME_MISMATCH'];continue;}
