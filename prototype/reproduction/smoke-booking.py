@@ -24,7 +24,7 @@ date=(datetime.datetime.now(zoneinfo.ZoneInfo('Asia/Kolkata'))+datetime.timedelt
 print('DEMO_DATE',date)
 offer=api('/api/mobility/commute/offers','POST',{'direction':'outbound','date':date,'vehicle_type':'car','choice':'ON_ROUTE_MEETING_POINT','max_detour_meters':3000,'max_detour_seconds':600},driver['token'])
 print('OFFER_PUBLISHED',offer['data']['trip_id'])
-q=urllib.parse.urlencode({'direction':'outbound','date':date,'vehicle_type':'car','pickup_choice':'both'})
+q=urllib.parse.urlencode({'direction':'outbound','date':date,'vehicle_type':'car','pickup_choice':'both','start_time':'08:00','end_time':'09:00'})
 rides=api('/api/mobility/commute/rides?'+q,token=rider['token'])
 print('RIDE_COUNT',len(rides.get('data',[])))
 if not rides['data']:raise RuntimeError('no matching rides')
