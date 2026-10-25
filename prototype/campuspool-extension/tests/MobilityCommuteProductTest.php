@@ -81,7 +81,9 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($r)->getJson($base.'&direction=return&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
   $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=bike')->assertOk()->assertJsonCount(0,'data');
   $this->actingAsApiUser($r)->putJson('/api/mobility/commute/profile',array_replace($this->prefs(),['outbound_time'=>'15:30']))->assertOk();
-  $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
+  // An explicit search window takes precedence over the saved default departure time.
+  $this->actingAsApiUser($r)->getJson($base.'&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(1,'data');
+  $this->actingAsApiUser($r)->getJson($base.'&start_time=15:00&end_time=16:00&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
  }
  public function test_route_consent_is_bound_to_rider_profile_and_accepted_fare():void{
   $r=$this->demo('rider');$d=$this->demo('driver');$date=now('Asia/Kolkata')->addDay()->toDateString();
