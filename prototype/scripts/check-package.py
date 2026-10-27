@@ -25,7 +25,12 @@ for path in ROOT.rglob("*"):
 manifest = ROOT / "MANIFEST.sha256"
 lines = []
 for rel in sorted(paths, key=lambda item: item.as_posix()):
-    digest = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+    content = (ROOT / rel).read_bytes()
+    # Git checks out text files with platform-specific line endings. Hash a
+    # canonical LF representation so the manifest verifies on Windows and CI.
+    if b"\0" not in content:
+        content = content.replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(content).hexdigest()
     lines.append(f"{digest}  {rel.as_posix()}")
 expected = "\n".join(lines) + "\n"
 if "--write" in sys.argv:
@@ -35,3 +40,4 @@ else:
     if not manifest.is_file() or manifest.read_text() != expected:
         raise SystemExit("manifest mismatch: run scripts/check-package.py --write after intentional package changes")
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "verify"}))
+
