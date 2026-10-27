@@ -29,7 +29,7 @@ MySQL owns credentials/session references, vehicles, rides, bookings, capacity, 
 5. `EXPLAIN ANALYZE` for date, campus and departure-range search.
 6. MongoDB aggregation grouped by event type and day.
 
-The focused prototype evidence covers MySQL migrations and booking behavior. The assessed ERD, data dictionary, four advanced SQL demonstrations and MongoDB aggregation remain to be completed and reviewed.
+The focused prototype evidence covers MySQL migrations and booking behavior. The relational ERD/data dictionary are in [DBMS design](DBMS_DESIGN.md). The optional document contract, index setup and aggregation are in [MongoDB activity design](MONGODB_ACTIVITY.md). The separate advanced SQL demonstrations and final course evidence still require review.
 
 ## Course requirements
 

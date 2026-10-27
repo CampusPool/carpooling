@@ -24,7 +24,7 @@ for path in ROOT.rglob("*"):
     paths.append(rel)
 manifest = ROOT / "MANIFEST.sha256"
 lines = []
-for rel in sorted(paths):
+for rel in sorted(paths, key=lambda item: item.as_posix()):
     digest = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
     lines.append(f"{digest}  {rel.as_posix()}")
 expected = "\n".join(lines) + "\n"
