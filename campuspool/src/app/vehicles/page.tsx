@@ -1,0 +1,14 @@
+"use client";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/client";
+import { Empty, ErrorState, FormButton, Loading, useSubmit } from "@/components/ui";
+type Vehicle={id:number;kind:"CAR"|"BIKE";registration:string;model:string;passengerCapacity:number;status:string};
+export default function Vehicles(){
+ const [items,setItems]=useState<Vehicle[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const [form,setForm]=useState({kind:"CAR",registration:"",model:"",passengerCapacity:"1"});
+ const {submit,saving,error:saveError}=useSubmit("/api/vehicles");
+ const load=()=>{setLoading(true);void apiFetch<Vehicle[]>("/api/vehicles").then(setItems).catch((e:unknown)=>setError(e instanceof Error?e.message:"Unable to load vehicles.")).finally(()=>setLoading(false));};
+ useEffect(()=>{queueMicrotask(load)},[]);
+ async function add(e:React.FormEvent){e.preventDefault();try{await submit({...form,passengerCapacity:Number(form.passengerCapacity)});setForm({...form,registration:"",model:""});load()}catch{} }
+ return <><div className="section-head"><div><div className="eyebrow">VEHICLES</div><h1 className="page-title">Your vehicles</h1><p className="lede">Only approved vehicles can publish rides. Registration numbers are masked to other members.</p></div></div><div className="split"><section>{loading?<Loading/>:error?<ErrorState message={error}/>:items.length===0?<Empty>No vehicles registered yet.</Empty>:<div className="list">{items.map(v=><div className="list-row" key={v.id}><div><strong>{v.model}</strong><div className="muted">{v.kind} · {v.registration.replace(/^(.{2}).*(.{2})$/,"$1••••$2")} · {v.passengerCapacity} seats</div></div><span className={`status ${v.status}`}>{v.status}</span></div>)}</div>}</section><form className="card" onSubmit={add}><h2>Add a vehicle</h2>{saveError&&<p className="form-error" role="alert">{saveError}</p>}<div className="field"><label htmlFor="kind">Type</label><select id="kind" value={form.kind} onChange={e=>setForm({...form,kind:e.target.value})}><option>CAR</option><option>BIKE</option></select></div><div className="field"><label htmlFor="model">Make and model</label><input id="model" required value={form.model} onChange={e=>setForm({...form,model:e.target.value})}/></div><div className="field"><label htmlFor="registration">Registration number</label><input id="registration" required value={form.registration} onChange={e=>setForm({...form,registration:e.target.value.toUpperCase()})}/></div><div className="field"><label htmlFor="capacity">Passenger capacity</label><input id="capacity" type="number" min="1" max={form.kind==="BIKE"?1:5} required value={form.passengerCapacity} onChange={e=>setForm({...form,passengerCapacity:e.target.value})}/></div><FormButton disabled={saving}>Submit for approval</FormButton></form></div></>;
+}
