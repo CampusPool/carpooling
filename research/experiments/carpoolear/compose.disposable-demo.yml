@@ -1,0 +1,21 @@
+# Disposable local browser bridge. Never use with pilot data or live secrets.
+services:
+  app:
+    environment:
+      APP_DEBUG: "false"
+  gateway:
+    image: nginx:stable-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
+    depends_on: [app]
+    volumes:
+      - ./pilot-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1::8080"
+    networks: [appnet, demobridge]
+
+volumes:
+  carpoolear-smoke-db:
+    name: mobility-carpoolear-disposable-demo-${MOBILITY_DEMO_INSTANCE:?Set MOBILITY_DEMO_INSTANCE}
+
+networks:
+  demobridge:
+    driver: bridge

@@ -1,0 +1,3 @@
+# A unified patch needs a space prefix on blank context lines.
+# Validate the patch's actual edits separately with git apply --whitespace=error.
+*.patch whitespace=-blank-at-eol

@@ -1,0 +1,27 @@
+# Local evaluation only. Never bind 0.0.0.0 or use with actual payment secrets.
+services:
+  migrate:
+    # Persistent pilot restarts apply migrations without adding another batch
+    # of TestingSeeder accounts. Explicit seed helper owns synthetic fixtures.
+    command: php artisan migrate --force
+  app:
+    environment:
+      MOBILITY_PILOT_UI_ENABLED: "true"
+      MOBILITY_COHORT_REQUIRED: "true"
+      MOBILITY_COLLEGE_CODE: "SYNTHETIC-LOCAL"
+  gateway:
+    image: nginx:stable-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
+    depends_on: [app]
+    volumes:
+      - ./pilot-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+    networks: [appnet, pilotbridge]
+
+volumes:
+  carpoolear-smoke-db:
+    name: mobility-carpool-pilot-db
+
+networks:
+  pilotbridge:
+    driver: bridge

@@ -1,0 +1,29 @@
+# Opt-in synthetic fixture. No road data, real pricing or external provider.
+services:
+  routing-fixture:
+    build:
+      context: .
+      dockerfile: Dockerfile.smoke
+    environment:
+      APP_ENV: testing
+      MOBILITY_SYNTHETIC_ROUTING_FIXTURE: "true"
+    command: php -S 0.0.0.0:8081 /opt/routing-fixture.php
+    volumes:
+      - ./routing-fixture.php:/opt/routing-fixture.php:ro
+    networks: [appnet]
+  app:
+    depends_on:
+      routing-fixture:
+        condition: service_started
+    environment:
+      MOBILITY_ROUTING_PROVIDER: osrm
+      MOBILITY_ROUTING_CAR_BASE_URL: http://routing-fixture:8081
+      MOBILITY_ROUTING_BIKE_BASE_URL: http://routing-fixture:8081
+      MOBILITY_ROUTING_CAR_PROFILE: synthetic-car
+      MOBILITY_ROUTING_BIKE_PROFILE: synthetic-motorbike
+      MOBILITY_ROUTING_CAR_EXPECTED_DATA_VERSION: car|crop_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|profile_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      MOBILITY_ROUTING_BIKE_EXPECTED_DATA_VERSION: bike|crop_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|profile_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      MOBILITY_ROUTING_PRICING_VERSION: synthetic-v1
+      MOBILITY_ROUTING_CAR_MINOR_PER_KM: "200"
+      MOBILITY_ROUTING_BIKE_MINOR_PER_KM: "100"
+      MOBILITY_ROUTING_SYNTHETIC_ONLY: "true"

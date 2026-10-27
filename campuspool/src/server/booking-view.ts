@@ -1,8 +1,0 @@
-import type {Pool,PoolConnection} from 'mysql2/promise';
-import {HttpError} from './core';
-import {rows} from './db';
-import {publicRide,RIDE_SELECT,utcDate} from './quote';
-import type {BookingRow,RideRow} from './types';
-export interface BookingViewRow extends BookingRow {driver_id:number;rider_name:string;host_name:string;credit_price:number;departure_at:string;ride_status:string}
-export const BOOKING_SELECT="SELECT b.*,r.driver_id,r.credit_price,r.departure_at,r.status AS ride_status,u.name AS rider_name,h.name AS host_name FROM bookings b JOIN rides r ON r.id=b.ride_id JOIN users u ON u.id=b.rider_id JOIN users h ON h.id=r.driver_id";
-export async function bookingDto(cx:Pool|PoolConnection,bookingId:number,viewer:number){const b=(await rows<BookingViewRow>(cx,BOOKING_SELECT+' WHERE b.id=?',[bookingId]))[0];if(!b)throw new HttpError(404,'BOOKING_NOT_FOUND');if(viewer!==b.rider_id&&viewer!==b.driver_id)throw new HttpError(403,'PARTICIPANT_REQUIRED');const ride=(await rows<RideRow>(cx,RIDE_SELECT+' WHERE r.id=?',[b.ride_id]))[0];const future=utcDate(b.departure_at).getTime()>Date.now();const actions:string[]=[];if(future&&b.ride_status==='PUBLISHED'){if(b.status==='REQUESTED'&&viewer===b.driver_id)actions.push('ACCEPT','REJECT');if(['REQUESTED','ACCEPTED'].includes(b.status))actions.push('CANCEL');}return {id:b.id,rideId:b.ride_id,riderId:b.rider_id,status:b.status,host:{id:b.driver_id,name:b.host_name},rider:{id:b.rider_id,name:b.rider_name},ride:publicRide(ride),credits:b.credit_price,cancelledBy:b.cancelled_by,cancellationReason:b.cancellation_reason,createdAt:utcDate(b.created_at).toISOString(),updatedAt:utcDate(b.updated_at).toISOString(),actions};}

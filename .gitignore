@@ -1,0 +1,27 @@
+# Local tool installations and raw analysis inputs
+node_modules/
+reference/*
+!reference/README.md
+research/vendor/
+analysis/raw/
+.local/
+.env
+.env.*
+!.env.example
+*.apk
+*.apks
+*.xapk
+*.ipa
+*.har
+*.pcap
+*.pcapng
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+.DS_Store
+.jarvis/artifacts/**/raw/
+
+.jarvis/artifacts/demo-2026-10-21/*.log
+
+.jarvis/artifacts/demo-2026-10-22/*.log

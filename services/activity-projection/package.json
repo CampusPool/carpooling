@@ -1,0 +1,20 @@
+{
+  "name": "mobility-activity-projection",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:disposable": "sh test/disposable.integration.sh",
+    "test:teacher-demo": "sh test/teacher-demo.integration.sh",
+    "sync": "node src/cli.mjs sync",
+    "daily": "node src/cli.mjs daily"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "mongodb": "6.20.0",
+    "mysql2": "3.24.6"
+  }
+}
