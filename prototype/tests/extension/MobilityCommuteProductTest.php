@@ -118,6 +118,11 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[0].'/accept',[],['Idempotency-Key'=>'accept-first'])->assertOk();
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[1].'/accept',[],['Idempotency-Key'=>'accept-second'])->assertStatus(422)->assertJsonPath('error.code','NOT_SEAT_AVAILABLE');
   $this->assertDatabaseHas('trip_passengers',['id'=>$ids[1],'request_state'=>0]);
+  $this->actingAsApiUser($r)->postJson('/api/mobility/commute/bookings/'.$ids[0].'/cancel',[],['Idempotency-Key'=>'cancel-single-seat'])->assertOk()->assertJsonPath('data.request_state',3);
+  $this->assertDatabaseHas('trip_passengers',['id'=>$ids[0],'request_state'=>3]);
+  $this->assertSame(0,DB::table('trip_passengers')->where('trip_id',$card['trip_id'])->where('request_state',1)->count());
+  $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$ids[1].'/accept',[],['Idempotency-Key'=>'accept-after-release'])->assertOk();
+  $this->assertSame(1,DB::table('trip_passengers')->where('trip_id',$card['trip_id'])->where('request_state',1)->count());
   $this->actingAsApiUser($other)->getJson('/api/mobility/commute/rides?date='.$date.'&start_time=08:00&end_time=09:00&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(0,'data');
  }
 

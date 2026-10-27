@@ -24,14 +24,27 @@ for path in ROOT.rglob("*"):
     paths.append(rel)
 manifest = ROOT / "MANIFEST.sha256"
 lines = []
-for rel in sorted(paths):
-    digest = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+for rel in sorted(paths, key=lambda item: item.as_posix()):
+    content = (ROOT / rel).read_bytes()
+    # Git checks out text files with platform-specific line endings. Hash a
+    # canonical LF representation so the manifest verifies on Windows and CI.
+    if b"\0" not in content:
+        content = content.replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(content).hexdigest()
     lines.append(f"{digest}  {rel.as_posix()}")
 expected = "\n".join(lines) + "\n"
 if "--write" in sys.argv:
     manifest.write_text(expected)
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "write"}))
 else:
-    if not manifest.is_file() or manifest.read_text() != expected:
+    actual = manifest.read_text().replace("\r\n", "\n") if manifest.is_file() else ""
+    if actual != expected:
+        wanted_lines = expected.splitlines()
+        actual_lines = actual.splitlines()
+        mismatch = next((i for i, pair in enumerate(zip(wanted_lines, actual_lines)) if pair[0] != pair[1]), min(len(wanted_lines), len(actual_lines)))
+        wanted = wanted_lines[mismatch] if mismatch < len(wanted_lines) else "<end>"
+        found = actual_lines[mismatch] if mismatch < len(actual_lines) else "<end>"
+        raise SystemExit(f"manifest mismatch at line {mismatch + 1}: expected {wanted}; found {found}")
         raise SystemExit("manifest mismatch: run scripts/check-package.py --write after intentional package changes")
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "verify"}))
+

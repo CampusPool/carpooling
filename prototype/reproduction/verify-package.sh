@@ -45,6 +45,9 @@ if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
   docker compose -f reproduction/compose.yml exec -T -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test --compact tests/Unit/Services/Logic/TripLiveShareManagerTest.php
   docker compose -f reproduction/compose.yml exec -T mysql mysql -uroot -psmoke-root-password -e 'CREATE DATABASE IF NOT EXISTS testing'
   docker compose -f reproduction/compose.yml exec -T -e DB_DATABASE=testing -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test --compact tests/extension/MobilityCommuteProductTest.php
+  docker compose -f reproduction/compose.yml exec -T -e DB_DATABASE=testing -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test --compact tests/extension/MobilityCommuteIntegrityTest.php
+  docker compose -f reproduction/compose.yml exec -T -e DB_DATABASE=testing -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan migrate:rollback --step=1 --force
+  docker compose -f reproduction/compose.yml exec -T -e DB_DATABASE=testing -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan migrate --force
 else
   printf '%s\n' 'Docker Compose unavailable; required runtime verification was not executed.' >&2
   exit 2
