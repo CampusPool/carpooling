@@ -37,7 +37,7 @@ if "--write" in sys.argv:
     manifest.write_text(expected)
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "write"}))
 else:
-    if not manifest.is_file() or manifest.read_text().replace("`r`n", "`n") != expected:
+    if not manifest.is_file() or manifest.read_text().replace("\r\n", "\n") != expected:
         raise SystemExit("manifest mismatch: run scripts/check-package.py --write after intentional package changes")
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "verify"}))
 
