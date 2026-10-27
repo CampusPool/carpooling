@@ -37,7 +37,14 @@ if "--write" in sys.argv:
     manifest.write_text(expected)
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "write"}))
 else:
-    if not manifest.is_file() or manifest.read_text().replace("\r\n", "\n") != expected:
+    actual = manifest.read_text().replace("\r\n", "\n") if manifest.is_file() else ""
+    if actual != expected:
+        wanted_lines = expected.splitlines()
+        actual_lines = actual.splitlines()
+        mismatch = next((i for i, pair in enumerate(zip(wanted_lines, actual_lines)) if pair[0] != pair[1]), min(len(wanted_lines), len(actual_lines)))
+        wanted = wanted_lines[mismatch] if mismatch < len(wanted_lines) else "<end>"
+        found = actual_lines[mismatch] if mismatch < len(actual_lines) else "<end>"
+        raise SystemExit(f"manifest mismatch at line {mismatch + 1}: expected {wanted}; found {found}")
         raise SystemExit("manifest mismatch: run scripts/check-package.py --write after intentional package changes")
     print(json.dumps({"files": len(lines), "manifest": str(manifest), "mode": "verify"}))
 
