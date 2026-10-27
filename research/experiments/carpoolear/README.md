@@ -1,0 +1,55 @@
+# Carpoolear smoke harness
+
+Tracked evaluation harness for source `6ba3d8913a8f77e664e848a526f196690a03c1e8`. Vendor sources, generated `.env` and `raw/` logs are ignored. All credentials are synthetic; the database is disposable. This is not the selected product backend.
+
+From the project root on a machine with the documented Colima/Docker prerequisites:
+
+```sh
+mkdir -p research/vendor
+git clone https://github.com/STS-Rosario/carpoolear_backend.git research/vendor/carpoolear_backend
+git -C research/vendor/carpoolear_backend checkout --detach 6ba3d8913a8f77e664e848a526f196690a03c1e8
+colima start --profile mobility
+sh research/experiments/carpoolear/run-smoke.sh
+```
+
+For an existing checkout, verify its revision before running; do not overwrite unrelated changes. The helper defaults to Docker context `colima-mobility` (override with `MOBILITY_DOCKER_CONTEXT`), generates an ignored synthetic `.env` when absent, and rejects non-testing or non-synthetic provider/routing values without printing them. It mounts the env read-only at `/var/www/.env`. It installs locked Composer dependencies and uses the tracked JPEG-capable Dockerfile in this experiment directory. Build prerequisites and Composer download require outbound network access; app, migrations and MySQL use a separate internal network. The isolated harness publishes no host ports. Health is checked inside the app container over HTTP and includes database status. The earlier baseline used a loopback host port; that configuration predates enforced isolation.
+
+The helper waits for health with bounded requests, runs the full suite and returns its exit status. A trap removes this experiment's containers/network/volume on success, failure or an ordinary interrupt. Force-killing the process or shutting down Docker can bypass traps; manual cleanup from this directory is:
+
+```sh
+docker --context colima-mobility compose --project-name mobility-carpoolear-smoke -f compose.smoke.yml --env-file .env down -v --remove-orphans
+```
+
+PHP, Composer and MySQL image references are digest-pinned from the working local baseline. Composer dependencies follow the upstream lockfile. Debian package installation still depends on the configured package repository, so this is not a byte-identical hermetic build. Refresh image/package security deliberately and rerun verification. Historical results are not a substitute for dated current evidence from the focused integrated suite.
+
+
+## Actual HTTP workflow and invariant probe
+
+```sh
+sh research/experiments/carpoolear/run-smoke.sh journey
+```
+
+Run from the project root. This overlay configures four PHP development-server workers (`--no-reload`), raises the synthetic test actor's trip-creation limit to100, and explicitly enables the supplied route cache. A generated synthetic catalog row and cached routing/pricing response avoid external providers. Registration, activation, login, vehicle creation, discovery, requests, accepts and cancels go through real HTTP and MySQL. Activation tokens are read from synthetic local accounts; email delivery is not tested. No service mock replaces booking logic.
+
+The probe tests registration trust flags, cancellation authority, twelve competing last-seat accepts and eight duplicate-request races. Report: ignored `raw/journey-latest.json`. A failed invariant returns exit1 while teardown still runs; this is evaluation evidence, not a green backend. The pristine pinned source is expected to fail the reproduced checks. Passing sampled races would not establish universal concurrency safety. Full trip completion, recurrence instances, segment capacity, provider money and operator accounting require separate implementation/verification.
+
+It also runs six automatic-acceptance races: one guest must become accepted and the other must remain pending, with both durable request results returned successfully. Duplicate checks count pending, accepted and waiting-payment rows.
+
+## Candidate hardening, kept separate from pristine source
+
+After the initial clone and dependency setup, prepare this evaluation checkout once from the project root:
+
+```sh
+git -C research/vendor/carpoolear_backend worktree add --detach ../carpoolear_hardened 6ba3d8913a8f77e664e848a526f196690a03c1e8
+git -C research/vendor/carpoolear_hardened apply --check "$PWD/research/experiments/carpoolear/patches/critical-invariants.patch"
+git -C research/vendor/carpoolear_hardened apply "$PWD/research/experiments/carpoolear/patches/critical-invariants.patch"
+sh research/experiments/carpoolear/run-smoke.sh hardened
+```
+
+An existing hardened checkout must be inspected instead of overwritten. The helper verifies the pinned base and that the patch can be reversed, records its SHA256, runs the same HTTP probe against the patched worktree, then runs focused authentication, social-authentication, passenger/repository and new invariant regressions. Composer dependencies are shared read-only from the pristine checkout; no second dependency installation is needed. Both runs use synthetic data and remove the disposable database afterward.
+
+Earlier local candidate results are historical evaluation context only; rerun the disposable suite before relying on them. The optional `WAITING_PAYMENT -> pay` path is outside the fix. No complete backend adoption, provider money flow or public readiness is claimed.
+
+Upstream: [STS-Rosario/carpoolear_backend](https://github.com/STS-Rosario/carpoolear_backend/tree/6ba3d8913a8f77e664e848a526f196690a03c1e8), whose pinned `LICENSE` is GNU GPL version3. Preserve upstream attribution and assess release obligations before adoption/distribution. A private development repository does not assign a new license to upstream code.
+
+Lifecycle/financial tests explicitly select the upstream PHPUnit array cache/mail/session stores. The HTTP server keeps its file cache for cross-worker behavior. This prevents container application environment from overriding the non-forced PHPUnit defaults and retaining test rate-limit state across repeated runs. A repeated pre-fix run failed ApiAuthTest::test_reset_password; inherited file-cache interference is the suspected cause. It is retained in ignored raw/financial-final-run.log rather than reported as a clean run.

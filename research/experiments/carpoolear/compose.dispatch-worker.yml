@@ -1,0 +1,50 @@
+# Explicit local profile; one authoritative database and no published worker ports.
+services:
+  dispatch-worker:
+    profiles: [dispatch]
+    image: mobility-carpoolear-smoke-app:latest
+    working_dir: /var/www
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    read_only: true
+    cpus: 1.0
+    mem_limit: 256m
+    pids_limit: 64
+    env_file: .env
+    environment:
+      APP_TIMEZONE: Asia/Kolkata
+      MOBILITY_EXTENSION_ROOT: /opt/mobility-extension
+      MOBILITY_COHORT_REQUIRED: "true"
+      MOBILITY_COLLEGE_CODE: "SYNTHETIC-LOCAL"
+      MOBILITY_ROUTING_SYNTHETIC_ONLY: "true"
+      MOBILITY_DISPATCH_HEARTBEAT_PATH: /tmp/mobility-dispatch-worker.json
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      LOG_CHANNEL: stderr
+    command:
+      - sh
+      - -c
+      - mkdir -p /var/www/storage/framework/views /var/www/storage/framework/sessions /var/www/storage/framework/cache/data /var/www/storage/logs /var/www/storage/suburbs /var/www/storage/geojson /var/www/storage/app/public /var/www/storage/app/private /var/www/storage/terms /var/www/storage/cc /var/www/storage/banks /var/www/storage/framework/testing && exec php artisan mobility:dispatch-work --watch --sleep=2 --limit=20
+    volumes:
+      - ../../vendor/carpoolear_hardened:/var/www:ro
+      - ../../vendor/carpoolear_backend/vendor:/var/www/vendor:ro
+      - ./.env:/var/www/.env:ro
+      - ../../../backend/extensions/carpoolear:/opt/mobility-extension:ro
+      - ../../../backend/extensions/carpoolear/Mobility:/var/www/app/Mobility:ro
+      - ../../../backend/integrations/carpoolear/MobilityIntegration:/var/www/app/MobilityIntegration:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/www/storage:size=16m,mode=1777
+      - /var/www/bootstrap/cache:size=16m,mode=1777
+    healthcheck:
+      test: [CMD, php, artisan, "mobility:dispatch-work", "--health"]
+      interval: 5s
+      timeout: 4s
+      start_period: 5s
+      retries: 3
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [appnet]
