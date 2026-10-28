@@ -3,6 +3,7 @@
 namespace Tests\Feature\Mobility;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use STS\Mobility\Payments\PaymentException;
 use STS\Mobility\Routing\RouteProvider;
@@ -136,6 +137,44 @@ final class MobilitySegmentBookingTest extends TestCase
         }
         $this->assertTrue($blocked, 'A managed booking requires the server interval context.');
         $this->assertSame($before, DB::table('trip_passengers')->where('trip_id', $trip)->count());
+    }
+
+    public function test_database_rejects_cross_trip_booking_interval_and_match_reference_links(): void
+    {
+        [$host, $car] = $this->host();
+        $trip = $this->publish($host, $car);
+        [$match, $rider] = $this->requestFor(101, 102, 'same-trip-integrity');
+        $this->accept($host, $trip, $rider);
+        $reference = DB::table('mobility_match_references')->where('id', $match)->firstOrFail();
+        $booking = DB::table('mobility_booking_intervals')->where('match_reference_id', $match)->firstOrFail();
+        $this->assertSame($trip, (int) $reference->trip_id);
+        $this->assertSame($trip, (int) $booking->trip_id);
+        $this->assertSame((int) $reference->booking_id, (int) $booking->booking_id);
+
+        // A second valid trip makes it possible to attempt a plausible but
+        // inconsistent write, the exact state that the former independent
+        // foreign keys allowed.
+        [$otherHost, $otherCar] = $this->host();
+        $otherTrip = $this->publish($otherHost, $otherCar, 1);
+        $this->assertNotSame($trip, $otherTrip);
+
+        try {
+            DB::table('mobility_booking_intervals')->where('booking_id', $booking->booking_id)->update(['trip_id' => $otherTrip]);
+            $this->fail('A booking interval must use its booking row trip id.');
+        } catch (QueryException $error) {
+            $this->assertSame('23000', $error->getCode());
+        }
+        $this->assertSame($trip, (int) DB::table('mobility_booking_intervals')->where('booking_id', $booking->booking_id)->value('trip_id'));
+
+        try {
+            DB::table('mobility_match_references')->where('id', $match)->update(['trip_id' => $otherTrip]);
+            $this->fail('A referenced match must remain bound to the booking interval trip.');
+        } catch (QueryException $error) {
+            $this->assertSame('23000', $error->getCode());
+        }
+        $this->assertSame($trip, (int) DB::table('mobility_match_references')->where('id', $match)->value('trip_id'));
+        $this->assertDatabaseHas('mobility_booking_intervals', ['booking_id' => $booking->booking_id, 'trip_id' => $trip, 'match_reference_id' => $match]);
+        $this->assertDatabaseHas('mobility_match_references', ['id' => $match, 'trip_id' => $trip, 'booking_id' => $booking->booking_id]);
     }
 
     public function test_corrupt_interval_is_conservatively_counted_as_full_route_and_pay_cannot_promote(): void
