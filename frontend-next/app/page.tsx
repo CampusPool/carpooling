@@ -1,4 +1,6 @@
 "use client";
+
+import "./offer-management.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
@@ -32,6 +34,8 @@ const pickupWindow = (ride: R) => {
   if (earliest && latest) return `${earliest} – ${latest}`;
   return instant(ride.departure_at);
 };
+const pickupChoiceLabel = (choice: string) =>
+  choice === "ON_ROUTE_MEETING_POINT" ? "Meet along my route" : "Direct pickup";
 async function request(
   path: string,
   token: string,
@@ -88,6 +92,7 @@ export default function Page() {
     [notificationUnread, setNotificationUnread] = useState(0),
     [notificationsUnavailable, setNotificationsUnavailable] = useState(false),
     [offers, setOffers] = useState<R[]>([]),
+    [offersBusy, setOffersBusy] = useState(false),
     [wallet, setWallet] = useState<R>(),
     [bookingsUnavailable, setBookingsUnavailable] = useState(false),
     [walletUnavailable, setWalletUnavailable] = useState(false),
@@ -172,6 +177,8 @@ export default function Page() {
     setNotificationUnread(0);
     setNotificationsUnavailable(false);
     setOffers([]);
+    setOffersBusy(false);
+    setOffersUnavailable(false);
     setWallet(undefined);
     setOrigin(undefined);
     setDestination(undefined);
@@ -699,6 +706,7 @@ export default function Page() {
         await request("commute/offers", token, "POST", publishBody, key);
         intentKeys.current.delete(intent);
         await sync(token);
+        setNotice("Ride published. One rider seat is available for this trip.");
         setView("bookings");
         return;
       }
@@ -715,6 +723,19 @@ export default function Page() {
       if (e?.status !== 401) setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+  async function refreshOffers() {
+    if (!token || role !== "driver" || offersBusy) return;
+    setOffersBusy(true);
+    setOffersUnavailable(false);
+    try {
+      const response = await request("commute/offers", token);
+      setOffers(list(response));
+    } catch {
+      setOffersUnavailable(true);
+    } finally {
+      setOffersBusy(false);
     }
   }
   async function mutate(path: string, body: R = {}) {
@@ -1491,21 +1512,32 @@ export default function Page() {
                   )}
                 </div>
               )}
-              {role === "driver" && offersUnavailable && (
-                <p className="error banner">Published rides are temporarily unavailable.</p>
-              )}
-              {role === "driver" && offers.length > 0 && (
+              {role === "driver" && (
+                <section className="offer-management" aria-labelledby="published-rides-heading">
+                  <div className="section-head">
+                    <h3 id="published-rides-heading">Your published rides</h3>
+                    <button type="button" disabled={offersBusy} onClick={refreshOffers}>
+                      {offersBusy ? "Refreshing…" : "Refresh rides"}
+                    </button>
+                  </div>
+                  <p className="fine">Each published ride offers one rider seat. A rider request must be accepted before the seat is reserved.</p>
+                  {offersUnavailable && <p className="error banner" role="alert">Published rides could not be refreshed. Your current list is kept.</p>}
+                  {offers.length === 0 && !offersUnavailable ? <div className="empty">No upcoming rides published. Use the route form to publish a commute.</div> : null}
+                  {offers.length > 0 && (
                 <div className="cards">
                   {offers.map((offer, i) => (
                     <article className="booking" key={offer.trip_id || i}>
                       <div>
                         <b>{offer.pickup_label} → {offer.dropoff_label}</b>
                         {instant(offer.departure_at) && <span>Departure · {instant(offer.departure_at)} IST</span>}
-                        <span>Published · {offer.vehicle_type} · {offer.choice} · {offer.seats_available} seat(s) available</span>
+                        <span>Published · {offer.vehicle_type} · {pickupChoiceLabel(offer.choice)} · {Number(offer.seats_available) > 0 ? "1 rider seat available" : "No rider seats available"}</span>
+                        {offer.max_detour_meters != null && <span>Detour limit · {(Number(offer.max_detour_meters) / 1000).toFixed(1)} km · {Math.round(Number(offer.max_detour_seconds || 0) / 60)} min</span>}
                       </div>
                     </article>
                   ))}
                 </div>
+                  )}
+                </section>
               )}
               {bookingsUnavailable && (
                 <p className="error banner">Bookings are temporarily unavailable; existing data is preserved.</p>
