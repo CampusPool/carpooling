@@ -7,9 +7,9 @@ This file is the MobilityPlatform contribution for CampusPool issue #23. It maps
 | Requirement | Evidence in this baseline | Status |
 | --- | --- | --- |
 | A rider requests a published ride using current terms | `backend/extensions/carpoolear/tests/MobilityCommuteProductTest.php`, `test_visible_demo_request_accept_wallet_trip_and_delayed_release_use_canonical_rows`; `docs/course-20261027/evidence/browser-journey-20261028.md` | Tested and observed once in an isolated synthetic browser run |
-| A rider cannot request their own offer | `backend/extensions/carpoolear/tests/MobilityCommuteProductTest.php`, `test_rider_cannot_publish` plus the commute request authorization checks in the same suite | Covered by the current commute HTTP suite; run the targeted test on the migration checkout |
+| A rider cannot request their own offer | The commute suite checks use of another user’s quote; this is not a direct self-booking regression | Direct self-booking behavior is not verified by this PR; a dedicated runtime test remains needed |
 | Duplicate requests are idempotent and do not create another booking | `MobilityCommuteProductTest.php` repeats the same request with the same idempotency key and checks one notification/booking | Tested for same-key replay; a different-key duplicate policy needs explicit confirmation before claiming broader coverage |
-| The host accepts or rejects and the rider sees the resulting state | `MobilityCommuteProductTest.php` covers accept, notification and reject responses; the 28 October browser evidence records request → acceptance | Tested and observed; continuous recording is still pending |
+| The host accepts or rejects and the rider sees the resulting state | `MobilityCommuteProductTest.php` covers accept, notification and reject responses; the 28 October browser evidence records request → acceptance | Tested and observed in the earlier synthetic run; the separate Sprint 1 recording does not establish this complete sequence |
 | Last-seat acceptance is atomic | `backend/extensions/carpoolear/tests/MobilityPrivateScheduledIntervalsTest.php` and the commute/dispatch concurrency suites cover seat and interval guards | Automated coverage exists, but this handoff does not claim a fresh race run on the public migration checkout |
 
 ## Reproduction
