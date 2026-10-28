@@ -112,6 +112,12 @@ try {
     $host = registerActor('host', $run);
     $guest = registerActor('guest', $run);
     $other = registerActor('other', $run);
+    $registeredHost = User::findOrFail($host['id']);
+    verify('new registration has ordinary untrusted role defaults',
+        !$registeredHost->is_admin && !$registeredHost->identity_validated && !$registeredHost->driver_is_verified,
+        ['is_admin' => (bool) $registeredHost->is_admin,
+            'identity_validated' => (bool) $registeredHost->identity_validated,
+            'driver_is_verified' => (bool) $registeredHost->driver_is_verified]);
     $claimEmail = 'journey-claim-'.$run.'@example.test';
     step('registration with untrusted verification fields', httpCall('POST','users',[
         'name'=>'Synthetic untrusted claim','email'=>$claimEmail,
@@ -153,6 +159,13 @@ try {
     if (!$tripId) throw new RuntimeException('Missing created trip identifier');
     $search = step('guest discovers offers', httpCall('GET', 'trips?page_size=100', [], $guest['token']));
     verify('created trip discoverable', in_array($tripId, array_column($search['data'] ?? [], 'id')));
+    $selfRequest = httpCall('POST', "trips/$tripId/requests", [], $host['token']);
+    $selfBookingExists = Passenger::where('trip_id', $tripId)->where('user_id', $host['id'])
+        ->whereIn('request_state', [Passenger::STATE_PENDING, Passenger::STATE_ACCEPTED, Passenger::STATE_WAITING_PAYMENT])->exists();
+    verify('trip owner cannot request their own seat', $selfRequest['status'] >= 400 && !$selfBookingExists
+        && (int) Trip::findOrFail($tripId)->seats_available === 1,
+        ['status' => $selfRequest['status'], 'self_booking_exists' => $selfBookingExists,
+            'seats_available' => (int) Trip::findOrFail($tripId)->seats_available]);
     step('guest requests seat', httpCall('POST', "trips/$tripId/requests", [], $guest['token']));
     $duplicate = httpCall('POST', "trips/$tripId/requests", [], $guest['token']);
     verify('duplicate active request rejected', $duplicate['status'] === 422, ['status' => $duplicate['status']]);

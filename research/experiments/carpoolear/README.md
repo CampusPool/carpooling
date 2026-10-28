@@ -14,11 +14,7 @@ sh research/experiments/carpoolear/run-smoke.sh
 
 For an existing checkout, verify its revision before running; do not overwrite unrelated changes. The helper defaults to Docker context `colima-mobility` (override with `MOBILITY_DOCKER_CONTEXT`), generates an ignored synthetic `.env` when absent, and rejects non-testing or non-synthetic provider/routing values without printing them. It mounts the env read-only at `/var/www/.env`. It installs locked Composer dependencies and uses the tracked JPEG-capable Dockerfile in this experiment directory. Build prerequisites and Composer download require outbound network access; app, migrations and MySQL use a separate internal network. The isolated harness publishes no host ports. Health is checked inside the app container over HTTP and includes database status. The earlier baseline used a loopback host port; that configuration predates enforced isolation.
 
-The helper waits for health with bounded requests, runs the full suite and returns its exit status. A trap removes this experiment's containers/network/volume on success, failure or an ordinary interrupt. Force-killing the process or shutting down Docker can bypass traps; manual cleanup from this directory is:
-
-```sh
-docker --context colima-mobility compose --project-name mobility-carpoolear-smoke -f compose.smoke.yml --env-file .env down -v --remove-orphans
-```
+Every invocation gets a unique Docker project and disposable database volume and refuses to reuse an existing volume. The volume name is exported as `MOBILITY_SMOKE_DB_VOLUME`; never change it to point at a persistent service database. A trap removes this experiment's containers, network and volume on success, failure or an ordinary interrupt. Force-killing the process or shutting down Docker can bypass traps; inspect the run-specific project and volume before manual cleanup. The helper waits for health with bounded requests, runs the full suite and returns its exit status.
 
 PHP, Composer and MySQL image references are digest-pinned from the working local baseline. Composer dependencies follow the upstream lockfile. Debian package installation still depends on the configured package repository, so this is not a byte-identical hermetic build. Refresh image/package security deliberately and rerun verification. Historical results are not a substitute for dated current evidence from the focused integrated suite.
 

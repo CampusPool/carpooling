@@ -14,7 +14,14 @@ if [ "$(git -C ../../vendor/carpoolear_backend rev-parse HEAD)" != "$expected_re
   printf '%s\n' 'Vendor revision differs from the pinned experiment; see README.md.' >&2
   exit 2
 fi
-project=mobility-carpoolear-smoke
+instance=$(date +%s)-$$
+project="mobility-carpoolear-smoke-$instance"
+export MOBILITY_SMOKE_DB_VOLUME="${project}-db"
+context=${MOBILITY_DOCKER_CONTEXT:-colima-mobility}
+if docker --context "$context" volume inspect "$MOBILITY_SMOKE_DB_VOLUME" >/dev/null 2>&1; then
+  printf '%s\n' 'Refusing to reuse an existing database volume.' >&2
+  exit 2
+fi
 # Compose's application env otherwise overrides phpunit.xml's non-forced
 # cache/mail/session defaults and persists rate-limit state across test runs.
 compose() {
@@ -52,7 +59,7 @@ cleanup() {
   mobility_smoke_status=$?
   if [ "$mobility_smoke_status" -ne 0 ]; then
     # Migration startup failures otherwise disappear with this disposable stack.
-    compose logs --no-color --tail=100 migrate >&2 || true
+    compose logs --no-color --tail=100 mysql migrate >&2 || true
   fi
   compose down -v --remove-orphans >/dev/null 2>&1 || true
 }

@@ -12,6 +12,11 @@ case "$instance" in *[!A-Za-z0-9_-]*|'') echo 'Invalid demo instance.' >&2; exit
 project="mobility-carpoolear-demo-$instance"
 context=${MOBILITY_DOCKER_CONTEXT:-colima-mobility}
 export MOBILITY_DEMO_INSTANCE="$instance"
+export MOBILITY_SMOKE_DB_VOLUME="mobility-carpoolear-demo-$instance-db"
+if docker --context "$context" volume inspect "$MOBILITY_SMOKE_DB_VOLUME" >/dev/null 2>&1; then
+  printf '%s\n' 'Refusing to reuse an existing demo database volume.' >&2
+  exit 2
+fi
 compose() { docker --context "$context" compose --project-name "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml -f compose.disposable-demo.yml --env-file .env "$@"; }
 
 # Prepare the pinned hardened worktree and synthetic environment without touching a pilot checkout.
