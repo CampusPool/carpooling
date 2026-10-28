@@ -1318,8 +1318,13 @@ export default function Page() {
                         <span>↓</span>
                         <b>{r.dropoff_label || destination?.label}</b>
                         <small>
-                          {r.driver_name || "Driver"} · {r.vehicle_type || "—"}
+                          {r.driver_name || "Driver"} · {r.vehicle_label || r.vehicle_type || "—"}
                         </small>
+                        {(r.seats_offered != null || r.seats_available != null) && (
+                          <small aria-label="Seats offered">
+                            Seats offered: {r.seats_offered ?? "—"} · {r.seats_available ?? "—"} available
+                          </small>
+                        )}
                         <small>
                           {r.choice === "ON_ROUTE_MEETING_POINT"
                             ? "Pickup: on-route meeting point"
