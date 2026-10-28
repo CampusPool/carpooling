@@ -49,7 +49,7 @@ YAML
 sed -i '' -e "s|\${MYSQL_PORT}|$mysql_port|g" -e "s|\${MONGO_PORT}|$mongo_port|g" -e "s|\${MYSQL_DATA}|$data_root/mysql|g" -e "s|\${MONGO_DATA}|$data_root/mongo|g" "$compose"
 dc up -d
 deadline=$(( $(date +%s) + 120 ))
-until dc exec -T mysql mysqladmin ping -h localhost -proot >/dev/null 2>&1; do
+until dc exec -T mysql mysqladmin ping -h 127.0.0.1 -proot >/dev/null 2>&1; do
   [ "$(date +%s)" -lt "$deadline" ] || { echo 'MySQL health timeout' >&2; exit 1; }
   sleep 2
 done
@@ -68,7 +68,8 @@ CREATE TABLE mobility_trip_events (
 );
 INSERT INTO mobility_trip_events VALUES
 (1, 101, 7, 'publish', NULL, 1, 200, '{"phone":"must-not-copy"}', REPEAT('x',64), 'secret-1', '2026-10-27 10:00:00', '2026-10-27 10:00:00'),
-(2, 101, 8, 'arrive', 9, 2, 200, '{"email":"must-not-copy"}', REPEAT('y',64), 'secret-2', '2026-10-27 11:00:00', '2026-10-27 11:00:00');
+(2, 101, 8, 'arrive', 9, 2, 200, '{"email":"must-not-copy"}', REPEAT('y',64), 'secret-2', '2026-10-27 11:00:00', '2026-10-27 11:00:00'),
+(4, 101, 8, 'arrive', 9, 3, 200, '{}', REPEAT('w',64), 'secret-4', '2026-10-27 11:30:00', '2026-10-27 11:30:00');
 CREATE USER IF NOT EXISTS 'readonly'@'%' IDENTIFIED BY 'readonly';
 GRANT SELECT ON mobility_test.mobility_trip_events TO 'readonly'@'%';
 SQL
@@ -91,12 +92,29 @@ dc exec -T mysql mysql -uroot -proot mobility_test -e \
   "INSERT INTO mobility_trip_events VALUES (3, 102, 7, 'cancel', NULL, 1, 200, '{\\\"token\\\":\\\"must-not-copy\\\"}', REPEAT('z',64), 'secret-3', '2026-10-27 12:00:00', '2026-10-27 12:00:00')"
 npm run sync
 count="$(dc exec -T mongo mongosh --quiet mobility_activity_test --eval 'db.mobility_activity_events.countDocuments()')"
-[ "$(printf '%s' "$count" | tr -d '\r\n ')" = 3 ] || { echo "expected 3 documents after replay and new event, got $count" >&2; exit 1; }
+[ "$(printf '%s' "$count" | tr -d '\r\n ')" = 4 ] || { echo "expected 4 documents after replay and new event, got $count" >&2; exit 1; }
 occurred="$(dc exec -T mongo mongosh --quiet mobility_activity_test --eval 'db.mobility_activity_events.findOne({sourceEventId:1}).occurredAt.toISOString()')"
 [ "$(printf '%s' "$occurred" | tr -d '\r\n ')" = '2026-10-27T04:30:00.000Z' ] || { echo "timezone conversion failed: $occurred" >&2; exit 1; }
 docs="$(dc exec -T mongo mongosh --quiet mobility_activity_test --eval 'JSON.stringify(db.mobility_activity_events.findOne({}, {responseBody:1,response_body:1,request_fingerprint:1,idempotency_key:1}))')"
-case "$docs" in *response_body*|*request_fingerprint*|*idempotency_key*) echo 'sensitive field leaked' >&2; exit 1;; esac
+case "$docs" in *responseBody*|*response_body*|*request_fingerprint*|*idempotency_key*) echo 'sensitive field leaked' >&2; exit 1;; esac
 daily="$(npm run daily)"
-printf '%s\n' "$daily" | grep -q 'cancel' || { echo 'daily aggregation omitted new cancel event' >&2; exit 1; }
-printf '%s\n' "$daily" | grep -q '2026-10-27' || { echo 'daily aggregation used the wrong reporting day' >&2; exit 1; }
-echo 'disposable SQL/Mongo integration passed: replay count=3, new event observed, readonly SQL, sensitive columns absent'
+printf '%s\n' "$daily" | tail -n 1 | node -e '
+  const assert = require("node:assert/strict");
+  let input = "";
+  process.stdin.on("data", chunk => input += chunk);
+  process.stdin.on("end", () => {
+    const rows = JSON.parse(input);
+    assert.deepEqual(rows, ["arrive", "cancel", "publish"].map(action => ({
+      day: "2026-10-27", action, eventCount: action === "arrive" ? 2 : 1, uniqueTripCount: 1
+    })));
+  });
+'
+dc exec -T mongo mongosh --quiet mobility_activity_test --eval '
+  const indexes = db.mobility_activity_events.getIndexes();
+  const unique = indexes.find(i => i.name === "uniq_activity_source_event");
+  if (!unique || !unique.unique || unique.key.sourceEventId !== 1) quit(1);
+  for (const name of ["activity_occurred_action", "activity_actor_occurred"]) {
+    if (!indexes.some(i => i.name === name)) quit(1);
+  }
+'
+echo 'disposable SQL/Mongo integration passed: replay count=4, daily grouping and indexes checked, readonly SQL, sensitive columns absent'

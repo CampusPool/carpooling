@@ -61,7 +61,7 @@ export async function upsertEvent(collection, row, projectedAt = new Date(), sou
 export function dailyAggregation({ timezone = 'Asia/Kolkata' } = {}) {
   return [
     { $group: {
-      _id: { day: { $dateToString: { date: '$occurredAt', timezone } }, action: '$action' },
+      _id: { day: { $dateToString: { date: '$occurredAt', format: '%Y-%m-%d', timezone } }, action: '$action' },
       eventCount: { $sum: 1 },
       tripCount: { $addToSet: '$tripId' }
     } },
