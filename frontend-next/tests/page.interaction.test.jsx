@@ -53,7 +53,7 @@ function json(body, status = 200) {
   });
 }
 
-function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = "2026-10-28T05:00:00.000Z", operator = false } = {}) {
+function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false } = {}) {
   calls = [];
   let bookingReads = 0;
   let currentWaitlist = waitlist;
