@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
+import DriverOnboarding from "../components/DriverOnboarding";
 type R = Record<string, any>;
 const list = (x: any) =>
   Array.isArray(x?.data) ? x.data : Array.isArray(x) ? x : [];
@@ -1070,6 +1071,7 @@ export default function Page() {
             ["notifications", `Notifications${notificationUnread ? ` · ${notificationUnread}` : ""}`],
             ["waitlist", "Waitlist"],
             ["wallet", "Wallet"],
+            ["driver-onboarding", "Driver onboarding"],
             ...(me?.operator ? [["operator", "Operations"]] : []),
           ].map(([v, l]) => (
             <button
@@ -1098,6 +1100,8 @@ export default function Page() {
                   ? "Waitlist requests."
                 : view === "operator"
                   ? "Operations overview."
+                : view === "driver-onboarding"
+                  ? "Apply to drive."
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
@@ -1276,6 +1280,7 @@ export default function Page() {
               </div>
             </>
           )}
+          {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {view === "rides" && (
             <>
               {routeGeometry.length > 1 && (
