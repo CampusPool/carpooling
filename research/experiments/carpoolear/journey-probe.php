@@ -162,10 +162,12 @@ try {
     $selfRequest = httpCall('POST', "trips/$tripId/requests", [], $host['token']);
     $selfBookingExists = Passenger::where('trip_id', $tripId)->where('user_id', $host['id'])
         ->whereIn('request_state', [Passenger::STATE_PENDING, Passenger::STATE_ACCEPTED, Passenger::STATE_WAITING_PAYMENT])->exists();
-    verify('trip owner cannot request their own seat', $selfRequest['status'] >= 400 && !$selfBookingExists
+    $selfRejectionStatusExpected = in_array($selfRequest['status'], [400, 403, 422], true);
+    verify('trip owner cannot request their own seat', $selfRejectionStatusExpected && !$selfBookingExists
         && (int) Trip::findOrFail($tripId)->seats_available === 1,
         ['status' => $selfRequest['status'], 'self_booking_exists' => $selfBookingExists,
-            'seats_available' => (int) Trip::findOrFail($tripId)->seats_available]);
+            'seats_available' => (int) Trip::findOrFail($tripId)->seats_available,
+            'error' => $selfRequest['json']['error'] ?? $selfRequest['json']['message'] ?? null]);
     step('guest requests seat', httpCall('POST', "trips/$tripId/requests", [], $guest['token']));
     $duplicate = httpCall('POST', "trips/$tripId/requests", [], $guest['token']);
     verify('duplicate active request rejected', $duplicate['status'] === 422, ['status' => $duplicate['status']]);
