@@ -8,10 +8,10 @@ Node-based surfaces currently reproducible in this repository:
 - `services/activity-projection`: locked dependency install and projection
   unit tests.
 
-The workflow is path-filtered so documentation-only changes do not consume
-application checks. Pull requests and pushes to `main` are covered. Jobs use
-read-only repository permissions, cancel superseded runs on the same ref, and
-have bounded execution time. They do not require database services, provider
+Pull requests and pushes to `main` are covered; documentation-only changes
+therefore still receive the same baseline checks. Jobs use read-only repository
+permissions, cancel superseded runs on the same ref, and have bounded execution
+time. They do not require database services, provider
 keys, credentials or a deployed backend.
 
 This is a reproducible static/unit CI gate. It does not claim that the Laravel
