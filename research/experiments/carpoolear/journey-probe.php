@@ -23,25 +23,35 @@ $report = [
         'Activation tokens read from synthetic local accounts instead of delivered email.',
         'One synthetic route-cache entry supplies routing/pricing; no real routing provider tested.',
         'One synthetic active vehicle color seeds otherwise empty reference catalog data.',
+        'Host trust is promoted directly in the disposable database after default-registration assertions so booking authorization can be exercised; no provider approval is claimed.',
         'No identity provider, real payment, host payout or real trip is exercised.',
         'Native clients and production HTTP server are not exercised.',
     ],
     'steps' => [], 'checks' => [], 'gaps' => [],
 ];
 
-function httpCall(string $method, string $path, array $data = [], ?string $token = null): array
+function httpCall(string $method, string $path, array $data = [], ?string $token = null, ?string $forwardedFor = null): array
 {
     $headers = ['Accept: application/json', 'Content-Type: application/json'];
     if ($token !== null) $headers[] = 'Authorization: Bearer '.$token;
+    if ($forwardedFor !== null) $headers[] = 'X-Forwarded-For: '.$forwardedFor;
     $options = ['http' => ['method' => $method, 'header' => implode("\r\n", $headers),
         'ignore_errors' => true, 'timeout' => 20]];
     if ($method !== 'GET') $options['http']['content'] = json_encode($data, JSON_THROW_ON_ERROR);
-    $body = @file_get_contents('http://127.0.0.1:8000/api/'.$path, false, stream_context_create($options));
-    $status = 0;
-    foreach ($http_response_header ?? [] as $line) {
-        if (preg_match('/^HTTP\/\S+ (\d+)/', $line, $m)) $status = (int) $m[1];
+    for ($attempt = 0; $attempt < 4; $attempt++) {
+        $body = @file_get_contents('http://127.0.0.1:8000/api/'.$path, false, stream_context_create($options));
+        $status = 0;
+        foreach ($http_response_header ?? [] as $line) {
+            if (preg_match('/^HTTP\/\S+ (\d+)/', $line, $m)) $status = (int) $m[1];
+        }
+        if ($status !== 429 || $attempt === 3) {
+            return ['status' => $status, 'json' => json_decode($body ?: '', true)];
+        }
+        // Respect transient test-server throttling without changing the
+        // application's limits or retrying an arbitrary failed response.
+        sleep(1 << $attempt);
     }
-    return ['status' => $status, 'json' => json_decode($body ?: '', true)];
+    return ['status' => 0, 'json' => null];
 }
 
 function step(string $name, array $response, int $expected = 200): array
@@ -81,7 +91,8 @@ function registerActor(string $role, string $run): array
     $user = User::query()->where('email', $email)->firstOrFail();
     if (!$user->activation_token) throw new RuntimeException('Missing synthetic activation token');
     step('activate '.$role, httpCall('POST', 'activate/'.$user->activation_token));
-    $login = step('login '.$role, httpCall('POST', 'login', ['email' => $email, 'password' => $password]));
+    $clientIp = ['host' => '10.0.0.11', 'guest' => '10.0.0.12', 'other' => '10.0.0.13'][$role] ?? '10.0.0.19';
+    $login = step('login '.$role, httpCall('POST', 'login', ['email' => $email, 'password' => $password], null, $clientIp));
     if (!is_string($login['token'] ?? null)) throw new RuntimeException('Missing login token');
     step('read profile '.$role, httpCall('GET', 'users/me', [], $login['token']));
     return ['id' => (int) $user->id, 'token' => $login['token']];
@@ -118,6 +129,15 @@ try {
         ['is_admin' => (bool) $registeredHost->is_admin,
             'identity_validated' => (bool) $registeredHost->identity_validated,
             'driver_is_verified' => (bool) $registeredHost->driver_is_verified]);
+    // Booking fixtures require a trusted driver after the default-registration
+    // assertion. This is a local database fixture, not an identity-provider
+    // approval or a claim that registration grants trust automatically.
+    DB::table('users')->where('id', $registeredHost->id)->update([
+        'identity_validated' => true,
+        'identity_validated_at' => now(),
+        'driver_is_verified' => true,
+        'image' => 'synthetic-fixture.png',
+    ]);
     $claimEmail = 'journey-claim-'.$run.'@example.test';
     step('registration with untrusted verification fields', httpCall('POST','users',[
         'name'=>'Synthetic untrusted claim','email'=>$claimEmail,

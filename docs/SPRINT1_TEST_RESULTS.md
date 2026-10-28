@@ -33,3 +33,7 @@ active project; the harness now creates a unique volume per run and checks
 for collisions. The existing volume was preserved. Passing client and
 projection checks do not close backend acceptance criteria. No course
 deliverable, video, instructor approval, or independent review is claimed.
+
+### Hardened HTTP journey follow-up — 28 October 2026
+
+On the pinned upstream host `6ba3d8913a8f77e664e848a526f196690a03c1e8` with the tracked hardened patches and the current extension mounted, `sh research/experiments/carpoolear/run-smoke.sh hardened` completed 71 synthetic HTTP steps against a disposable MySQL database. Twelve of thirteen recorded checks passed, including sampled concurrent last-seat and duplicate-request races, unauthorized cancellation, and automatic acceptance capacity. The owner self-booking check failed: the endpoint returned HTTP 200 and an active host passenger row was observed. This failure requires investigation; the run is not a passing full acceptance result. The harness directly promotes a synthetic host's trust after checking registration defaults; this is test setup, not real identity verification. No real routing provider, payment, payout or trip completion was tested. The sampled concurrency runs do not prove all races are safe.
