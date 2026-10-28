@@ -16,6 +16,6 @@ Riders, drivers, participants and operators use a Next.js client over a Laravel 
 | FR-04 | Request, accept/reject and cancel | Quote consent, request, acceptance, cancellation and seat restoration are tested; waitlist browser proof remains open. |
 | FR-05 | Preserve lifecycle and capacity invariants | Transactional and concurrency checks exist; physical device acceptance remains open. |
 | FR-06 | Project selected lifecycle activity to MongoDB | Isolated projection/replay checks exist; the preserved pilot is not enabled. |
-| FR-07 | Provide course evidence | Draft SRS, architecture, test plan and traceability exist; video, screenshots, review and approval remain pending. |
+| FR-07 | Provide course evidence | Draft SRS, architecture, test plan and traceability exist; the Sprint 1 demo recording is included; screenshots, the Sprint 2 recording, review and approval remain pending. |
 
 Synthetic accounts, routes, credits, holds and receipts must be labelled as demo records. No live money, identity verification or Hopr parity claim follows from this draft.

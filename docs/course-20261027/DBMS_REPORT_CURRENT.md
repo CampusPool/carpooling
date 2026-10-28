@@ -16,6 +16,6 @@ The isolated activity projection demonstrates repeatable-read extraction, source
 
 ## Recorded evidence and open gates
 
-Automated SQL/Mongo and application checks exist, and one isolated synthetic browser journey recorded publication, search, quote consent, request, acceptance, cancellation, seat restoration and history refresh at revision `47e8ee5`. Maps configuration was unavailable and no continuous video or screenshot package is included here. Instructor approval, genuine review, contribution records, waitlist/rating browser evidence, final SQL walkthrough outputs and course submission remain pending.
+Automated SQL/Mongo and application checks exist, and one isolated synthetic browser journey recorded publication, search, quote consent, request, acceptance, cancellation, seat restoration and history refresh at revision `47e8ee5`. Maps configuration was unavailable during that earlier journey. The separate Sprint 1 recording in `media/sprint-1-mobility-demo.mp4` shows a later locally configured demo; no screenshot package is included. Instructor approval, genuine review, contribution records, waitlist/rating browser evidence, final SQL walkthrough outputs and course submission remain pending.
 
 Timetable integration is excluded. Email verification, live settlement, physical GPS/two-phone acceptance and OS push are deferred or unverified. Synthetic accounts, credits, holds and receipts are demo records only.

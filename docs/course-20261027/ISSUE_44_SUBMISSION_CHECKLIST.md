@@ -18,11 +18,13 @@ Before submission, the owner should assemble these current documents from this d
 
 ## Evidence gate
 
-Record the exact source revision, environment, command, timestamp, expected result, actual result and sanitized artifact path for every new result. The current package records one isolated browser journey at revision `47e8ee5`; it does not include a screenshot or continuous video. The journey covered publication, search, exact terms consent, request, driver acceptance, cancellation, seat restoration and rider history refresh. Maps configuration was unavailable.
+Record the exact source revision, environment, command, timestamp, expected result, actual result and sanitized artifact path for every new result. The earlier evidence records one isolated browser journey at revision `47e8ee5`; that earlier run did not include a screenshot or continuous video. The journey covered publication, search, exact terms consent, request, driver acceptance, cancellation, seat restoration and rider history refresh. Maps configuration was unavailable.
+
+A continuous Sprint 1 recording is included at `media/sprint-1-mobility-demo.mp4` (62 seconds). It shows the local demonstration UI with rider and driver views, Maps, address entry, booking activity and synthetic credits. It was recorded from a locally configured demonstration environment; it is not evidence that all recorded UI changes or provider configuration are in the repository. The video does not establish a complete booking flow or production readiness.
 
 The following items remain open at this revision and must be reported as pending unless new evidence is attached:
 
-- continuous Sprint 1 working-product video and screenshots;
+- screenshots and the separate Sprint 2 video;
 - teacher/instructor approval of the SRS, architecture and test plan;
 - genuine teammate review and individual contribution records;
 - current browser evidence for waitlist fulfilment and completed-trip ratings;
