@@ -226,6 +226,15 @@ describe("rider journey interactions", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("This waitlist entry is not actionable yet");
   });
 
+  it("lets a rider cancel the pending booking created from a waitlist entry", async () => {
+    installApi({ waitlist: [{ id: 9, trip_id: 42, status: "requested", actionable: false }] });
+    await signInAndWait();
+    fireEvent.click(screen.getByRole("button", { name: "Waitlist" }));
+    expect(await screen.findByText(/You requested a seat and are waiting for driver review/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel seat request" }));
+    await waitFor(() => expect(calls.some(({ url, method }) => url.endsWith("/waitlist/9/cancel") && method === "POST")).toBe(true));
+  });
+
   it("opens the saved driver route from booking activity", async () => {
     installApi({
       bookings: [{

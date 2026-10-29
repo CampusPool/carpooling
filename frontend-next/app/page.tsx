@@ -1763,12 +1763,12 @@ export default function Page() {
                   <article className="booking" key={entry.id || i}>
                     <div>
                       <b>Trip {entry.trip_id}</b>
-                    <span>{entry.actionable ? "A seat is available for your turn (availability snapshot); refresh eligibility and terms before requesting driver review." : "Pending driver-reviewed waitlist request"}</span>
+                    <span>{entry.status === "requested" ? "You requested a seat and are waiting for driver review. Cancel this seat request here if your plans change." : entry.actionable ? "A seat is available for your turn (availability snapshot); refresh eligibility and terms before requesting driver review." : "Pending driver-reviewed waitlist request"}</span>
                     </div>
                     <div className="actions">
                       {entry.status === "pending" && !waitlistQuotes[entry.id] && <button type="button" onClick={async () => { try { const d = await request(`commute/waitlist/${entry.id}/refresh`, token, "POST", {}); setWaitlistQuotes((q) => ({ ...q, [entry.id]: d?.data?.quote_token })); setWaitlistTerms((q) => ({ ...q, [entry.id]: d?.data?.terms })); setNotice("Fresh route and fare loaded. Review and confirm before requesting driver review."); } catch (e: any) { setError(e.message); } }}>Refresh eligibility and terms</button>}
                       {entry.actionable && waitlistQuotes[entry.id] && <><span>Route {waitlistTerms[entry.id]?.pickup_label} → {waitlistTerms[entry.id]?.dropoff_label}</span><span>Walk {waitlistTerms[entry.id]?.access_meters || 0} m access · {waitlistTerms[entry.id]?.egress_meters || 0} m egress</span><span>Fresh fare {cash(waitlistTerms[entry.id]?.fare_minor)} · pickup {instant(waitlistTerms[entry.id]?.pickup_at) || "—"}</span><label className="fine"><input type="checkbox" id={`waitlist-consent-${entry.id}`} /> I agree to the refreshed route, pickup time, walking distances, and demo fare.</label><button type="button" onClick={() => { const c = document.getElementById(`waitlist-consent-${entry.id}`) as HTMLInputElement; if (!c.checked) { setError("Agree to the refreshed route and fare before requesting driver review."); return; } mutate(`commute/waitlist/${entry.id}/request`, { quote_token: waitlistQuotes[entry.id], consent: true }); }}>Request seat for driver review</button></>}
-                      <button type="button" onClick={() => mutate(`commute/waitlist/${entry.id}/cancel`)}>Cancel waitlist</button>
+                      <button type="button" onClick={() => mutate(`commute/waitlist/${entry.id}/cancel`)}>{entry.status === "requested" ? "Cancel seat request" : "Cancel waitlist"}</button>
                     </div>
                   </article>
                 ))}

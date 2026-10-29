@@ -176,4 +176,34 @@ final class MobilityWaitlistIntegrationTest extends TestCase
         $this->assertSame(0, $request['request_state']);
         $this->assertDatabaseHas('mobility_commute_waitlist', ['id' => $entry['id'], 'status' => 'requested']);
     }
+
+    public function test_cancelling_a_requested_waitlist_seat_cancels_the_pending_booking(): void
+    {
+        $driver = $this->demo('driver');
+        $first = $this->demo('rider');
+        $waiting = $this->secondRider('cancel-requested-waitlist-rider');
+        foreach ([[$driver, 'driver'], [$first, 'rider'], [$waiting, 'rider']] as [$user, $role]) {
+            $this->actingAsApiUser($user)->putJson('/api/mobility/commute/profile', $this->prefs($role))->assertOk();
+        }
+
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $trip = $this->actingAsApiUser($driver)->postJson('/api/mobility/commute/offers', [
+            'date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP',
+        ], ['Idempotency-Key' => 'cancel-waitlist-publish'])->assertOk()->json('data.trip_id');
+        $firstCard = $this->actingAsApiUser($first)->getJson('/api/mobility/commute/rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
+        $firstBooking = $this->actingAsApiUser($first)->postJson('/api/mobility/commute/rides/'.$trip.'/request', ['quote_token' => $firstCard['quote_token']], ['Idempotency-Key' => 'cancel-waitlist-first-request'])->assertOk()->json('data.booking_id');
+        $this->actingAsApiUser($driver)->postJson('/api/mobility/commute/bookings/'.$firstBooking.'/accept', [], ['Idempotency-Key' => 'cancel-waitlist-first-accept'])->assertOk();
+
+        $card = $this->actingAsApiUser($waiting)->getJson('/api/mobility/commute/rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
+        $entry = $this->actingAsApiUser($waiting)->postJson('/api/mobility/commute/rides/'.$trip.'/waitlist', ['quote_token' => $card['quote_token']], ['Idempotency-Key' => 'cancel-waitlist-join'])->assertOk()->json('data');
+        $this->actingAsApiUser($first)->postJson('/api/mobility/commute/bookings/'.$firstBooking.'/cancel', [], ['Idempotency-Key' => 'cancel-waitlist-release-seat'])->assertOk();
+        $terms = $this->actingAsApiUser($waiting)->postJson('/api/mobility/commute/waitlist/'.$entry['id'].'/refresh', [], ['Idempotency-Key' => 'cancel-waitlist-refresh'])->assertOk()->json('data');
+        $booking = $this->actingAsApiUser($waiting)->postJson('/api/mobility/commute/waitlist/'.$entry['id'].'/request', ['quote_token' => $terms['quote_token'], 'consent' => true], ['Idempotency-Key' => 'cancel-waitlist-request-seat'])->assertOk()->json('data');
+        $this->assertSame(0, $booking['request_state']);
+
+        $this->actingAsApiUser($waiting)->postJson('/api/mobility/commute/waitlist/'.$entry['id'].'/cancel', [], ['Idempotency-Key' => 'cancel-waitlist-seat-request'])->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->assertDatabaseHas('trip_passengers', ['id' => $booking['booking_id'], 'request_state' => 3]);
+        $this->assertDatabaseHas('mobility_commute_waitlist', ['id' => $entry['id'], 'status' => 'cancelled']);
+        $this->assertDatabaseHas('mobility_commute_booking_notifications', ['user_id' => $driver->id, 'booking_id' => $booking['booking_id'], 'kind' => 'booking_cancelled']);
+    }
 }
