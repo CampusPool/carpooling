@@ -94,6 +94,10 @@ $date = (new DateTimeImmutable('tomorrow', new DateTimeZone('Asia/Kolkata')))->f
     'choice' => 'DIRECT_RIDER_PICKUP',
 ], $run.'-offer');
 $tripId = (int) expectStatus($status, $json, 200, 'publish one-seat offer')['data']['trip_id'];
+$persistedSeatCapacity = (int) \Illuminate\Support\Facades\DB::table('trips')->where('id', $tripId)->value('total_seats');
+if ($persistedSeatCapacity !== 1) {
+    fail('published offer did not persist exactly one available seat');
+}
 
 $quotes = [];
 foreach ([[$riderA, 'a'], [$riderB, 'b']] as [$token, $suffix]) {
@@ -226,6 +230,7 @@ if (count(array_filter($states, fn (int $state): bool => $state === 1)) !== 1 ||
 fwrite(STDOUT, json_encode([
     'result' => 'PASS',
     'trip_id' => $tripId,
+    'persisted_total_seats' => $persistedSeatCapacity,
     'rider_ids' => [(int) $riderASession['user']['id'], (int) $riderBSession['user']['id']],
     'simultaneous_accepts' => array_map(fn (array $r): array => ['booking_id' => $r['booking_id'], 'http_status' => $r['status'], 'elapsed_seconds' => round($r['total_time'], 3), 'error_code' => $r['body']['error']['code'] ?? null], $results),
     'booking_states' => $states,
