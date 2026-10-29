@@ -163,6 +163,15 @@ describe("rider journey interactions", () => {
     expect(screen.getByLabelText("Seats offered")).toHaveTextContent("Seats offered: 2 · 2 available");
   });
 
+  it("shows a clear empty state when a valid search has no eligible rides", async () => {
+    installApi({ rides: [] });
+    await signInAndWait();
+    await searchSavedRoute();
+    expect(screen.getByText("No eligible rides returned for this route and date.")).toBeInTheDocument();
+    expect(document.querySelectorAll("article.ride")).toHaveLength(0);
+    expect(calls.some(({ url, method }) => method === "GET" && url.includes("/commute/rides?"))).toBe(true);
+  });
+
   it("derives ride duration from confirmed ride seconds when minutes are absent", async () => {
     installApi({ rides: [{ ...ride, duration_minutes: undefined, ride_seconds: 1951 }] });
     await signInAndWait();
