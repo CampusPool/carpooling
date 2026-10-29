@@ -31,6 +31,14 @@ The probe tests registration trust flags, cancellation authority, twelve competi
 
 It also runs six automatic-acceptance races: one guest must become accepted and the other must remain pending, with both durable request results returned successfully. Duplicate checks count pending, accepted and waiting-payment rows.
 
+## Current guarded Mobility HTTP suite
+
+```sh
+MOBILITY_DOCKER_CONTEXT=your-docker-context sh research/experiments/carpoolear/run-smoke.sh mobility
+```
+
+This mode prepares the pinned integration checkout and runs `tests/Feature/Mobility`, including commute-product and waitlist HTTP integration tests, with the cohort guard enabled. The runner creates `testing` and `testing_backup` only inside its uniquely named disposable MySQL project, then passes those database names to Artisan. It does not run the legacy `/api/trips` journey probe, which is rejected by the current trusted-route boundary. The suite's database-name safety assertion verifies Laravel is using a `testing*` database before refreshing it.
+
 ## Candidate hardening, kept separate from pristine source
 
 After the initial clone and dependency setup, prepare this evaluation checkout once from the project root:
