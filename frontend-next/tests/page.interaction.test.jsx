@@ -19,6 +19,9 @@ const ride = {
   duration_minutes: 32,
   driver_name: "Asha",
   vehicle_type: "car",
+  vehicle_label: "Honda City",
+  seats_offered: 2,
+  seats_available: 2,
   pickup_label: "Home pickup",
   dropoff_label: "Campus gate",
   choice: "DIRECT_RIDER_PICKUP",
@@ -150,6 +153,14 @@ describe("rider journey interactions", () => {
     const cards = Array.from(document.querySelectorAll("article.ride"));
     expect(cards[0]).toHaveTextContent("0 min from requested pickup");
     expect(cards[1]).toHaveTextContent("10 min from requested pickup");
+  });
+
+  it("shows vehicle details and offered seats before a rider requests a seat", async () => {
+    installApi();
+    await signInAndWait();
+    await searchSavedRoute();
+    expect(screen.getByText(/Asha · Honda City/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Seats offered")).toHaveTextContent("Seats offered: 2 · 2 available");
   });
 
   it("derives ride duration from confirmed ride seconds when minutes are absent", async () => {

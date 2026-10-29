@@ -67,4 +67,33 @@ final class DriverOnboardingHttpTest extends TestCase
         $this->actingAsApiUser($applicant)->postJson('/api/mobility/host-applications', ['car_id' => $car->id, 'vehicle_type' => 'car'])
             ->assertStatus(409)->assertJsonPath('error.code', 'DRIVER_ONBOARDING_REQUIRED');
     }
+
+    public function test_onboarding_profile_and_uploaded_documents_are_private_to_the_applicant(): void
+    {
+        $applicant = User::factory()->create(['active' => true, 'banned' => false]);
+        $otherUser = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
+        $onboardingId = $this->actingAsApiUser($applicant)
+            ->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'profile_display_name' => 'Synthetic Driver'])
+            ->assertCreated()->json('onboarding_id');
+        $version = $this->actingAsApiUser($applicant)
+            ->post('/api/mobility/driver-onboarding/'.$onboardingId.'/documents', [
+                'document_type' => 'rc',
+                'document' => UploadedFile::fake()->createWithContent('rc.pdf', "%PDF-synthetic\n"),
+                'expires_at' => now()->addYear()->toDateString(),
+                'expected_version' => 1,
+            ])->assertCreated()->json('onboarding_version');
+        $documentId = DB::table('mobility_driver_documents')->where('onboarding_id', $onboardingId)->value('id');
+
+        $this->actingAsApiUser($otherUser)
+            ->putJson('/api/mobility/driver-onboarding/'.$onboardingId.'/profile', [
+                'profile_display_name' => 'Unauthorized edit', 'expected_version' => $version,
+            ])->assertForbidden()->assertJsonPath('error.code', 'ONBOARDING_FORBIDDEN');
+        $this->actingAsApiUser($otherUser)
+            ->getJson('/api/mobility/driver-onboarding/'.$onboardingId.'/documents/'.$documentId)
+            ->assertForbidden()->assertJsonPath('error.code', 'ONBOARDING_FORBIDDEN');
+        $this->assertDatabaseHas('mobility_driver_onboardings', ['id' => $onboardingId, 'profile_display_name' => 'Synthetic Driver']);
+        $this->assertDatabaseHas('mobility_driver_documents', ['id' => $documentId, 'onboarding_id' => $onboardingId]);
+    }
 }
