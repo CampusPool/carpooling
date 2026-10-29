@@ -22,3 +22,4 @@ services:
       - ../../../backend/integrations/carpoolear/MobilityIntegration:/var/www/app/MobilityIntegration:ro
       - ../../../backend/extensions/carpoolear/tests:/var/www/tests/Feature/Mobility:ro
       - ./lifecycle-probe.php:/opt/mobility/lifecycle-probe.php:ro
+      - ./commute-http-probe.php:/opt/mobility/commute-http-probe.php:ro

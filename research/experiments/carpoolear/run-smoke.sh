@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 . "../../../scripts/mobility-runtime.sh"
 mobility_require_command git
 mode=${1:-baseline}
-case "$mode" in baseline|journey|hardened|lifecycle|mobility) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle|mobility]' >&2; exit 2 ;; esac
+case "$mode" in baseline|journey|hardened|lifecycle|mobility|commute) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle|mobility|commute]' >&2; exit 2 ;; esac
 if [ ! -f ../../vendor/carpoolear_backend/composer.lock ]; then
   printf '%s\n' 'Missing pinned vendor checkout; follow README.md first.' >&2
   exit 2
@@ -30,14 +30,14 @@ compose() {
       mobility_compose "$project" -f compose.smoke.yml --env-file .env "$@" ;;
     journey)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml --env-file .env "$@" ;;
-    hardened|lifecycle|mobility)
+    hardened|lifecycle|mobility|commute)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml --env-file .env "$@" ;;
   esac
 }
 if [ "$mode" != baseline ]; then
   mkdir -p raw
 fi
-if [ "$mode" = hardened ] || [ "$mode" = lifecycle ] || [ "$mode" = mobility ]; then
+if [ "$mode" = hardened ] || [ "$mode" = lifecycle ] || [ "$mode" = mobility ] || [ "$mode" = commute ]; then
   if [ "$(git -C ../../vendor/carpoolear_hardened rev-parse HEAD)" != "$expected_revision" ]; then
     printf '%s\n' 'Prepare the pinned hardened evaluation checkout as documented in README.md.' >&2
     exit 2
@@ -54,6 +54,12 @@ compose_lifecycle() {
 }
 if [ "$mode" = lifecycle ] || [ "$mode" = mobility ]; then
   compose() { compose_lifecycle "$@"; }
+fi
+compose_commute() {
+  mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml --env-file .env "$@"
+}
+if [ "$mode" = commute ]; then
+  compose() { compose_commute "$@"; }
 fi
 cleanup() {
   mobility_smoke_status=$?
@@ -78,10 +84,13 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 if [ "$ready" -ne 1 ]; then exit 1; fi
 printf '\n'
-if [ "$mode" != baseline ] && [ "$mode" != mobility ]; then
+if [ "$mode" = journey ] || [ "$mode" = hardened ] || [ "$mode" = lifecycle ]; then
   compose exec -T app php /opt/mobility/journey-probe.php
 elif [ "$mode" = baseline ]; then
   compose run --rm --no-deps -e CACHE_STORE=array -e SESSION_DRIVER=array -e MAIL_MAILER=array -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test
+fi
+if [ "$mode" = commute ]; then
+  compose exec -T app php /opt/mobility/commute-http-probe.php
 fi
 if [ "$mode" = mobility ]; then
   compose exec -T mysql mysql -uroot -psmoke-root-password -e "CREATE DATABASE IF NOT EXISTS testing; CREATE DATABASE IF NOT EXISTS testing_backup"

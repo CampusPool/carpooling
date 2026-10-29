@@ -39,6 +39,14 @@ MOBILITY_DOCKER_CONTEXT=your-docker-context sh research/experiments/carpoolear/r
 
 This mode prepares the pinned integration checkout and runs `tests/Feature/Mobility`, including commute-product and waitlist HTTP integration tests, with the cohort guard enabled. The runner creates `testing` and `testing_backup` only inside its uniquely named disposable MySQL project, then passes those database names to Artisan. It does not run the legacy `/api/trips` journey probe, which is rejected by the current trusted-route boundary. The suite's database-name safety assertion verifies Laravel is using a `testing*` database before refreshing it.
 
+## Supported commute HTTP smoke
+
+```sh
+sh research/experiments/carpoolear/run-smoke.sh commute
+```
+
+This starts the cohort-guarded disposable app and a private synthetic OSRM-shaped routing fixture. A separate PHP CLI process obtains rider and driver demo sessions through HTTP, saves profiles, publishes an offer, discovers it with a quote token, requests the seat, accepts it, and cancels it. The probe checks persisted booking transitions and approved demo memberships. Routing metrics are invented and labeled synthetic; no external route service, real identity, real money, or production backend is involved. The business services and cohort guard remain enabled.
+
 ## Candidate hardening, kept separate from pristine source
 
 After the initial clone and dependency setup, prepare this evaluation checkout once from the project root:
