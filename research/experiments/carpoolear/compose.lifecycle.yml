@@ -23,3 +23,4 @@ services:
       - ../../../backend/extensions/carpoolear/tests:/var/www/tests/Feature/Mobility:ro
       - ./lifecycle-probe.php:/opt/mobility/lifecycle-probe.php:ro
       - ./commute-http-probe.php:/opt/mobility/commute-http-probe.php:ro
+      - ./commute-race-probe.php:/opt/mobility/commute-race-probe.php:ro

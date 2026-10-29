@@ -1,0 +1,3 @@
+services:
+  mysql:
+    command: ["--log-bin-trust-function-creators=1"]
