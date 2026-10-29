@@ -36,7 +36,7 @@ final class DriverOnboardingHttpTest extends TestCase
         $operator = User::factory()->create(['active' => true, 'banned' => false, 'is_admin' => true]);
         DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
         $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
-        $created = $this->actingAsApiUser($applicant)->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'profile_display_name' => 'Synthetic Driver'])->assertCreated();
+        $created = $this->actingAsApiUser($applicant)->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'legal_passenger_capacity' => 4, 'profile_display_name' => 'Synthetic Driver'])->assertCreated();
         $id = $created->json('onboarding_id');
         $this->actingAsApiUser($applicant)->post('/api/mobility/driver-onboarding/'.$id.'/documents', ['document_type' => 'rc', 'document' => UploadedFile::fake()->createWithContent('stale.pdf', "%PDF-synthetic\n"), 'expires_at' => now()->addYear()->toDateString(), 'expected_version' => 99])->assertStatus(409)->assertJsonPath('error.code', 'VERSION_CONFLICT');
         $types = ['driver_license', 'profile_photo', 'rc', 'insurance', 'permit', 'fitness', 'puc', 'identity_or_address', 'ownership_noc'];
@@ -68,6 +68,45 @@ final class DriverOnboardingHttpTest extends TestCase
             ->assertStatus(409)->assertJsonPath('error.code', 'DRIVER_ONBOARDING_REQUIRED');
     }
 
+    public function test_approved_legacy_host_without_onboarding_cannot_publish_when_documents_are_optional(): void
+    {
+        putenv('MOBILITY_DRIVER_DOCUMENTS_REQUIRED=false');
+        $applicant = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
+        DB::table('mobility_host_applications')->insert(['user_id' => $applicant->id, 'car_id' => $car->id, 'vehicle_type' => 'car', 'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->assertFalse(CohortPolicy::hostApproved($applicant->id, $car->id, 'car'));
+        $this->actingAsApiUser($applicant)->postJson('/api/trips', ['is_passenger' => 0, 'car_id' => $car->id, 'vehicle_type' => 'car', 'total_seats' => 1])->assertForbidden()->assertJsonPath('error.code', 'HOST_APPROVAL_REQUIRED');
+    }
+
+    public function test_legacy_approved_application_can_add_capacity_only_by_returning_to_operator_review(): void
+    {
+        putenv('MOBILITY_DRIVER_DOCUMENTS_REQUIRED=false');
+        $applicant = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
+        $hostApplicationId = DB::table('mobility_host_applications')->insertGetId(['user_id' => $applicant->id, 'car_id' => $car->id, 'vehicle_type' => 'car', 'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $onboardingId = DB::table('mobility_driver_onboardings')->insertGetId(['user_id' => $applicant->id, 'host_application_id' => $hostApplicationId, 'car_id' => $car->id, 'vehicle_type' => 'car', 'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'profile_display_name' => 'Old approved profile', 'status' => 'approved', 'version' => 3, 'created_at' => now(), 'updated_at' => now()]);
+        $this->actingAsApiUser($applicant)->putJson('/api/mobility/driver-onboarding/'.$onboardingId.'/profile', ['profile_display_name' => 'Old approved profile', 'legal_passenger_capacity' => 4, 'expected_version' => 3])->assertOk();
+        $this->assertDatabaseHas('mobility_driver_onboardings', ['id' => $onboardingId, 'legal_passenger_capacity' => 4, 'status' => 'needs_resubmission']);
+        $this->assertDatabaseHas('mobility_host_applications', ['id' => $hostApplicationId, 'status' => 'pending']);
+        $this->assertFalse(CohortPolicy::hostApproved($applicant->id, $car->id, 'car'));
+    }
+
+    public function test_capacity_is_required_and_bike_capacity_is_exactly_one_passenger(): void
+    {
+        $applicant = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
+
+        $this->actingAsApiUser($applicant)->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'profile_display_name' => 'No capacity'])->assertStatus(422)->assertJsonPath('error.code', 'ONBOARDING_INPUT_INVALID');
+        $this->actingAsApiUser($applicant)->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'bike', 'legal_passenger_capacity' => 2, 'profile_display_name' => 'Invalid bike'])->assertStatus(422)->assertJsonPath('error.code', 'ONBOARDING_INPUT_INVALID');
+        $created = $this->actingAsApiUser($applicant)->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'bike', 'legal_passenger_capacity' => 1, 'profile_display_name' => 'One passenger'])->assertCreated();
+        $this->actingAsApiUser($applicant)->getJson('/api/mobility/driver-onboarding/me')->assertJsonPath('data.0.legal_passenger_capacity', 1);
+        $this->assertSame(1, (int) DB::table('mobility_driver_onboardings')->where('id', $created->json('onboarding_id'))->value('legal_passenger_capacity'));
+    }
+
     public function test_onboarding_profile_and_uploaded_documents_are_private_to_the_applicant(): void
     {
         $applicant = User::factory()->create(['active' => true, 'banned' => false]);
@@ -75,7 +114,7 @@ final class DriverOnboardingHttpTest extends TestCase
         DB::table('mobility_memberships')->insert(['user_id' => $applicant->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
         $car = Car::factory()->withCatalog()->create(['user_id' => $applicant->id]);
         $onboardingId = $this->actingAsApiUser($applicant)
-            ->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'profile_display_name' => 'Synthetic Driver'])
+            ->postJson('/api/mobility/driver-onboarding', ['car_id' => $car->id, 'vehicle_type' => 'car', 'legal_passenger_capacity' => 4, 'profile_display_name' => 'Synthetic Driver'])
             ->assertCreated()->json('onboarding_id');
         $version = $this->actingAsApiUser($applicant)
             ->post('/api/mobility/driver-onboarding/'.$onboardingId.'/documents', [
@@ -88,7 +127,7 @@ final class DriverOnboardingHttpTest extends TestCase
 
         $this->actingAsApiUser($otherUser)
             ->putJson('/api/mobility/driver-onboarding/'.$onboardingId.'/profile', [
-                'profile_display_name' => 'Unauthorized edit', 'expected_version' => $version,
+                'profile_display_name' => 'Unauthorized edit', 'legal_passenger_capacity' => 4, 'expected_version' => $version,
             ])->assertForbidden()->assertJsonPath('error.code', 'ONBOARDING_FORBIDDEN');
         $this->actingAsApiUser($otherUser)
             ->getJson('/api/mobility/driver-onboarding/'.$onboardingId.'/documents/'.$documentId)

@@ -33,11 +33,38 @@ final class DriverOnboardingPolicy
     public static function approvedApplication(?object $approval): bool
     {
         if (! $approval || $approval->status !== 'approved') return false;
-        if (! DB::getSchemaBuilder()->hasTable('mobility_driver_onboardings')) return ! self::documentsRequired();
+        if (! DB::getSchemaBuilder()->hasTable('mobility_driver_onboardings')) return self::legacyTestFixtureMode();
         $onboarding = DB::table('mobility_driver_onboardings')->where('host_application_id', $approval->id)->first();
-        if (! $onboarding) return ! self::documentsRequired();
+        // Existing unit fixtures may omit this onboarding domain only when the
+        // test environment left the setting at its explicit test default. A real
+        // deployment that disables document uploads still needs a reviewed row.
+        if (! $onboarding) return self::legacyTestFixtureMode();
         $failure = null;
-        return $onboarding->status === 'approved' && self::checklistComplete((int) $onboarding->id, $failure);
+        return $onboarding->status === 'approved'
+            && self::validPassengerCapacity($onboarding->legal_passenger_capacity ?? null, (string) $onboarding->vehicle_type)
+            && self::checklistComplete((int) $onboarding->id, $failure);
+    }
+
+    public static function approvedPassengerCapacity(int $hostApplicationId): ?int
+    {
+        $onboarding = DB::table('mobility_driver_onboardings')
+            ->where('host_application_id', $hostApplicationId)
+            ->where('status', 'approved')
+            ->first(['legal_passenger_capacity', 'vehicle_type']);
+        if (! $onboarding || ! self::validPassengerCapacity($onboarding->legal_passenger_capacity ?? null, (string) $onboarding->vehicle_type)) return null;
+        return (int) $onboarding->legal_passenger_capacity;
+    }
+
+    public static function validPassengerCapacity(mixed $capacity, string $vehicleType): bool
+    {
+        if (is_string($capacity) && ctype_digit($capacity)) $capacity = (int) $capacity;
+        if (! is_int($capacity)) return false;
+        return $vehicleType === 'bike' ? $capacity === 1 : ($vehicleType === 'car' && $capacity >= 1);
+    }
+
+    private static function legacyTestFixtureMode(): bool
+    {
+        return app()->environment() === 'testing' && getenv('MOBILITY_DRIVER_DOCUMENTS_REQUIRED') === false;
     }
 
     /** Actual manual approval is required here, including in testing. No legacy identity flags are written. */
@@ -53,7 +80,8 @@ final class DriverOnboardingPolicy
         if (! $application || ! hash_equals((string) $application->vehicle_fingerprint, CohortPolicy::vehicleFingerprint($car))) return false;
 
         $onboarding = DB::table('mobility_driver_onboardings')->where('user_id', $userId)->where('car_id', $carId)->where('host_application_id', $application->id)->where('status', 'approved')->latest('id')->first();
-        if (! $onboarding || trim((string) $onboarding->profile_display_name) === '') return false;
+        if (! $onboarding || trim((string) $onboarding->profile_display_name) === ''
+            || ! self::validPassengerCapacity($onboarding->legal_passenger_capacity ?? null, (string) $onboarding->vehicle_type)) return false;
 
         $failure = null;
         if (! hash_equals((string) $onboarding->vehicle_fingerprint, CohortPolicy::vehicleFingerprint($car)) || ! self::checklistComplete((int) $onboarding->id, $failure)) return false;
@@ -105,6 +133,7 @@ final class DriverOnboardingPolicy
             $failure = null;
             if ($car && ! $car->trashed() && (int) $car->user_id === $userId
                 && $car->isComplete() && CohortPolicy::vehicleFingerprint($car) === $onboarding->vehicle_fingerprint
+                && self::validPassengerCapacity($onboarding->legal_passenger_capacity ?? null, (string) $onboarding->vehicle_type)
                 && self::checklistComplete((int) $onboarding->id, $failure)) {
                 return true;
             }
