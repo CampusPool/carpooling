@@ -17,6 +17,27 @@ be protected with restricted Mongo credentials and an explicit course/project
 retention policy. They are not anonymized, pseudonymized, or claimed to be
 non-personal data.
 
+## Collection and source of truth
+
+The default collection is `mobility_activity_events`. Each projected document
+contains `source`, `sourceEventId`, `tripId`, `actorId`, nullable `passengerId`,
+`action`, `version`, `responseStatus`, `occurredAt`, `projectedAt`,
+`sourceTimezone`, and the `privacy` flags defined in `src/projection.mjs`.
+`sourceEventId` has a unique index for replay; `(occurredAt, action)` supports
+time/action analysis and `(actorId, occurredAt)` supports actor/time lookups.
+The `daily` command runs a MongoDB aggregation grouped by Kolkata calendar day
+and action, returning event counts and distinct trip counts.
+
+This collection contains lifecycle events, not a notification inbox or chat
+history. Commute booking notifications are currently stored in MySQL in
+`mobility_commute_booking_notifications` (user, booking, trip, kind, dedupe key,
+read time and timestamps); unread chat counts are computed from the SQL-backed
+conversation state. A Mongo notification projection has not been implemented.
+Any future notification documents need their own access and retention design;
+the current analytics collection must not be presented as a delivery system.
+MySQL remains authoritative for notifications, bookings and seat capacity;
+the Mongo projection is never used to reserve a seat or decide booking state.
+
 ## Configuration and use
 
 Use a dedicated SQL account granted `SELECT` on `mobility_trip_events` only.

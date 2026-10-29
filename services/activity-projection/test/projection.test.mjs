@@ -46,4 +46,5 @@ test('indexes and daily aggregation support analytics queries', () => {
   const pipeline = dailyAggregation();
   assert.equal(pipeline[0].$group.eventCount.$sum, 1);
   assert.equal(pipeline[0].$group._id.day.$dateToString.timezone, 'Asia/Kolkata');
+  assert.equal(pipeline[0].$group._id.day.$dateToString.format, '%Y-%m-%d');
 });
