@@ -9,6 +9,10 @@ This is a course/demo evidence pack for the MobilityPlatform domain. It is inten
 
 The source of truth for the production schema remains `backend/extensions/carpoolear/migrations/`. This pack is evidence of relational design and SQL techniques, not a claim that these objects are currently installed in the product database.
 
+For the application migration order, disposable forward/rollback commands and
+the external-host dependency boundary, see
+[`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md).
+
 `actual-analytics.sql` is separate: it contains read-only reports over the actual Laravel schema (`trips`, `trip_passengers`, and the mobility tables). Those reports were run against a disposable logical clone of the local MySQL schema; they do not install or alter application objects. See `ACTUAL_SCHEMA_STATUS.md` for execution status and limits.
 
 The repeatable automated check is `scripts/test-actual-analytics.sh`. It starts an ephemeral `mysql:8.0` Docker container, loads only the minimal report-column fixture in `actual-analytics-fixture.sql`, and asserts nonempty pool, commute, balanced, unbalanced, and missing-posting rows. It never connects to the pilot database.
