@@ -13,20 +13,21 @@ final class DriverOnboardingController
 {
     public function create(Request $request): JsonResponse
     {
-        if ($this->unknown($request, ['car_id', 'vehicle_type', 'profile_display_name', 'profile_phone'])) return $this->error('UNKNOWN_FIELDS', 422);
+        if ($this->unknown($request, ['car_id', 'vehicle_type', 'legal_passenger_capacity', 'profile_display_name', 'profile_phone'])) return $this->error('UNKNOWN_FIELDS', 422);
         $user = $request->user();
         if (! CohortPolicy::activeUser($user)) return $this->error('ACCOUNT_RESTRICTED', 403);
         if (! CohortPolicy::approved((int) $user->id)) return $this->error('MEMBERSHIP_REQUIRED', 403);
         $carId = $this->positive($request->input('car_id'));
         $type = $request->input('vehicle_type');
+        $capacity = self::passengerCapacity($request->input('legal_passenger_capacity'), $type);
         $name = is_string($request->input('profile_display_name')) ? trim($request->input('profile_display_name')) : '';
         $phone = $request->input('profile_phone');
-        if (! $carId || ! in_array($type, ['bike', 'car'], true) || $name === '' || strlen($name) > 120
+        if (! $carId || ! in_array($type, ['bike', 'car'], true) || $capacity === null || $name === '' || strlen($name) > 120
             || ($phone !== null && (! is_string($phone) || strlen($phone) > 32))) {
             return $this->error('ONBOARDING_INPUT_INVALID', 422);
         }
         try {
-            $result = DB::transaction(function () use ($user, $carId, $type, $name, $phone): object {
+            $result = DB::transaction(function () use ($user, $carId, $type, $capacity, $name, $phone): object {
                 $freshUser = DB::table('users')->where('id', $user->id)->lockForUpdate()->first();
                 if (! CohortPolicy::activeUser($freshUser)) throw new \RuntimeException('MEMBERSHIP_REQUIRED');
                 $member = DB::table('mobility_memberships')->where('user_id', $user->id)->lockForUpdate()->first();
@@ -49,7 +50,7 @@ final class DriverOnboardingController
                 if ($existing) return (object) ['id' => $existing->id, 'status' => $existing->status, 'version' => $existing->version, 'existing' => true];
                 $id = DB::table('mobility_driver_onboardings')->insertGetId([
                     'user_id' => $user->id, 'host_application_id' => $application->id, 'car_id' => $carId, 'vehicle_type' => $type,
-                    'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'profile_display_name' => $name, 'profile_phone' => $phone,
+                    'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'legal_passenger_capacity' => $capacity, 'profile_display_name' => $name, 'profile_phone' => $phone,
                     'status' => 'pending', 'version' => 1, 'submitted_at' => now(), 'created_at' => now(), 'updated_at' => now(),
                 ]);
                 DB::table('mobility_driver_onboarding_audits')->insert(['onboarding_id' => $id, 'actor_id' => $user->id,
@@ -117,31 +118,43 @@ final class DriverOnboardingController
 
     public function profile(Request $request, int $id): JsonResponse
     {
-        if ($this->unknown($request, ['profile_display_name', 'profile_phone', 'expected_version'])) return $this->error('UNKNOWN_FIELDS', 422);
+        if ($this->unknown($request, ['profile_display_name', 'profile_phone', 'legal_passenger_capacity', 'expected_version'])) return $this->error('UNKNOWN_FIELDS', 422);
         $user = $request->user();
         $row = DB::table('mobility_driver_onboardings')->where('id', $id)->first();
         if (! $row) return $this->error('ONBOARDING_NOT_FOUND', 404);
         if (! $user || (int) $row->user_id !== (int) $user->id) return $this->error('ONBOARDING_FORBIDDEN', 403);
-        if (! in_array($row->status, ['pending', 'needs_resubmission', 'rejected'], true)) return $this->error('ONBOARDING_NOT_EDITABLE', 409);
+        $capacityCorrection = $row->status === 'approved' && $row->legal_passenger_capacity === null;
+        if (! in_array($row->status, ['pending', 'needs_resubmission', 'rejected'], true) && ! $capacityCorrection) return $this->error('ONBOARDING_NOT_EDITABLE', 409);
         $name = is_string($request->input('profile_display_name')) ? trim($request->input('profile_display_name')) : '';
         $phone = $request->input('profile_phone');
+        $capacity = self::passengerCapacity($request->input('legal_passenger_capacity'), $row->vehicle_type);
         $expected = filter_var($request->input('expected_version'), FILTER_VALIDATE_INT);
-        if ($name === '' || strlen($name) > 120 || ($phone !== null && (! is_string($phone) || strlen($phone) > 32)) || $expected === false || $expected < 1) return $this->error('ONBOARDING_INPUT_INVALID', 422);
+        if ($name === '' || strlen($name) > 120 || $capacity === null || ($phone !== null && (! is_string($phone) || strlen($phone) > 32)) || $expected === false || $expected < 1) return $this->error('ONBOARDING_INPUT_INVALID', 422);
         try {
-            $version = DB::transaction(function () use ($id, $user, $expected, $name, $phone): int {
+            $version = DB::transaction(function () use ($id, $user, $expected, $name, $phone, $capacity): int {
                 $locked = $this->lockApplication($id, (int) $user->id);
                 if (! $locked || (int) $locked->user_id !== (int) $user->id) throw new \RuntimeException('ONBOARDING_FORBIDDEN');
                 if ((int) $locked->version !== $expected) throw new \RuntimeException('VERSION_CONFLICT');
-                if (! in_array($locked->status, ['pending', 'needs_resubmission', 'rejected'], true)) throw new \RuntimeException('ONBOARDING_NOT_EDITABLE');
+                $capacityCorrection = $locked->status === 'approved' && $locked->legal_passenger_capacity === null;
+                if (! in_array($locked->status, ['pending', 'needs_resubmission', 'rejected'], true) && ! $capacityCorrection) throw new \RuntimeException('ONBOARDING_NOT_EDITABLE');
                 $version = $expected + 1;
-                DB::table('mobility_driver_onboardings')->where('id', $id)->update(['profile_display_name' => $name, 'profile_phone' => $phone, 'version' => $version, 'updated_at' => now()]);
-                DB::table('mobility_driver_onboarding_audits')->insert(['onboarding_id' => $id, 'actor_id' => $user->id, 'previous_status' => $locked->status, 'new_status' => $locked->status, 'version' => $version, 'reason' => 'Profile corrected', 'created_at' => now(), 'updated_at' => now()]);
+                $status = $capacityCorrection ? 'needs_resubmission' : $locked->status;
+                DB::table('mobility_driver_onboardings')->where('id', $id)->update(['profile_display_name' => $name, 'profile_phone' => $phone, 'legal_passenger_capacity' => $capacity, 'status' => $status, 'reviewed_by' => $capacityCorrection ? null : $locked->reviewed_by, 'reviewed_at' => $capacityCorrection ? null : $locked->reviewed_at, 'review_reason' => $capacityCorrection ? 'Legal passenger capacity requires operator review' : $locked->review_reason, 'version' => $version, 'updated_at' => now()]);
+                DB::table('mobility_driver_onboarding_audits')->insert(['onboarding_id' => $id, 'actor_id' => $user->id, 'previous_status' => $locked->status, 'new_status' => $status, 'version' => $version, 'reason' => $capacityCorrection ? 'Capacity added; operator review required' : 'Profile corrected', 'created_at' => now(), 'updated_at' => now()]);
+                if ($capacityCorrection) {
+                    $host = DB::table('mobility_host_applications')->where('id', $locked->host_application_id)->lockForUpdate()->first();
+                    if ($host && $host->status === 'approved') {
+                        $hostVersion = (int) $host->version + 1;
+                        DB::table('mobility_host_applications')->where('id', $host->id)->update(['status' => 'pending', 'version' => $hostVersion, 'reviewed_by' => null, 'reviewed_at' => null, 'review_reason' => 'Legal passenger capacity requires operator review', 'updated_at' => now()]);
+                        DB::table('mobility_host_application_audits')->insert(['application_id' => $host->id, 'actor_id' => $user->id, 'previous_status' => 'approved', 'new_status' => 'pending', 'version' => $hostVersion, 'reason' => 'Capacity added; operator review required', 'created_at' => now(), 'updated_at' => now()]);
+                    }
+                }
                 return $version;
             });
         } catch (\RuntimeException $e) {
             return $this->error($e->getMessage(), $e->getMessage() === 'VERSION_CONFLICT' || $e->getMessage() === 'ONBOARDING_NOT_EDITABLE' ? 409 : 403);
         }
-        return response()->json(['onboarding_id' => $id, 'profile_display_name' => $name, 'version' => $version]);
+        return response()->json(['onboarding_id' => $id, 'profile_display_name' => $name, 'legal_passenger_capacity' => $capacity, 'version' => $version]);
     }
 
     public function submit(Request $request, int $id): JsonResponse
@@ -215,6 +228,7 @@ final class DriverOnboardingController
                 if (! self::allowedReview((string) $row->status, (string) $status)) throw new \RuntimeException('DECISION_INVALID');
                 if ($documentType !== null && $status === 'approved') throw new \RuntimeException('DECISION_INVALID');
                 if ($status === 'approved') {
+                    if (! DriverOnboardingPolicy::validPassengerCapacity($row->legal_passenger_capacity ?? null, (string) $row->vehicle_type)) throw new \RuntimeException('VEHICLE_CAPACITY_INVALID');
                     $failure = null;
                     if (! DriverOnboardingPolicy::checklistComplete($id, $failure)) throw new \RuntimeException($failure ?: 'DOCUMENTS_INCOMPLETE');
                     $car = Car::withTrashed()->find($row->car_id);
@@ -241,8 +255,8 @@ final class DriverOnboardingController
             });
         } catch (\RuntimeException $e) {
             $code = $e->getMessage();
-            if (! in_array($code, ['ONBOARDING_NOT_FOUND', 'VERSION_CONFLICT', 'SELF_REVIEW', 'DOCUMENTS_INCOMPLETE', 'DOCUMENT_EXPIRED', 'VEHICLE_NOT_ELIGIBLE', 'DOCUMENT_NOT_FOUND', 'DECISION_INVALID'], true)) $code = 'DECISION_INVALID';
-            return $this->error($code === 'SELF_REVIEW' ? 'SELF_REVIEW_FORBIDDEN' : $code, $code === 'ONBOARDING_NOT_FOUND' ? 404 : (in_array($code, ['VERSION_CONFLICT', 'DECISION_INVALID'], true) ? 409 : 403));
+            if (! in_array($code, ['ONBOARDING_NOT_FOUND', 'VERSION_CONFLICT', 'SELF_REVIEW', 'DOCUMENTS_INCOMPLETE', 'DOCUMENT_EXPIRED', 'VEHICLE_CAPACITY_INVALID', 'VEHICLE_NOT_ELIGIBLE', 'DOCUMENT_NOT_FOUND', 'DECISION_INVALID'], true)) $code = 'DECISION_INVALID';
+            return $this->error($code === 'SELF_REVIEW' ? 'SELF_REVIEW_FORBIDDEN' : $code, $code === 'ONBOARDING_NOT_FOUND' ? 404 : (in_array($code, ['VERSION_CONFLICT', 'DECISION_INVALID'], true) ? 409 : ($code === 'VEHICLE_CAPACITY_INVALID' ? 422 : 403)));
         }
         return response()->json(['onboarding_id' => $id, 'status' => $result->status, 'version' => $result->version]);
     }
@@ -261,7 +275,7 @@ final class DriverOnboardingController
     private function view(object $row, bool $operator): array
     {
         $docs = DriverOnboardingPolicy::currentDocuments((int) $row->id);
-        return ['id' => (int) $row->id, 'user_id' => (int) $row->user_id, 'car_id' => (int) $row->car_id, 'vehicle_type' => $row->vehicle_type, 'profile_display_name' => $row->profile_display_name, 'profile_phone' => $row->profile_phone, 'vehicle' => $this->vehicle((int) $row->car_id), 'status' => $row->status, 'version' => (int) $row->version, 'review_reason' => $row->review_reason,
+        return ['id' => (int) $row->id, 'user_id' => (int) $row->user_id, 'car_id' => (int) $row->car_id, 'vehicle_type' => $row->vehicle_type, 'legal_passenger_capacity' => $row->legal_passenger_capacity === null ? null : (int) $row->legal_passenger_capacity, 'profile_display_name' => $row->profile_display_name, 'profile_phone' => $row->profile_phone, 'vehicle' => $this->vehicle((int) $row->car_id), 'status' => $row->status, 'version' => (int) $row->version, 'review_reason' => $row->review_reason,
             'checklist' => array_map(fn ($type) => ['document_type' => $type, 'required' => in_array($type, DriverOnboardingPolicy::requiredTypes(), true), 'status' => $docs[$type]->status ?? 'missing', 'expires_at' => $docs[$type]->expires_at ?? null, 'version' => isset($docs[$type]) ? (int) $docs[$type]->version : null, 'review_reason' => $docs[$type]->review_reason ?? null, 'document_id' => isset($docs[$type]) ? (int) $docs[$type]->id : null], DriverOnboardingPolicy::TYPES),
             ...($operator ? ['profile_phone' => $row->profile_phone, 'review_reason' => $row->review_reason] : [])];
     }
@@ -298,6 +312,13 @@ final class DriverOnboardingController
             if (! $membership || $membership->college_code !== CohortPolicy::college()) return false;
         }
         return true;
+    }
+    private static function passengerCapacity(mixed $value, mixed $vehicleType): ?int
+    {
+        if (! in_array($vehicleType, ['bike', 'car'], true) || (! is_int($value) && ! (is_string($value) && ctype_digit($value)))) return null;
+        $capacity = filter_var($value, FILTER_VALIDATE_INT);
+        if ($capacity === false || $capacity < 1) return null;
+        return $vehicleType === 'bike' ? ($capacity === 1 ? 1 : null) : $capacity;
     }
     private static function allowedReview(string $from, string $to): bool {
         if ($from === 'approved') return $to === 'suspended';

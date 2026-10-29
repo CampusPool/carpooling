@@ -136,6 +136,7 @@ export default function DriverOnboarding({ token }: { token: string }) {
     <section className="onboarding-panel"><h4>2 · Start an application</h4><form className="form-grid onboarding-form" onSubmit={createApplication}>
       <label>Owned vehicle<select name="car_id" required defaultValue=""><option value="" disabled>Select a vehicle</option>{vehicles.map((v) => <option key={v.id || v.car_id} value={v.id || v.car_id}>{[v.brand || v.brand_other, v.model || v.model_other, v.patente || v.registration].filter(Boolean).join(" · ")}</option>)}</select></label>
       <label>Vehicle used for rides<select name="vehicle_type" defaultValue="car"><option value="car">Car</option><option value="bike">Motorbike</option></select></label>
+      <label>Legal passenger seats<input name="legal_passenger_capacity" type="number" min="1" step="1" required /><span className="fine">Enter seats available to passengers, excluding the driver. An operator checks this against the registration certificate. Motorbikes allow at most one passenger.</span></label>
       <label>Driver display name<input name="profile_display_name" maxLength={120} autoComplete="name" required /></label><label>Phone (optional)<input name="profile_phone" maxLength={32} autoComplete="tel" inputMode="tel" /></label>
       <button className="primary wide" disabled={busy || vehicles.length === 0}>Start application</button>
       {vehicles.length === 0 && <p className="fine wide">Add a complete vehicle first. The server will confirm it belongs to your account.</p>}
@@ -144,12 +145,15 @@ export default function DriverOnboarding({ token }: { token: string }) {
     <div className="onboarding-applications"><h4>3 · Application checklist</h4>
       {applications.length === 0 ? <div className="empty">Your applications will appear here after you start one.</div> : applications.map((app) => {
         const checklist: Json[] = Array.isArray(app.checklist) ? app.checklist : [];
-        const editable = ["pending", "needs_resubmission", "rejected"].includes(app.status);
+        const capacityCorrectionRequired = app.status === "approved" && app.legal_passenger_capacity == null;
+        const editable = ["pending", "needs_resubmission", "rejected"].includes(app.status) || capacityCorrectionRequired;
         const vehicle = app.vehicle || {};
         return <article className="onboarding-panel application-card" key={app.id}>
           <div className="section-head"><div><h4>{app.profile_display_name || "Driver application"}</h4><p className="fine">{vehicle.brand || vehicle.brand_other || "Vehicle"} {vehicle.model || vehicle.model_other || ""} · {app.vehicle_type || "vehicle"} · Version {app.version}</p></div><span className={`review-state ${app.status}`}>{statusLabel[app.status] || app.status}</span></div>
           {app.review_reason && <p className="review-note"><strong>Operator note:</strong> {app.review_reason}</p>}
-          {editable && <form className="form-grid onboarding-form profile-form" onSubmit={(e) => saveProfile(e, app)}><label>Display name<input name="profile_display_name" maxLength={120} defaultValue={app.profile_display_name || ""} required /></label><label>Phone (optional)<input name="profile_phone" maxLength={32} defaultValue={app.profile_phone || ""} /></label><button className="secondary" disabled={busy}>Save profile</button></form>}
+          {capacityCorrectionRequired && <p className="review-note">This older approval has no reviewed passenger capacity. Publishing is disabled until you provide the passenger seat count and an operator reviews it against your registration certificate.</p>}
+          {editable && <form className="form-grid onboarding-form profile-form" onSubmit={(e) => saveProfile(e, app)}><label>Display name<input name="profile_display_name" maxLength={120} defaultValue={app.profile_display_name || ""} required /></label><label>Phone (optional)<input name="profile_phone" maxLength={32} defaultValue={app.profile_phone || ""} /></label><label>Legal passenger seats<input name="legal_passenger_capacity" type="number" min="1" step="1" defaultValue={app.legal_passenger_capacity || ""} required /><span className="fine">Excluding driver; the operator checks this against the registration certificate.</span></label><button className="secondary" disabled={busy}>Save profile</button></form>}
+          <p className="fine">Declared passenger seats: {app.legal_passenger_capacity ?? "not provided"}{capacityCorrectionRequired ? " · review required before publishing" : app.status === "approved" ? " · reviewed with the vehicle documents" : " · awaiting operator review"}</p>
           <ul className="checklist">{checklist.map((doc) => <li className={`checklist-item ${doc.status}`} key={doc.document_type}>
             <div><strong>{labels[doc.document_type] || doc.document_type}</strong><span>{doc.required ? "Required" : "Optional"} · {statusLabel[doc.status] || doc.status}{doc.expires_at ? ` · expires ${doc.expires_at}` : ""}</span>{doc.review_reason && <small>Correction: {doc.review_reason}</small>}</div>
             {editable && doc.status !== "accepted" && <form className="upload-form" onSubmit={(e) => uploadDocument(e, app, doc)}>
@@ -159,7 +163,7 @@ export default function DriverOnboarding({ token }: { token: string }) {
             </form>}
           </li>)}</ul>
           {editable && <button className="primary" type="button" disabled={busy || checklist.some((d) => d.required && (d.status !== "submitted" && d.status !== "accepted" || (expiring.has(d.document_type) && (!d.expires_at || d.expires_at < new Date().toISOString().slice(0, 10)))))} onClick={() => void sendForReview(app)}>Submit checklist for review</button>}
-          {app.status === "approved" && <p className="fine">The backend records an operator approval. Keep your vehicle details and document dates current.</p>}
+          {app.status === "approved" && !capacityCorrectionRequired && <p className="fine">The backend records an operator approval. Keep your vehicle details and document dates current.</p>}
         </article>;
       })}
     </div>
