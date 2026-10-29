@@ -193,14 +193,14 @@ curl_multi_close($multi);
 $triggerFirings = (int) \Illuminate\Support\Facades\DB::table($observations)->count();
 \Illuminate\Support\Facades\DB::statement("DROP TABLE IF EXISTS `{$observations}`");
 if ($triggerFirings !== 1 || $raceElapsed < 0.9) {
-    fail('the single-seat acceptance was not demonstrably held during the concurrent HTTP sample');
+    fail('the trigger observation or minimum sample duration was not observed');
 }
 $contended = array_values(array_filter($results, fn (array $r): bool => $r['status'] !== 200));
-$contendedResponseProvesOverlap = count($contended) === 1
+$contendedResponseConsistentWithHold = count($contended) === 1
     && (($contended[0]['status'] === 409 && ($contended[0]['body']['error']['code'] ?? null) === 'COMMUTE_BUSY_RETRY')
         || ($contended[0]['status'] === 422 && ($contended[0]['body']['error']['code'] ?? null) === 'NOT_SEAT_AVAILABLE' && $contended[0]['total_time'] >= 0.9));
-if (! $contendedResponseProvesOverlap) {
-    fail('the losing concurrent request did not encounter the held trip lock or wait through its release');
+if (! $contendedResponseConsistentWithHold) {
+    fail('the losing response was not consistent with the expected contention sample');
 }
 
 $busyRetries = [];
