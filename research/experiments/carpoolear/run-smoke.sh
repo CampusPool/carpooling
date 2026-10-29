@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 . "../../../scripts/mobility-runtime.sh"
 mobility_require_command git
 mode=${1:-baseline}
-case "$mode" in baseline|journey|hardened|lifecycle|mobility|commute) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle|mobility|commute]' >&2; exit 2 ;; esac
+case "$mode" in baseline|journey|hardened|lifecycle|mobility|commute|race) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle|mobility|commute|race]' >&2; exit 2 ;; esac
 if [ ! -f ../../vendor/carpoolear_backend/composer.lock ]; then
   printf '%s\n' 'Missing pinned vendor checkout; follow README.md first.' >&2
   exit 2
@@ -30,14 +30,14 @@ compose() {
       mobility_compose "$project" -f compose.smoke.yml --env-file .env "$@" ;;
     journey)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml --env-file .env "$@" ;;
-    hardened|lifecycle|mobility|commute)
+    hardened|lifecycle|mobility|commute|race)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml --env-file .env "$@" ;;
   esac
 }
 if [ "$mode" != baseline ]; then
   mkdir -p raw
 fi
-if [ "$mode" = hardened ] || [ "$mode" = lifecycle ] || [ "$mode" = mobility ] || [ "$mode" = commute ]; then
+if [ "$mode" = hardened ] || [ "$mode" = lifecycle ] || [ "$mode" = mobility ] || [ "$mode" = commute ] || [ "$mode" = race ]; then
   if [ "$(git -C ../../vendor/carpoolear_hardened rev-parse HEAD)" != "$expected_revision" ]; then
     printf '%s\n' 'Prepare the pinned hardened evaluation checkout as documented in README.md.' >&2
     exit 2
@@ -58,8 +58,14 @@ fi
 compose_commute() {
   mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml --env-file .env "$@"
 }
-if [ "$mode" = commute ]; then
+if [ "$mode" = commute ] || [ "$mode" = race ]; then
   compose() { compose_commute "$@"; }
+fi
+compose_race() {
+  mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml -f compose.race.yml --env-file .env "$@"
+}
+if [ "$mode" = race ]; then
+  compose() { compose_race "$@"; }
 fi
 cleanup() {
   mobility_smoke_status=$?
@@ -91,6 +97,9 @@ elif [ "$mode" = baseline ]; then
 fi
 if [ "$mode" = commute ]; then
   compose exec -T app php /opt/mobility/commute-http-probe.php
+fi
+if [ "$mode" = race ]; then
+  compose exec -T app php /opt/mobility/commute-race-probe.php
 fi
 if [ "$mode" = mobility ]; then
   compose exec -T mysql mysql -uroot -psmoke-root-password -e "CREATE DATABASE IF NOT EXISTS testing; CREATE DATABASE IF NOT EXISTS testing_backup"
