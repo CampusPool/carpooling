@@ -1,7 +1,10 @@
 "use client";
+
+import "./offer-management.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
+import DriverOnboarding from "../components/DriverOnboarding";
 type R = Record<string, any>;
 const list = (x: any) =>
   Array.isArray(x?.data) ? x.data : Array.isArray(x) ? x : [];
@@ -32,6 +35,8 @@ const pickupWindow = (ride: R) => {
   if (earliest && latest) return `${earliest} – ${latest}`;
   return instant(ride.departure_at);
 };
+const pickupChoiceLabel = (choice: string) =>
+  choice === "ON_ROUTE_MEETING_POINT" ? "Meet along my route" : "Direct pickup";
 async function request(
   path: string,
   token: string,
@@ -88,6 +93,7 @@ export default function Page() {
     [notificationUnread, setNotificationUnread] = useState(0),
     [notificationsUnavailable, setNotificationsUnavailable] = useState(false),
     [offers, setOffers] = useState<R[]>([]),
+    [offersBusy, setOffersBusy] = useState(false),
     [wallet, setWallet] = useState<R>(),
     [bookingsUnavailable, setBookingsUnavailable] = useState(false),
     [walletUnavailable, setWalletUnavailable] = useState(false),
@@ -172,6 +178,8 @@ export default function Page() {
     setNotificationUnread(0);
     setNotificationsUnavailable(false);
     setOffers([]);
+    setOffersBusy(false);
+    setOffersUnavailable(false);
     setWallet(undefined);
     setOrigin(undefined);
     setDestination(undefined);
@@ -699,6 +707,7 @@ export default function Page() {
         await request("commute/offers", token, "POST", publishBody, key);
         intentKeys.current.delete(intent);
         await sync(token);
+        setNotice("Ride published. One rider seat is available for this trip.");
         setView("bookings");
         return;
       }
@@ -715,6 +724,19 @@ export default function Page() {
       if (e?.status !== 401) setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+  async function refreshOffers() {
+    if (!token || role !== "driver" || offersBusy) return;
+    setOffersBusy(true);
+    setOffersUnavailable(false);
+    try {
+      const response = await request("commute/offers", token);
+      setOffers(list(response));
+    } catch {
+      setOffersUnavailable(true);
+    } finally {
+      setOffersBusy(false);
     }
   }
   async function mutate(path: string, body: R = {}) {
@@ -1070,6 +1092,7 @@ export default function Page() {
             ["notifications", `Notifications${notificationUnread ? ` · ${notificationUnread}` : ""}`],
             ["waitlist", "Waitlist"],
             ["wallet", "Wallet"],
+            ["driver-onboarding", "Driver onboarding"],
             ...(me?.operator ? [["operator", "Operations"]] : []),
           ].map(([v, l]) => (
             <button
@@ -1098,6 +1121,8 @@ export default function Page() {
                   ? "Waitlist requests."
                 : view === "operator"
                   ? "Operations overview."
+                : view === "driver-onboarding"
+                  ? "Apply to drive."
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
@@ -1276,6 +1301,7 @@ export default function Page() {
               </div>
             </>
           )}
+          {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {view === "rides" && (
             <>
               {routeGeometry.length > 1 && (
@@ -1313,8 +1339,13 @@ export default function Page() {
                         <span>↓</span>
                         <b>{r.dropoff_label || destination?.label}</b>
                         <small>
-                          {r.driver_name || "Driver"} · {r.vehicle_type || "—"}
+                          {r.driver_name || "Driver"} · {r.vehicle_label || r.vehicle_type || "—"}
                         </small>
+                        {(r.seats_offered != null || r.seats_available != null) && (
+                          <small aria-label="Seats offered">
+                            Seats offered: {r.seats_offered ?? "—"} · {r.seats_available ?? "—"} available
+                          </small>
+                        )}
                         <small>
                           {r.choice === "ON_ROUTE_MEETING_POINT"
                             ? "Pickup: on-route meeting point"
@@ -1491,21 +1522,32 @@ export default function Page() {
                   )}
                 </div>
               )}
-              {role === "driver" && offersUnavailable && (
-                <p className="error banner">Published rides are temporarily unavailable.</p>
-              )}
-              {role === "driver" && offers.length > 0 && (
+              {role === "driver" && (
+                <section className="offer-management" aria-labelledby="published-rides-heading">
+                  <div className="section-head">
+                    <h3 id="published-rides-heading">Your published rides</h3>
+                    <button type="button" disabled={offersBusy} onClick={refreshOffers}>
+                      {offersBusy ? "Refreshing…" : "Refresh rides"}
+                    </button>
+                  </div>
+                  <p className="fine">Each published ride offers one rider seat. A rider request must be accepted before the seat is reserved.</p>
+                  {offersUnavailable && <p className="error banner" role="alert">Published rides could not be refreshed. Your current list is kept.</p>}
+                  {offers.length === 0 && !offersUnavailable ? <div className="empty">No upcoming rides published. Use the route form to publish a commute.</div> : null}
+                  {offers.length > 0 && (
                 <div className="cards">
                   {offers.map((offer, i) => (
                     <article className="booking" key={offer.trip_id || i}>
                       <div>
                         <b>{offer.pickup_label} → {offer.dropoff_label}</b>
                         {instant(offer.departure_at) && <span>Departure · {instant(offer.departure_at)} IST</span>}
-                        <span>Published · {offer.vehicle_type} · {offer.choice} · {offer.seats_available} seat(s) available</span>
+                        <span>Published · {offer.vehicle_type} · {pickupChoiceLabel(offer.choice)} · {Number(offer.seats_available) > 0 ? "1 rider seat available" : "No rider seats available"}</span>
+                        {offer.max_detour_meters != null && <span>Detour limit · {(Number(offer.max_detour_meters) / 1000).toFixed(1)} km · {Math.round(Number(offer.max_detour_seconds || 0) / 60)} min</span>}
                       </div>
                     </article>
                   ))}
                 </div>
+                  )}
+                </section>
               )}
               {bookingsUnavailable && (
                 <p className="error banner">Bookings are temporarily unavailable; existing data is preserved.</p>
@@ -1721,12 +1763,12 @@ export default function Page() {
                   <article className="booking" key={entry.id || i}>
                     <div>
                       <b>Trip {entry.trip_id}</b>
-                    <span>{entry.actionable ? "A seat is available for your turn (availability snapshot); refresh eligibility and terms before requesting driver review." : "Pending driver-reviewed waitlist request"}</span>
+                    <span>{entry.status === "requested" ? "You requested a seat and are waiting for driver review. Cancel this seat request here if your plans change." : entry.actionable ? "A seat is available for your turn (availability snapshot); refresh eligibility and terms before requesting driver review." : "Pending driver-reviewed waitlist request"}</span>
                     </div>
                     <div className="actions">
                       {entry.status === "pending" && !waitlistQuotes[entry.id] && <button type="button" onClick={async () => { try { const d = await request(`commute/waitlist/${entry.id}/refresh`, token, "POST", {}); setWaitlistQuotes((q) => ({ ...q, [entry.id]: d?.data?.quote_token })); setWaitlistTerms((q) => ({ ...q, [entry.id]: d?.data?.terms })); setNotice("Fresh route and fare loaded. Review and confirm before requesting driver review."); } catch (e: any) { setError(e.message); } }}>Refresh eligibility and terms</button>}
                       {entry.actionable && waitlistQuotes[entry.id] && <><span>Route {waitlistTerms[entry.id]?.pickup_label} → {waitlistTerms[entry.id]?.dropoff_label}</span><span>Walk {waitlistTerms[entry.id]?.access_meters || 0} m access · {waitlistTerms[entry.id]?.egress_meters || 0} m egress</span><span>Fresh fare {cash(waitlistTerms[entry.id]?.fare_minor)} · pickup {instant(waitlistTerms[entry.id]?.pickup_at) || "—"}</span><label className="fine"><input type="checkbox" id={`waitlist-consent-${entry.id}`} /> I agree to the refreshed route, pickup time, walking distances, and demo fare.</label><button type="button" onClick={() => { const c = document.getElementById(`waitlist-consent-${entry.id}`) as HTMLInputElement; if (!c.checked) { setError("Agree to the refreshed route and fare before requesting driver review."); return; } mutate(`commute/waitlist/${entry.id}/request`, { quote_token: waitlistQuotes[entry.id], consent: true }); }}>Request seat for driver review</button></>}
-                      <button type="button" onClick={() => mutate(`commute/waitlist/${entry.id}/cancel`)}>Cancel waitlist</button>
+                      <button type="button" onClick={() => mutate(`commute/waitlist/${entry.id}/cancel`)}>{entry.status === "requested" ? "Cancel seat request" : "Cancel waitlist"}</button>
                     </div>
                   </article>
                 ))}

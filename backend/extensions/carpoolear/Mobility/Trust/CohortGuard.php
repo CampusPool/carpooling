@@ -192,6 +192,13 @@ final class CohortGuard
             }
             $seats = ($currentSeats ?? 0) + $delta;
         }
+        if ($seats !== null && $seats < 1) {
+            return $this->error('SEAT_COUNT_INVALID', 422);
+        }
+        $capacity = DriverOnboardingPolicy::approvedPassengerCapacity((int) $approval->id);
+        if ($capacity !== null && $seats !== null && $seats > $capacity) {
+            return $this->error('VEHICLE_CAPACITY_EXCEEDED', 422);
+        }
         if ($approval->vehicle_type === 'bike' && $seats !== null && $seats > 1) {
             return $this->error('BIKE_CAPACITY_EXCEEDED', 422);
         }

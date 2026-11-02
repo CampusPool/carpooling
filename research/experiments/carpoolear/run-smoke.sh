@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 . "../../../scripts/mobility-runtime.sh"
 mobility_require_command git
 mode=${1:-baseline}
-case "$mode" in baseline|journey|hardened|lifecycle) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle]' >&2; exit 2 ;; esac
+case "$mode" in baseline|journey|hardened|lifecycle|mobility|commute|race) ;; *) printf '%s\n' 'Usage: sh run-smoke.sh [baseline|journey|hardened|lifecycle|mobility|commute|race]' >&2; exit 2 ;; esac
 if [ ! -f ../../vendor/carpoolear_backend/composer.lock ]; then
   printf '%s\n' 'Missing pinned vendor checkout; follow README.md first.' >&2
   exit 2
@@ -14,7 +14,14 @@ if [ "$(git -C ../../vendor/carpoolear_backend rev-parse HEAD)" != "$expected_re
   printf '%s\n' 'Vendor revision differs from the pinned experiment; see README.md.' >&2
   exit 2
 fi
-project=mobility-carpoolear-smoke
+instance=$(date +%s)-$$
+project="mobility-carpoolear-smoke-$instance"
+export MOBILITY_SMOKE_DB_VOLUME="${project}-db"
+context=${MOBILITY_DOCKER_CONTEXT:-colima-mobility}
+if docker --context "$context" volume inspect "$MOBILITY_SMOKE_DB_VOLUME" >/dev/null 2>&1; then
+  printf '%s\n' 'Refusing to reuse an existing database volume.' >&2
+  exit 2
+fi
 # Compose's application env otherwise overrides phpunit.xml's non-forced
 # cache/mail/session defaults and persists rate-limit state across test runs.
 compose() {
@@ -23,14 +30,14 @@ compose() {
       mobility_compose "$project" -f compose.smoke.yml --env-file .env "$@" ;;
     journey)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml --env-file .env "$@" ;;
-    hardened|lifecycle)
+    hardened|lifecycle|mobility|commute|race)
       mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml --env-file .env "$@" ;;
   esac
 }
 if [ "$mode" != baseline ]; then
   mkdir -p raw
 fi
-if [ "$mode" = hardened ] || [ "$mode" = lifecycle ]; then
+if [ "$mode" = hardened ] || [ "$mode" = lifecycle ] || [ "$mode" = mobility ] || [ "$mode" = commute ] || [ "$mode" = race ]; then
   if [ "$(git -C ../../vendor/carpoolear_hardened rev-parse HEAD)" != "$expected_revision" ]; then
     printf '%s\n' 'Prepare the pinned hardened evaluation checkout as documented in README.md.' >&2
     exit 2
@@ -45,14 +52,26 @@ fi
 compose_lifecycle() {
   mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml --env-file .env "$@"
 }
-if [ "$mode" = lifecycle ]; then
+if [ "$mode" = lifecycle ] || [ "$mode" = mobility ]; then
   compose() { compose_lifecycle "$@"; }
+fi
+compose_commute() {
+  mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml --env-file .env "$@"
+}
+if [ "$mode" = commute ] || [ "$mode" = race ]; then
+  compose() { compose_commute "$@"; }
+fi
+compose_race() {
+  mobility_compose "$project" -f compose.smoke.yml -f compose.journey.yml -f compose.hardened.yml -f compose.lifecycle.yml -f compose.routing-fixture.yml -f compose.race.yml --env-file .env "$@"
+}
+if [ "$mode" = race ]; then
+  compose() { compose_race "$@"; }
 fi
 cleanup() {
   mobility_smoke_status=$?
   if [ "$mobility_smoke_status" -ne 0 ]; then
     # Migration startup failures otherwise disappear with this disposable stack.
-    compose logs --no-color --tail=100 migrate >&2 || true
+    compose logs --no-color --tail=100 mysql migrate >&2 || true
   fi
   compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
@@ -71,10 +90,20 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 if [ "$ready" -ne 1 ]; then exit 1; fi
 printf '\n'
-if [ "$mode" != baseline ]; then
+if [ "$mode" = journey ] || [ "$mode" = hardened ] || [ "$mode" = lifecycle ]; then
   compose exec -T app php /opt/mobility/journey-probe.php
-else
+elif [ "$mode" = baseline ]; then
   compose run --rm --no-deps -e CACHE_STORE=array -e SESSION_DRIVER=array -e MAIL_MAILER=array -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test
+fi
+if [ "$mode" = commute ]; then
+  compose exec -T app php /opt/mobility/commute-http-probe.php
+fi
+if [ "$mode" = race ]; then
+  compose exec -T app php /opt/mobility/commute-race-probe.php
+fi
+if [ "$mode" = mobility ]; then
+  compose exec -T mysql mysql -uroot -psmoke-root-password -e "CREATE DATABASE IF NOT EXISTS testing; CREATE DATABASE IF NOT EXISTS testing_backup"
+  compose run --rm --no-deps -e CACHE_STORE=array -e SESSION_DRIVER=array -e MAIL_MAILER=array -e DB_DATABASE=testing -e BACKUP_DB_DATABASE=testing_backup -e DB_USERNAME=root -e DB_PASSWORD=smoke-root-password app php artisan test --compact tests/Feature/Mobility
 fi
 if [ "$mode" = lifecycle ]; then
   compose exec -T app php /opt/mobility/lifecycle-probe.php
