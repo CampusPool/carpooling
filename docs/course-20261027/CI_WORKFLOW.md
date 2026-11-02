@@ -19,5 +19,5 @@ keys, credentials or a deployed backend.
 This is a reproducible static/unit and reconstruction CI gate. Reconstruction
 does not start the Laravel backend. The workflow does not cover MySQL/Mongo
 disposable integrations, the maps provider, physical devices,
-or production deployment are covered. Those checks require separate fixtures
+or production deployment. Those checks require separate fixtures
 and evidence described in the course runbooks.
