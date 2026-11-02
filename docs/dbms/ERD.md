@@ -57,7 +57,7 @@ erDiagram
     TRIPS ||--o{ MOBILITY_TRIP_EVENTS : records
     TRIP_PASSENGERS ||--o| MOBILITY_FARE_SNAPSHOTS : priced
     TRIPS ||--o{ MOBILITY_FINANCIAL_POSTINGS : posts
-    MOBILITY_ROUTE_QUOTES ||--o{ TRIPS : consumed_by
+    MOBILITY_ROUTE_QUOTES }o--o| TRIPS : consumed_by
 
     USERS {
         int id PK

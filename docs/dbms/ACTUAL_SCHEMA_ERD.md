@@ -8,8 +8,8 @@ migrations store an identifier or JSON snapshot but do not declare an FK.
 
 ```mermaid
 erDiagram
-    users }o..|| trips : "host platform association"
-    users }o..|| trip_passengers : "host platform association"
+    users ||..o{ trips : "host platform association"
+    users ||..o{ trip_passengers : "host platform association"
     trips ||--o| mobility_trip_lifecycles : "FK trip_id"
     trips ||--o{ mobility_trip_participants : "FK trip_id"
     trip_passengers ||--o{ mobility_trip_participants : "FK booking_id"
