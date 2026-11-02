@@ -19,7 +19,8 @@ const offer = {
   dropoff_label: "Campus",
   vehicle_type: "car",
   choice: "ON_ROUTE_MEETING_POINT",
-  seats_available: 3,
+  seats_available: 1,
+  total_seats: 1,
 };
 
 const lifecycleBooking = (state) => ({
@@ -49,9 +50,10 @@ function json(body, status = 200) {
   });
 }
 
-function installDriverApi({ bookings = [], bookingSnapshots, bookingStatuses = [], unauthorizedTransition = false, walletStatus = 200, chatMessages = [], chatParticipants = [{ id: 808, name: "You", blocked_by_you: false }, { id: 909, name: "Rider", blocked_by_you: false }], chatParticipantsByTrip = {}, chatSendFailure = false, reportFailure = false, receiptFailure = false, blockDelay = 0, chatDelay = 0 } = {}) {
+function installDriverApi({ bookings = [], bookingSnapshots, bookingStatuses = [], offerSnapshots, offerStatuses = [], unauthorizedTransition = false, walletStatus = 200, chatMessages = [], chatParticipants = [{ id: 808, name: "You", blocked_by_you: false }, { id: 909, name: "Rider", blocked_by_you: false }], chatParticipantsByTrip = {}, chatSendFailure = false, reportFailure = false, receiptFailure = false, blockDelay = 0, chatDelay = 0 } = {}) {
   calls = [];
   let bookingFetches = 0;
+  let offerFetches = 0;
   let snapshotIndex = 0;
   let chatSendAttempts = 0;
   let reportAttempts = 0;
@@ -91,7 +93,13 @@ function installDriverApi({ bookings = [], bookingSnapshots, bookingStatuses = [
       if (reportFailure && reportAttempts === 1) return json({ message: "Temporary report failure" }, 503);
       return json({ data: { id: 992, status: "open" } });
     }
-    if (url === "/api/mobility/commute/offers" && method === "GET") return json({ data: [offer] });
+    if (url === "/api/mobility/commute/offers" && method === "GET") {
+      const snapshots = offerSnapshots || [[offer]];
+      const current = snapshots[Math.min(offerFetches, snapshots.length - 1)] || [];
+      const status = offerStatuses[Math.min(offerFetches, offerStatuses.length - 1)] || 200;
+      offerFetches += 1;
+      return json({ data: current }, status);
+    }
     if (url === "/mobility-pilot/maps-config") return json({});
     if (url === "/api/mobility/commute/offers" && method === "POST") return json({ trip: offer });
     if (url.match(/\/api\/mobility\/commute\/bookings\/701\/(accept|reject|cancel)$/) && method === "POST") return json({ booking: { booking_id: 701 } });
@@ -142,7 +150,28 @@ describe("driver journey interactions", () => {
     expect(publish.body.choice).toBe("ON_ROUTE_MEETING_POINT");
     expect(publish.body.max_detour_meters).toBe(2500);
     expect(publish.body.max_detour_seconds).toBe(1200);
-    expect(screen.getByText(/Published · car · ON_ROUTE_MEETING_POINT/)).toBeInTheDocument();
+    expect(screen.getByText(/Ride published\. One rider seat is available/)).toBeInTheDocument();
+    expect(screen.getByText(/Published · car · Meet along my route · 1 rider seat available/)).toBeInTheDocument();
+  });
+
+  it("refreshes the published ride list from the existing offers endpoint", async () => {
+    installDriverApi({ offerSnapshots: [[], [offer]] });
+    await signInDriver();
+    fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
+    expect(await screen.findByText("No upcoming rides published. Use the route form to publish a commute.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh rides" }));
+    expect(await screen.findByText(/Published · car · Meet along my route/)).toBeInTheDocument();
+    expect(calls.filter(({ url, method }) => url.endsWith("/commute/offers") && method === "GET")).toHaveLength(2);
+  });
+
+  it("keeps published rides visible when a refresh fails", async () => {
+    installDriverApi({ offerStatuses: [200, 503] });
+    await signInDriver();
+    fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
+    expect(await screen.findByText(/Published · car · Meet along my route/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh rides" }));
+    expect(await screen.findByText("Published rides could not be refreshed. Your current list is kept.")).toBeInTheDocument();
+    expect(screen.getByText(/Published · car · Meet along my route/)).toBeInTheDocument();
   });
 
   it("renders the exact driver lifecycle control and sends passenger_id only for board/alight", async () => {

@@ -58,6 +58,16 @@ assert.match(source, /routeGeometry\.map\(\(\[lng, lat\]/);
 assert.doesNotMatch(source, /DIRECT_PICKUP["']/);
 assert.match(nextConfig, /source: '\/api\/admin\/:path\*'/);
 assert.match(nextConfig, /source: '\/api\/login'/);
+assert.match(nextConfig, /source: '\/api\/cars', destination: `\$\{origin\}\/api\/cars`/);
+assert.match(nextConfig, /source: '\/api\/car-colors', destination: `\$\{origin\}\/api\/car-colors`/);
+process.env.MOBILITY_API_ORIGIN = 'http://mobility-api.test';
+const nextConfigModule = await import(`../next.config.mjs?contract=${Date.now()}`);
+const rewrites = await nextConfigModule.default.rewrites();
+assert.deepEqual(rewrites.filter(({ source }) => ['/api/cars', '/api/car-colors'].includes(source)), [
+  { source: '/api/cars', destination: 'http://mobility-api.test/api/cars' },
+  { source: '/api/car-colors', destination: 'http://mobility-api.test/api/car-colors' },
+]);
+assert.equal(rewrites.some(({ source }) => source === '/api/:path*'), false);
 assert.match(source, /admin\/support\/tickets/);
 assert.match(source, /assign-me/);
 assert.match(source, /Cerrado/);

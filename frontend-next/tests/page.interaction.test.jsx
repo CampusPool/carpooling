@@ -19,6 +19,9 @@ const ride = {
   duration_minutes: 32,
   driver_name: "Asha",
   vehicle_type: "car",
+  vehicle_label: "Honda City",
+  seats_offered: 2,
+  seats_available: 2,
   pickup_label: "Home pickup",
   dropoff_label: "Campus gate",
   choice: "DIRECT_RIDER_PICKUP",
@@ -53,7 +56,7 @@ function json(body, status = 200) {
   });
 }
 
-function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = "2026-10-28T05:00:00.000Z", operator = false } = {}) {
+function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false } = {}) {
   calls = [];
   let bookingReads = 0;
   let currentWaitlist = waitlist;
@@ -152,6 +155,23 @@ describe("rider journey interactions", () => {
     expect(cards[1]).toHaveTextContent("10 min from requested pickup");
   });
 
+  it("shows vehicle details and offered seats before a rider requests a seat", async () => {
+    installApi();
+    await signInAndWait();
+    await searchSavedRoute();
+    expect(screen.getByText(/Asha · Honda City/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Seats offered")).toHaveTextContent("Seats offered: 2 · 2 available");
+  });
+
+  it("shows a clear empty state when a valid search has no eligible rides", async () => {
+    installApi({ rides: [] });
+    await signInAndWait();
+    await searchSavedRoute();
+    expect(screen.getByText("No eligible rides returned for this route and date.")).toBeInTheDocument();
+    expect(document.querySelectorAll("article.ride")).toHaveLength(0);
+    expect(calls.some(({ url, method }) => method === "GET" && url.includes("/commute/rides?"))).toBe(true);
+  });
+
   it("derives ride duration from confirmed ride seconds when minutes are absent", async () => {
     installApi({ rides: [{ ...ride, duration_minutes: undefined, ride_seconds: 1951 }] });
     await signInAndWait();
@@ -213,6 +233,15 @@ describe("rider journey interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Waitlist" }));
     fireEvent.click(await screen.findByRole("button", { name: "Refresh eligibility and terms" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This waitlist entry is not actionable yet");
+  });
+
+  it("lets a rider cancel the pending booking created from a waitlist entry", async () => {
+    installApi({ waitlist: [{ id: 9, trip_id: 42, status: "requested", actionable: false }] });
+    await signInAndWait();
+    fireEvent.click(screen.getByRole("button", { name: "Waitlist" }));
+    expect(await screen.findByText(/You requested a seat and are waiting for driver review/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel seat request" }));
+    await waitFor(() => expect(calls.some(({ url, method }) => url.endsWith("/waitlist/9/cancel") && method === "POST")).toBe(true));
   });
 
   it("opens the saved driver route from booking activity", async () => {

@@ -41,7 +41,7 @@ index 367b642..a8dda69 100755
 -        $newRequest = Passenger::create($newRequestData);
 +        return DB::transaction(function () use ($tripId, $user) {
 +            $trip = Trip::query()->lockForUpdate()->find($tripId);
-+            if (! $trip || $this->userHasActiveRequest($tripId, $user->id)) {
++            if (! $trip || (int) $trip->user_id === (int) $user->id || $this->userHasActiveRequest($tripId, $user->id)) {
 +                return null;
 +            }
  
@@ -128,7 +128,7 @@ new file mode 100644
 index 0000000..ccf9a6e
 --- /dev/null
 +++ b/tests/Feature/Http/CriticalInvariantsEvaluationTest.php
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,74 @@
 +<?php
 +
 +namespace Tests\Feature\Http;
@@ -174,6 +174,17 @@ index 0000000..ccf9a6e
 +        $this->assertFalse((bool) $user->active);
 +        $this->assertFalse((bool) $user->identity_validated);
 +        $this->assertFalse((bool) $user->driver_is_verified);
++    }
++
++    public function test_trip_owner_cannot_create_a_passenger_request_for_own_trip(): void
++    {
++        $owner = User::factory()->create(['identity_validated' => true]);
++        $trip = Trip::factory()->create(['user_id' => $owner->id, 'total_seats' => 1]);
++
++        $this->actingAs($owner, 'api')
++            ->postJson("/api/trips/{$trip->id}/requests")
++            ->assertUnprocessable();
++        $this->assertDatabaseMissing('trip_passengers', ['trip_id' => $trip->id, 'user_id' => $owner->id]);
 +    }
 +
 +    public function test_autoaccept_keeps_second_request_pending_when_capacity_is_full(): void

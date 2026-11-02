@@ -59,7 +59,7 @@ services:
 
 volumes:
   carpoolear-smoke-db:
-    name: mobility-carpoolear-smoke-db
+    name: ${MOBILITY_SMOKE_DB_VOLUME:?Set a unique disposable smoke database volume}
 
 networks:
   appnet:

@@ -73,6 +73,23 @@ final class MobilityCohortSecurityTest extends TestCase
         $this->actingAsApiUser($host)->postJson('/api/trips', $payload)->assertStatus(422)->assertJsonPath('error.code', 'BIKE_CAPACITY_EXCEEDED');
     }
 
+    public function test_approved_car_cannot_publish_more_passenger_seats_than_reviewed_registration_capacity(): void
+    {
+        $host = $this->approvedMember(['identity_validated' => true, 'nro_doc' => 'CAP123', 'mobile_phone' => '0000000000']);
+        $car = Car::factory()->withCatalog()->create(['user_id' => $host->id]);
+        $applicationId = DB::table('mobility_host_applications')->insertGetId(['user_id' => $host->id, 'car_id' => $car->id, 'vehicle_type' => 'car', 'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $onboardingId = DB::table('mobility_driver_onboardings')->insertGetId(['user_id' => $host->id, 'host_application_id' => $applicationId, 'car_id' => $car->id, 'vehicle_type' => 'car', 'legal_passenger_capacity' => 2, 'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'profile_display_name' => 'Synthetic approved driver', 'status' => 'approved', 'version' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        foreach (['driver_license', 'profile_photo', 'rc', 'insurance'] as $type) {
+            DB::table('mobility_driver_documents')->insert(['onboarding_id' => $onboardingId, 'document_type' => $type, 'version' => 1, 'storage_path' => 'synthetic/'.$type, 'mime_type' => 'application/pdf', 'byte_size' => 1, 'expires_at' => in_array($type, ['driver_license', 'rc', 'insurance'], true) ? now()->addYear()->toDateString() : null, 'status' => 'accepted', 'submitted_by' => $host->id, 'reviewed_by' => $host->id, 'reviewed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+        }
+        PilotDemoRoutes::seed();
+        $payload = ['is_passenger' => 0, 'from_town' => 'Synthetic Stop A', 'to_town' => 'Synthetic Stop B', 'punto_partida' => 'Synthetic Stop A', 'punto_llegada' => 'Synthetic Stop B', 'trip_date' => now('Asia/Kolkata')->addDays(2)->format('Y-m-d H:i:s'), 'total_seats' => 3, 'friendship_type_id' => 2, 'estimated_time' => '00:15', 'distance' => 3.5, 'co2' => 0, 'description' => 'capacity guard', 'points' => PilotDemoRoutes::points('demo-a-b'), 'car_id' => $car->id, 'vehicle_type' => 'car'];
+        $this->actingAsApiUser($host)->postJson('/api/trips', $payload)->assertStatus(422)->assertJsonPath('error.code', 'VEHICLE_CAPACITY_EXCEEDED');
+        $payload['total_seats'] = 2;
+        $this->actingAsApiUser($host)->postJson('/api/trips', $payload)->assertStatus(409)->assertJsonPath('error.code', 'TRUSTED_ROUTE_QUOTE_REQUIRED');
+        $this->assertDatabaseMissing('trips', ['user_id' => $host->id, 'car_id' => $car->id]);
+    }
+
     public function test_legacy_publish_cannot_bypass_trusted_quote_with_an_approved_vehicle(): void
     {
         $host = $this->approvedMember(['identity_validated' => true, 'nro_doc' => 'SEC456', 'mobile_phone' => '0000000000']);
