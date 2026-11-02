@@ -40,7 +40,7 @@ php artisan migrate:status
 ```
 
 The extension migrations are timestamped from `2026_10_17` through
-`2026_10_27`. Two timestamps intentionally contain more than one migration;
+`2026_10_29`. Two timestamps intentionally contain more than one migration;
 the complete filename (not only the timestamp prefix) is the migration name.
 Laravel's migration table records the full names and batch, so do not rename
 files after they have been applied.
@@ -57,7 +57,9 @@ done
 ```
 
 For a disposable verification database, record the migration status, apply the
-full set, then roll back the last batch and reapply it:
+full set, then roll back the last batch and reapply it. The commands below have
+not yet been verified as a full-batch rollback on this revision; record failures
+and investigate them rather than assuming every rollback is safe:
 
 ```sh
 php artisan migrate:status
