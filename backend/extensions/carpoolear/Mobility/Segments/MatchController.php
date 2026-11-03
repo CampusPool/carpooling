@@ -49,7 +49,7 @@ final class MatchController
                 ->whereNotExists(function ($q): void {
                     $q->from('mobility_trip_lifecycles')->selectRaw('1')->whereColumn('mobility_trip_lifecycles.trip_id', 'trips.id')->where('state', '!=', 'planned');
                 })
-                ->select('trips.*')->orderBy('trips.id')->limit(300);
+                ->select('trips.*')->with(['user:id,name', 'car.brand:id,name', 'car.carModel:id,name'])->orderBy('trips.id')->limit(300);
             CohortPolicy::scopeOffers($query);
             $offers = [];
             $trusted = [];
@@ -60,12 +60,17 @@ final class MatchController
                         continue;
                     }
                     $fingerprint = RouteTerms::current($trip, $terms);
+                    $hostName = $this->publicFirstName($trip->user?->name);
+                    $car = $trip->car;
+                    $brand = trim((string) ($car?->brand_name ?? ''));
+                    $model = trim((string) ($car?->model_name ?? ''));
+                    $vehicleLabel = trim($brand.' '.$model) ?: (($terms['snapshot']['vehicle_type'] ?? null) === 'bike' ? 'Motorbike' : 'Car');
                     $arrival = [CarbonImmutable::parse($trip->trip_date, 'Asia/Kolkata')->timestamp];
                     foreach ($terms['legs'] as $leg) {
                         $arrival[] = $arrival[count($arrival) - 1] + $leg['duration_seconds'];
                     }
                     $offers[] = ['trip_id' => (int) $trip->id, 'host_id' => (int) $trip->user_id, 'service_date' => $date->format('Y-m-d'), 'stops' => array_column($terms['stops'], 'id'), 'arrival_epochs' => $arrival, 'segment_free_seats' => SegmentInventory::free($trip, $terms)];
-                    $trusted[(int) $trip->id] = ['terms' => $terms, 'fingerprint' => $fingerprint];
+                    $trusted[(int) $trip->id] = ['terms' => $terms, 'fingerprint' => $fingerprint, 'host_name' => $hostName, 'vehicle_label' => $vehicleLabel];
                 } catch (SegmentException) {
                     continue;
                 }
@@ -88,7 +93,7 @@ final class MatchController
                     $id = (string) Str::uuid();
                     $fare = RouteTerms::fare($terms, $from, $till);
                     DB::table('mobility_match_references')->insert(['id' => $id, 'user_id' => $rider->id, 'trip_id' => $match['trip_id'], 'quote_id' => $terms['quote_id'], 'from_index' => $from, 'till_index' => $till, 'fare_minor' => $fare, 'route_hash' => $terms['hash'], 'vehicle_fingerprint' => $bound['fingerprint'], 'expires_at' => $expires, 'created_at' => now(), 'updated_at' => now()]);
-                    $out[] = ['match_id' => $id, 'trip_id' => $match['trip_id'], 'pickup_point_id' => $match['pickup_stop_id'], 'dropoff_point_id' => $match['dropoff_stop_id'], 'pickup_local' => CarbonImmutable::createFromTimestamp($match['pickup_epoch'], 'Asia/Kolkata')->toIso8601String(), 'dropoff_local' => CarbonImmutable::createFromTimestamp($match['dropoff_epoch'], 'Asia/Kolkata')->toIso8601String(), 'seats_available' => $match['segment_available_seats'], 'seat_price_minor' => $fare, 'currency' => 'INR', 'synthetic_only' => $terms['snapshot']['synthetic_only'], 'expires_at' => $expires->toISOString(), 'ranking' => ['pickup_difference_seconds' => $match['pickup_difference_seconds'], 'ride_duration_seconds' => $match['ride_duration_seconds']]];
+                    $out[] = ['match_id' => $id, 'trip_id' => $match['trip_id'], 'host_name' => $bound['host_name'], 'vehicle_type' => $terms['snapshot']['vehicle_type'], 'vehicle_label' => $bound['vehicle_label'], 'pickup_point_id' => $match['pickup_stop_id'], 'dropoff_point_id' => $match['dropoff_stop_id'], 'pickup_local' => CarbonImmutable::createFromTimestamp($match['pickup_epoch'], 'Asia/Kolkata')->toIso8601String(), 'dropoff_local' => CarbonImmutable::createFromTimestamp($match['dropoff_epoch'], 'Asia/Kolkata')->toIso8601String(), 'seats_available' => $match['segment_available_seats'], 'seat_price_minor' => $fare, 'currency' => 'INR', 'synthetic_only' => $terms['snapshot']['synthetic_only'], 'expires_at' => $expires->toISOString(), 'ranking' => ['pickup_difference_seconds' => $match['pickup_difference_seconds'], 'ride_duration_seconds' => $match['ride_duration_seconds']]];
                 }
 
                 return ['data' => $out, 'scan_limit' => 300];
@@ -168,6 +173,13 @@ final class MatchController
         if (! CohortPolicy::approved((int) $rider->id)) {
             throw new SegmentException('MEMBERSHIP_REQUIRED', 403);
         }
+    }
+
+    private function publicFirstName(?string $name): string
+    {
+        $parts = preg_split('/\\s+/u', trim((string) $name), 2);
+
+        return is_array($parts) && ($parts[0] ?? '') !== '' ? $parts[0] : 'Host';
     }
 
     private function respond(callable $operation): JsonResponse

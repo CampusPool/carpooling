@@ -63,6 +63,57 @@ final class MobilitySegmentBookingTest extends TestCase
         $this->assertSame([0, 0], $this->free($trip));
     }
 
+    public function test_driver_cannot_book_own_trip_and_rider_cannot_create_duplicate_active_booking(): void
+    {
+        [$host, $car] = $this->host();
+        $trip = $this->publish($host, $car);
+        $service = app(\STS\Mobility\Segments\SegmentBookingService::class);
+
+        try {
+            $service->newRequest($trip, $host);
+            $this->fail('A trip host must not be able to book their own trip.');
+        } catch (\STS\Mobility\Segments\SegmentException $error) {
+            $this->assertSame('MEMBERSHIP_REQUIRED', $error->machineCode);
+        }
+        $this->assertSame(0, DB::table('trip_passengers')->where('trip_id', $trip)->count());
+
+        [, $rider] = $this->requestFor(101, 102, 'duplicate-active');
+        $bookingId = (int) DB::table('trip_passengers')->where('trip_id', $trip)->where('user_id', $rider->id)->value('id');
+        $duplicate = $service->newRequest($trip, $rider);
+        $this->assertNull($duplicate, 'A rider with an active request cannot create another booking for the same trip.');
+        $this->assertSame(1, DB::table('trip_passengers')->where('trip_id', $trip)->where('user_id', $rider->id)->count());
+        $this->assertDatabaseHas('trip_passengers', ['id' => $bookingId, 'request_state' => Passenger::STATE_PENDING]);
+    }
+
+    public function test_match_search_exposes_only_public_host_and_approved_vehicle_card_details(): void
+    {
+        [$host, $car] = $this->host();
+        $host->forceFill(['name' => 'Aarav Campus Host'])->save();
+        $trip = $this->publish($host, $car);
+        $rider = $this->member('card-viewer');
+        $car->load(['brand', 'carModel']);
+        $brand = $car->brand_name;
+        $model = $car->model_name;
+
+        $response = $this->actingAsApiUser($rider)->postJson('/api/mobility/pool-matches', [
+            'service_date' => now('Asia/Kolkata')->addDays(2)->format('Y-m-d'),
+            'pickup_point_id' => 101, 'dropoff_point_id' => 102,
+            'from_time' => '00:00', 'to_time' => '23:59', 'preferred_time' => '12:00', 'vehicle_type' => 'car',
+        ])->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.trip_id', $trip)
+            ->assertJsonPath('data.0.host_name', 'Aarav')
+            ->assertJsonPath('data.0.vehicle_type', 'car')
+            ->assertJsonPath('data.0.seats_available', 1)
+            ->assertJsonPath('data.0.pickup_point_id', 101)
+            ->assertJsonPath('data.0.dropoff_point_id', 102);
+
+        $this->assertSame(trim($brand.' '.$model), $response->json('data.0.vehicle_label'));
+        $this->assertArrayNotHasKey('host_id', $response->json('data.0'));
+        $this->assertArrayNotHasKey('email', $response->json('data.0'));
+        $this->assertArrayNotHasKey('plate', $response->json('data.0'));
+        $this->assertArrayNotHasKey('patente', $response->json('data.0'));
+    }
+
     public function test_expired_foreign_and_catalog_changed_references_are_denied(): void
     {
         [$host, $car] = $this->host();
