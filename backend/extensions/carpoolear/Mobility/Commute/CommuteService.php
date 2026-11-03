@@ -7,9 +7,11 @@ use STS\Models\{User,Trip,Passenger};
 use STS\Mobility\Segments\SegmentException;
 use STS\Mobility\Trust\CohortPolicy;
 final class CommuteService {
- public static function demoEnabled():bool{return app()->environment('testing')&&filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN);}
- public static function demoActor(int$id):bool{return self::demoEnabled()&&DB::table('mobility_commute_demo_actors')->where('user_id',$id)->exists();}
+ public static function demoEnabled():bool{return app()->environment(['local','testing'])&&filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN);}
+ public static function demoActor(int$id):bool{return self::demoEnabled()&&(DB::table('mobility_commute_demo_actors')->where('user_id',$id)->exists()||DB::table('mobility_local_accounts')->where('user_id',$id)->exists());}
  public function requireDemo(User$u):void{if(!self::demoActor($u->id)||!CohortPolicy::approved($u->id))throw new SegmentException('DEMO_SESSION_REQUIRED',403);}
+ public function accountRole(User$u):?string{return DB::table('mobility_local_accounts')->where('user_id',$u->id)->value('role');}
+ public function requireRole(User$u,string$role):void{$accountRole=$this->accountRole($u);if($accountRole!==null&&$accountRole!==$role)throw new SegmentException('ACCOUNT_ROLE_REQUIRED',403);}
  private function actor(string$key,string$name):User {
   $row=DB::table('mobility_commute_demo_actors')->where('fixture_key',$key)->first();if($row)return User::findOrFail($row->user_id);
   return DB::transaction(function()use($key,$name){$email='commute-'.$key.'@example.invalid';$u=User::where('email',$email)->lockForUpdate()->first();if(!$u)$u=User::factory()->create(['email'=>$email,'name'=>$name,'active'=>true,'banned'=>false]);
@@ -25,15 +27,16 @@ final class CommuteService {
   if(!CohortPolicy::activeUser($u)||!CohortPolicy::approved($u->id))return false;
   return (self::demoActor($u->id)&&DB::table('mobility_commute_demo_actors')->where('user_id',$u->id)->whereIn('fixture_key',['driver-car','campus-driver-car'])->exists())||CohortPolicy::hostApproved($u->id);
  }
- public function me(User$u):array{return['user'=>['id'=>$u->id,'name'=>$u->name,'email'=>$u->email],'profile'=>$this->profile($u),'demo'=>self::demoActor($u->id),'operator'=>(bool)$u->is_admin,'driver_approved'=>$this->driverApproved($u)];}
+ public function me(User$u):array{return['user'=>['id'=>$u->id,'name'=>$u->name,'email'=>$u->email],'profile'=>$this->profile($u),'account_role'=>$this->accountRole($u),'demo'=>self::demoActor($u->id),'operator'=>(bool)$u->is_admin,'driver_approved'=>$this->driverApproved($u)];}
  public function saveProfile(User$u,array$v):array{
   return DB::transaction(function()use($u,$v){if(isset($v['name'])){$u->name=$v['name'];$u->save();}unset($v['name']);$v['onboarding_complete']=true;$existing=DB::table('mobility_commute_profiles')->where('user_id',$u->id)->lockForUpdate()->first(['gender_identity','same_gender_only']);$gender=array_key_exists('gender_identity',$v)?$v['gender_identity']:($existing->gender_identity??null);$same=(bool)(array_key_exists('same_gender_only',$v)?$v['same_gender_only']:($existing->same_gender_only??false));if($same&&(!$gender||in_array($gender,['prefer_not_to_say','self_described'],true)))throw new SegmentException($gender==='self_described'?'SAME_GENDER_IDENTITY_UNMATCHABLE':'SAME_GENDER_IDENTITY_REQUIRED',422);unset($v['gender_identity'],$v['same_gender_only']);DB::table('mobility_commute_profiles')->updateOrInsert(['user_id'=>$u->id],['preferences'=>json_encode($v,JSON_THROW_ON_ERROR),'gender_identity'=>$gender,'same_gender_only'=>$same,'created_at'=>now(),'updated_at'=>now()]);return$this->me($u);});
  }
  public function rides(User$rider,string$direction,string$date,string$vehicle,string$pickupChoice='both'):array {
+  $this->requireRole($rider,'rider');
   return app(CommuteMatchingService::class)->rides($rider,$direction,$date,$vehicle,$pickupChoice);
  }
  public function joinWaitlist(User$rider,int$tripId,string$quote):array {
-  $this->requireDemo($rider);
+  $this->requireDemo($rider);$this->requireRole($rider,'rider');
   return DB::transaction(function()use($rider,$tripId,$quote){
    $trip=Trip::whereKey($tripId)->lockForUpdate()->firstOrFail();
    $meta=DB::table('mobility_commute_demo_trips')->where('trip_id',$tripId)->where('is_publication',true)->first();
@@ -78,6 +81,7 @@ final class CommuteService {
  private function waitlistTermsDto(object$row,object$m):array{$j=json_decode($m->journey,true,512,JSON_THROW_ON_ERROR);return array_merge($this->waitlistDto($row,true,$m->match_key),['terms'=>['fare_minor'=>(int)$m->fare_minor,'base_fare_minor'=>(int)$m->base_fare_minor,'surcharge_minor'=>(int)$m->surcharge_minor,'pickup_at'=>CarbonImmutable::parse($m->pickup_at,'Asia/Kolkata')->toISOString(),'pickup_label'=>$j['rider_origin']['label']??'Pickup','dropoff_label'=>$j['rider_destination']['label']??'Destination','access_meters'=>(int)($j['access']['total_meters']??0),'egress_meters'=>(int)($j['egress']['total_meters']??0),'journey'=>$j]]);}
  private function quoteToken(object$m,User$u):string{return hash_hmac('sha256',$m->trip_id.':'.$u->id.':'.$m->fare_minor.':'.$m->fixture_key,(string)config('app.key'));}
  public function request(User$u,int$tripId,string$quote):array {
+  $this->requireRole($u,'rider');
   $this->requireDemo($u);return DB::transaction(function()use($u,$tripId,$quote){$trip=Trip::whereKey($tripId)->lock('for update nowait')->firstOrFail();$meta=DB::table('mobility_commute_demo_trips')->where('trip_id',$tripId)->first();
    if($meta&&$meta->is_publication)return app(CommuteMatchingService::class)->request($u,$trip,$quote);
    if(!$meta||(int)$meta->audience_id!==$u->id||!hash_equals($this->quoteToken($meta,$u),$quote))throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);

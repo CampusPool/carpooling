@@ -58,6 +58,46 @@ final class MobilityCohortSecurityTest extends TestCase
         $this->actingAsApiUser($host)->postJson('/api/mobility/host-applications', ['car_id' => $car->id, 'vehicle_type' => 'bike'])->assertStatus(409)->assertJsonPath('error.code', 'HOST_APPLICATION_CONFLICT');
     }
 
+    public function test_student_and_inactive_admin_cannot_read_or_change_operator_queues(): void
+    {
+        $student = $this->approvedMember();
+        $inactiveAdmin = User::factory()->create(['active' => false, 'banned' => false, 'is_admin' => true]);
+        $pendingMember = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert(['user_id' => $pendingMember->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'pending', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+
+        $hostApplicant = $this->approvedMember();
+        $car = Car::factory()->withCatalog()->create(['user_id' => $hostApplicant->id]);
+        $applicationId = DB::table('mobility_host_applications')->insertGetId([
+            'user_id' => $hostApplicant->id, 'car_id' => $car->id, 'vehicle_type' => 'car',
+            'vehicle_fingerprint' => CohortPolicy::vehicleFingerprint($car), 'status' => 'pending', 'version' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAsApiUser($student)->getJson('/api/mobility/membership/me')
+            ->assertOk()->assertJsonPath('capabilities.request', true);
+        foreach (['/api/mobility/operator/memberships', '/api/mobility/operator/host-applications'] as $path) {
+            $this->actingAsApiUser($student)->getJson($path)->assertForbidden()->assertJsonPath('error.code', 'OPERATOR_FORBIDDEN');
+        }
+        $this->actingAsApiUser($student)->postJson('/api/mobility/operator/memberships/'.$pendingMember->id.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'unauthorized student'])
+            ->assertForbidden()->assertJsonPath('error.code', 'OPERATOR_FORBIDDEN');
+        $this->actingAsApiUser($student)->postJson('/api/mobility/operator/host-applications/'.$applicationId.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'unauthorized student'])
+            ->assertForbidden()->assertJsonPath('error.code', 'OPERATOR_FORBIDDEN');
+
+        foreach (['/api/mobility/operator/memberships', '/api/mobility/operator/host-applications'] as $path) {
+            $response = $this->actingAsApiUser($inactiveAdmin)->getJson($path);
+            $this->assertContains($response->status(), [401, 403]);
+        }
+        $memberDecision = $this->actingAsApiUser($inactiveAdmin)->postJson('/api/mobility/operator/memberships/'.$pendingMember->id.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'inactive admin']);
+        $this->assertContains($memberDecision->status(), [401, 403]);
+        $hostDecision = $this->actingAsApiUser($inactiveAdmin)->postJson('/api/mobility/operator/host-applications/'.$applicationId.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'inactive admin']);
+        $this->assertContains($hostDecision->status(), [401, 403]);
+
+        $this->assertDatabaseHas('mobility_memberships', ['user_id' => $pendingMember->id, 'status' => 'pending', 'version' => 1]);
+        $this->assertDatabaseHas('mobility_host_applications', ['id' => $applicationId, 'status' => 'pending', 'version' => 1]);
+        $this->assertDatabaseMissing('mobility_membership_audits', ['user_id' => $pendingMember->id]);
+        $this->assertDatabaseMissing('mobility_host_application_audits', ['application_id' => $applicationId]);
+    }
+
     public function test_vehicle_edit_invalidates_approved_fingerprint_and_canonical_publish_checks_bike_capacity(): void
     {
         $host = $this->approvedMember(['identity_validated' => true, 'nro_doc' => 'SEC123', 'mobile_phone' => '0000000000']);
@@ -131,6 +171,10 @@ final class MobilityCohortSecurityTest extends TestCase
         $this->actingAsApiUser($host)->postJson('/api/mobility/host-applications', ['car_id' => $car->id, 'vehicle_type' => 'car'])->assertOk();
         $id = DB::table('mobility_host_applications')->where('user_id', $host->id)->value('id');
         $this->assertSame(1, DB::table('mobility_host_application_audits')->where('application_id', $id)->count());
+        $host->forceFill(['is_admin' => true])->save();
+        $this->actingAsApiUser($host)->postJson('/api/mobility/operator/host-applications/'.$id.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'self review'])
+            ->assertForbidden()->assertJsonPath('error.code', 'SELF_REVIEW_FORBIDDEN');
+        $this->assertDatabaseHas('mobility_host_applications', ['id' => $id, 'status' => 'pending', 'version' => 1]);
         DB::table('mobility_memberships')->where('user_id', $host->id)->update(['college_code' => 'OTHER-COLLEGE']);
         $this->actingAsApiUser($admin)->postJson('/api/mobility/operator/host-applications/'.$id.'/decision', ['expected_version' => 1, 'status' => 'approved', 'reason' => 'wrong college'])->assertStatus(403)->assertJsonPath('error.code', 'MEMBERSHIP_REQUIRED');
     }

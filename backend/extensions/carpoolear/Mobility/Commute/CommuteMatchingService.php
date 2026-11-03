@@ -77,6 +77,7 @@ final class CommuteMatchingService {
  private function profileHash(array$p):string{if(!isset($p['home'],$p['campus'],$p['outbound_time'],$p['return_time']))return '';return hash('sha256',json_encode([$p['home'],$p['campus'],$p['outbound_time'],$p['return_time'],$p['max_walk_meters']??999],JSON_THROW_ON_ERROR));}
  public function publish(User$driver,array$v):array {
   $this->service()->requireDemo($driver);
+  $this->service()->requireRole($driver,'driver');
   if(!$this->service()->driverApproved($driver))throw new SegmentException('HOST_APPROVAL_REQUIRED',403);
   $p=$this->service()->profile($driver);if(!$p)throw new SegmentException('COMMUTE_PROFILE_REQUIRED',422);
   $back=$v['direction']==='return';$from=$p[$back?'campus':'home'];$to=$p[$back?'home':'campus'];$at=$this->departure($v['date'],$p[$back?'return_time':'outbound_time']);
@@ -96,6 +97,7 @@ final class CommuteMatchingService {
  }
  public function offers(User$driver):array {
   $this->service()->requireDemo($driver);
+  $this->service()->requireRole($driver,'driver');
   $rows=DB::table('mobility_commute_demo_trips as m')->join('trips as t','t.id','=','m.trip_id')->join('mobility_trip_lifecycles as l','l.trip_id','=','t.id')->where('m.is_publication',true)->where('t.user_id',$driver->id)->where('l.state','planned')->where('t.trip_date','>',now('Asia/Kolkata'))->orderBy('t.trip_date')->limit(20)->select('m.*')->get();
   return['data'=>$rows->map(fn($m)=>$this->offerDto($m))->all()];
  }
