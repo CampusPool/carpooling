@@ -14,6 +14,35 @@ final class CohortGuard
     public function handle(Request $request, Closure $next)
     {
         $path = $request->path();
+        if (app()->environment(['local', 'testing']) && filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'), FILTER_VALIDATE_BOOLEAN)
+            && DB::getSchemaBuilder()->hasTable('mobility_local_accounts')) {
+            $requiredRole = null;
+            if ($path === 'api/mobility/pool-offers') {
+                $requiredRole = $request->isMethod('POST') ? 'driver' : ($request->isMethod('GET') ? 'rider' : null);
+            } elseif ($path === 'api/mobility/pool-matches' && $request->isMethod('POST')) {
+                $requiredRole = 'rider';
+            } elseif (preg_match('~^api/mobility/pool-matches/[^/]+/requests$~', $path) && $request->isMethod('POST')) {
+                $requiredRole = 'rider';
+            } elseif (preg_match('~^api/trips/\d+/requests$~', $path) && $request->isMethod('POST')) {
+                $requiredRole = 'rider';
+            } elseif (preg_match('~^api/trips/\d+/requests/\d+/(accept|reject)$~', $path) && $request->isMethod('POST')) {
+                $requiredRole = 'driver';
+            } elseif ($path === 'api/users/requests' && $request->isMethod('GET')) {
+                $requiredRole = 'driver';
+            } elseif ($path === 'api/users/seat-requests' && $request->isMethod('GET')) {
+                $requiredRole = 'rider';
+            }
+            if ($requiredRole !== null) {
+                $actor = $request->user() ?: auth('api')->user();
+                if ($actor) {
+                    $role = DB::table('mobility_local_accounts')->where('user_id', $actor->id)->value('role');
+                    if ($role !== null && $role !== $requiredRole) {
+                        return response()->json(['error' => ['code' => 'ACCOUNT_ROLE_REQUIRED']], 403)
+                            ->header('Cache-Control', 'private, no-store, max-age=0');
+                    }
+                }
+            }
+        }
         $s1 = (bool) preg_match('~^api/mobility/(membership|host-applications|operator/memberships|operator/host-applications)(?:/|$)~', $path);
         if (! CohortPolicy::required() && ! $s1) {
             return $next($request);

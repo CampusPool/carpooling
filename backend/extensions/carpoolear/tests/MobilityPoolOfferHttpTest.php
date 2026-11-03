@@ -119,6 +119,64 @@ final class MobilityPoolOfferHttpTest extends TestCase
         $this->assertDatabaseHas('trip_passengers', ['trip_id' => $id, 'user_id' => $rider->id, 'request_state' => Passenger::STATE_CANCELED]);
     }
 
+    public function test_distinct_local_driver_and_rider_accounts_complete_visible_pool_publish_search_request_accept_flow(): void
+    {
+        $previousPilot = getenv('MOBILITY_PILOT_UI_ENABLED');
+        putenv('MOBILITY_PILOT_UI_ENABLED=true');
+        try {
+            $driverResponse = $this->postJson('/api/mobility/local-auth/register', [
+                'username' => 'separate_driver', 'password' => 'driver-pass-123', 'role' => 'driver',
+            ])->assertCreated()->assertJsonPath('role', 'driver');
+            $riderResponse = $this->postJson('/api/mobility/local-auth/register', [
+                'username' => 'separate_rider', 'password' => 'rider-pass-123', 'role' => 'rider',
+            ])->assertCreated()->assertJsonPath('role', 'rider');
+            $driver = User::findOrFail((int) $driverResponse->json('user.id'));
+            $rider = User::findOrFail((int) $riderResponse->json('user.id'));
+            $this->assertNotSame($driver->id, $rider->id);
+            $car = Car::query()->where('user_id', $driver->id)->firstOrFail();
+            $this->assertTrue(CohortPolicy::hostApproved((int) $driver->id, (int) $car->id, 'car'));
+
+            $quote = $this->quote($driver, 'car');
+            $tripId = $this->actingAsApiUser($driver)->postJson('/api/mobility/pool-offers', $this->payload($quote, $car), ['Idempotency-Key' => 'local-driver-publish'])
+                ->assertCreated()->json('data.id');
+            $this->actingAsApiUser($driver)->postJson('/api/mobility/pool-matches', [
+                'service_date' => now('Asia/Kolkata')->addDays(3)->format('Y-m-d'),
+                'pickup_point_id' => 101, 'dropoff_point_id' => 102,
+                'from_time' => '00:00', 'to_time' => '23:59', 'preferred_time' => '12:00', 'vehicle_type' => 'car',
+            ])->assertForbidden()->assertJsonPath('error.code', 'ACCOUNT_ROLE_REQUIRED');
+            $match = $this->actingAsApiUser($rider)->postJson('/api/mobility/pool-matches', [
+                'service_date' => now('Asia/Kolkata')->addDays(3)->format('Y-m-d'),
+                'pickup_point_id' => 101, 'dropoff_point_id' => 102,
+                'from_time' => '00:00', 'to_time' => '23:59', 'preferred_time' => '12:00', 'vehicle_type' => 'car',
+            ])->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.trip_id', $tripId)->json('data.0.match_id');
+            $this->actingAsApiUser($rider)->postJson('/api/mobility/pool-matches/'.$match.'/requests', [], ['Idempotency-Key' => 'local-rider-request'])->assertCreated();
+            $this->actingAsApiUser($driver)->postJson('/api/trips/'.$tripId.'/requests/'.$rider->id.'/accept')->assertOk();
+            $this->assertDatabaseHas('trip_passengers', ['trip_id' => $tripId, 'user_id' => $rider->id, 'request_state' => Passenger::STATE_ACCEPTED]);
+            $this->assertDatabaseHas('mobility_driver_onboardings', ['user_id' => $driver->id, 'car_id' => $car->id, 'status' => 'approved', 'legal_passenger_capacity' => 1]);
+            $this->assertDatabaseHas('mobility_local_accounts', ['user_id' => $driver->id, 'role' => 'driver']);
+            $this->assertDatabaseHas('mobility_local_accounts', ['user_id' => $rider->id, 'role' => 'rider']);
+        } finally {
+            putenv($previousPilot === false ? 'MOBILITY_PILOT_UI_ENABLED' : 'MOBILITY_PILOT_UI_ENABLED='.$previousPilot);
+        }
+    }
+
+    public function test_same_approved_student_can_host_and_request_another_students_ride(): void
+    {
+        [$dualRoleStudent, $ownCar] = $this->host('car');
+        [$offerHost, $offerCar] = $this->host('car');
+        $quote = $this->quote($offerHost, 'car');
+        $tripId = $this->actingAsApiUser($offerHost)->postJson('/api/mobility/pool-offers', $this->payload($quote, $offerCar), ['Idempotency-Key' => 'dual-role-offer'])
+            ->assertCreated()->json('data.id');
+
+        $this->assertDatabaseHas('mobility_memberships', ['user_id' => $dualRoleStudent->id, 'affiliation' => 'student', 'status' => 'approved']);
+        $this->assertDatabaseHas('mobility_host_applications', ['user_id' => $dualRoleStudent->id, 'car_id' => $ownCar->id, 'status' => 'approved']);
+        $this->actingAsApiUser($dualRoleStudent)->getJson('/api/mobility/pool-offers?service_date='.now('Asia/Kolkata')->addDays(3)->format('Y-m-d'))
+            ->assertOk()->assertJsonFragment(['id' => $tripId]);
+        $this->actingAsApiUser($dualRoleStudent)->postJson('/api/trips/'.$tripId.'/requests')->assertOk();
+
+        $this->assertDatabaseHas('trip_passengers', ['trip_id' => $tripId, 'user_id' => $dualRoleStudent->id, 'request_state' => Passenger::STATE_PENDING]);
+    }
+
     public function test_failure_after_canonical_trip_write_rolls_everything_back_and_quote_can_be_reused(): void
     {
         [$host, $car] = $this->host('car');

@@ -12,6 +12,7 @@ use STS\Models\User;
 final class CollegeEmailAuth
 {
     public function domains(): array { return array_values(config('college.domains', ['stu.pes.edu'])); }
+    public function campuses(): array { return array_values(config('college.campuses', ['CAMPUS-BLR'])); }
 
     public function normalizeEmail(mixed $email): ?string
     {
@@ -75,9 +76,9 @@ final class CollegeEmailAuth
         if($denied)throw new CollegeEmailAuthException('COLLEGE_OTP_THROTTLED',429);
     }
 
-    public function verify(string $challengeId, string $code): array
+    public function verify(string $challengeId, string $code, array $registration = []): array
     {
-        $result = DB::transaction(function () use ($challengeId, $code): array {
+        $result = DB::transaction(function () use ($challengeId, $code, $registration): array {
             $challenge = DB::table('mobility_college_email_challenges')->where('challenge_id', $challengeId)->lockForUpdate()->first();
             if (! $challenge || $challenge->consumed_at || now()->greaterThanOrEqualTo($challenge->expires_at)) throw new CollegeEmailAuthException('COLLEGE_OTP_EXPIRED', 422);
             if ((int) $challenge->attempts >= (int) config('college.otp_max_attempts', 5)) throw new CollegeEmailAuthException('COLLEGE_OTP_ATTEMPTS_EXCEEDED', 422);
@@ -97,6 +98,46 @@ final class CollegeEmailAuth
                 }
             }
             if (! (bool) $user->active || (bool) $user->banned) throw new CollegeEmailAuthException('ACCOUNT_RESTRICTED', 403);
+            $profile = DB::table('mobility_student_profiles')->where('user_id', $user->id)->lockForUpdate()->first();
+            if (! $profile) {
+                $name = is_string($registration['name'] ?? null) ? trim($registration['name']) : '';
+                $srnInput = is_string($registration['srn'] ?? null) ? trim($registration['srn']) : '';
+                $campus = is_string($registration['campus_code'] ?? null) ? strtoupper(trim($registration['campus_code'])) : '';
+                $srn = strtoupper($srnInput);
+                if (mb_strlen($name) < 2 || mb_strlen($name) > 120 || preg_match('/[<>\x00-\x1F]/u', $name)) {
+                    throw new CollegeEmailAuthException('STUDENT_NAME_INVALID', 422);
+                }
+                if (! preg_match('/^[A-Z0-9-]{3,32}$/D', $srn)) {
+                    throw new CollegeEmailAuthException('STUDENT_SRN_INVALID', 422);
+                }
+                if (! in_array($campus, $this->campuses(), true)) {
+                    throw new CollegeEmailAuthException('STUDENT_CAMPUS_INVALID', 422);
+                }
+                try {
+                    DB::table('mobility_student_profiles')->insert(['user_id' => $user->id, 'srn_normalized' => $srn, 'campus_code' => $campus, 'created_at' => now(), 'updated_at' => now()]);
+                    if ($user->name !== $name) {
+                        $user->name = $name;
+                        $user->save();
+                    }
+                    $profile = (object) ['srn_normalized' => $srn, 'campus_code' => $campus];
+                } catch (QueryException $e) {
+                    if ($this->isSrnUniqueViolation($e)) {
+                        throw new CollegeEmailAuthException('STUDENT_SRN_TAKEN', 409);
+                    }
+                    if ($this->isUserProfileUniqueViolation($e)) {
+                        // A concurrent verification for this existing account won. A locking
+                        // read observes its committed profile even under REPEATABLE READ.
+                        $profile = DB::table('mobility_student_profiles')->where('user_id', $user->id)->lockForUpdate()->first();
+                        if ($profile) {
+                            // Keep the profile and display name chosen by the winning request.
+                        } else {
+                            throw $e;
+                        }
+                    } else {
+                        throw $e;
+                    }
+                }
+            }
             $membership = DB::table('mobility_memberships')->where('user_id', $user->id)->lockForUpdate()->first();
             if ($membership && ($membership->college_code !== config('college.code') || ! in_array($membership->status, ['pending', 'approved'], true))) {
                 throw new CollegeEmailAuthException('COLLEGE_MEMBERSHIP_INELIGIBLE', 403);
@@ -110,10 +151,26 @@ final class CollegeEmailAuth
                 DB::table('mobility_membership_audits')->insert(['membership_id' => $membership->id, 'user_id' => $user->id, 'actor_id' => $user->id, 'previous_status' => 'pending', 'new_status' => 'approved', 'version' => (int) $membership->version + 1, 'reason' => 'college_email_otp_verification', 'created_at' => now(), 'updated_at' => now()]);
             }
             DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->update(['consumed_at' => now(), 'updated_at' => now()]);
-            return ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'verified_college_email' => true];
+            return ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
         });
         if (($result['error'] ?? null) === 'COLLEGE_OTP_INVALID') throw new CollegeEmailAuthException('COLLEGE_OTP_INVALID', 422);
         return $result;
+    }
+
+    private function isSrnUniqueViolation(QueryException $error): bool
+    {
+        $message = strtolower((string) ($error->errorInfo[2] ?? $error->getMessage()));
+        return str_contains($message, 'srn_normalized')
+            && (str_contains($message, 'duplicate') || str_contains($message, 'unique constraint'));
+    }
+
+    private function isUserProfileUniqueViolation(QueryException $error): bool
+    {
+        $message = strtolower((string) ($error->errorInfo[2] ?? $error->getMessage()));
+        $driverCode = (int) ($error->errorInfo[1] ?? 0);
+        return (str_contains($message, 'mobility_student_profiles.user_id')
+            && (str_contains($message, 'duplicate') || str_contains($message, 'unique constraint') || str_contains($message, 'primary key')))
+            || ($driverCode === 1062 && str_contains($message, 'for key') && str_contains($message, 'primary'));
     }
 }
 

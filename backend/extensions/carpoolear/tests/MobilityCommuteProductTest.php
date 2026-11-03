@@ -4,8 +4,41 @@ use Tests\TestCase;
 use STS\Mobility\Pickup\PathProvider;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use STS\Models\Trip;
 use STS\Models\User;
 final class MobilityCommuteProductTest extends TestCase {
+ public function test_username_accounts_complete_core_journey_without_wallet_payment():void {
+  $cohort=getenv('MOBILITY_COHORT_REQUIRED');putenv('MOBILITY_COHORT_REQUIRED=true');
+  try {
+  $driverSession=$this->postJson('/api/mobility/local-auth/register',['username'=>'journey_driver','password'=>'local-test-123','role'=>'driver'])->assertCreated();
+  $riderSession=$this->postJson('/api/mobility/local-auth/register',['username'=>'journey_rider','password'=>'local-test-456','role'=>'rider'])->assertCreated();
+  $driver=User::findOrFail($driverSession->json('user.id'));$rider=User::findOrFail($riderSession->json('user.id'));
+  $date=now('Asia/Kolkata')->addDay()->toDateString();
+  foreach([[$driver,'driver'],[$rider,'rider']]as[$actor,$role])$this->actingAsApiUser($actor)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
+  $this->actingAsApiUser($rider)->putJson('/api/mobility/commute/profile',$this->prefs('driver'))->assertForbidden();
+  $offer=$this->actingAsApiUser($driver)->postJson('/api/mobility/commute/offers',['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'],['Idempotency-Key'=>'local-core-offer'])->assertOk();
+  $trip=$offer->json('data.trip_id');
+  $card=$this->actingAsApiUser($rider)->getJson('/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car')->assertOk()->assertJsonCount(1,'data')->json('data.0');
+  $booking=$this->actingAsApiUser($rider)->postJson('/api/mobility/commute/rides/'.$trip.'/request',['quote_token'=>$card['quote_token']],['Idempotency-Key'=>'local-core-request'])->assertOk()->json('data.booking_id');
+  $this->actingAsApiUser($driver)->getJson('/api/mobility/commute/notifications')->assertOk()->assertJsonPath('data.0.rider_name','journey_rider')->assertJsonPath('data.0.pickup_label','Demo home')->assertJsonPath('data.0.departure_at',$card['departure_at']);
+  $chat='/api/mobility/trips/'.$trip.'/messages';
+  $this->actingAsApiUser($rider)->getJson($chat)->assertForbidden();
+  $this->actingAsApiUser($rider)->postJson('/api/mobility/commute/bookings/'.$booking.'/accept',[],['Idempotency-Key'=>'local-core-wrong-accept'])->assertForbidden();
+  $this->actingAsApiUser($driver)->postJson('/api/mobility/commute/bookings/'.$booking.'/accept',[],['Idempotency-Key'=>'local-core-accept'])->assertOk()->assertJsonPath('data.request_state',1);
+  $this->actingAsApiUser($rider)->getJson('/api/mobility/commute/notifications')->assertOk()->assertJsonPath('data.0.kind','booking_accepted')->assertJsonPath('data.0.driver_name','journey_driver');
+  $this->actingAsApiUser($rider)->postJson($chat,['text'=>'See you at the pickup.'],['Idempotency-Key'=>'local-core-message'])->assertOk();
+  $this->actingAsApiUser($driver)->getJson($chat.'?after=0')->assertOk()->assertJsonPath('data.messages.0.text','See you at the pickup.');
+  $tracking='/api/mobility/trips/'.$trip.'/tracking';
+  $session=$this->actingAsApiUser($driver)->postJson($tracking.'/session',['consent'=>true],['Idempotency-Key'=>'local-core-tracking'])->assertOk()->json('data.session_id');
+  $this->assertNotEmpty($session);
+  $this->actingAsApiUser($driver)->postJson($tracking.'/locations',['session_id'=>$session,'sequence'=>1,'lat'=>12.9716,'lng'=>77.5946,'accuracy_meters'=>10,'recorded_at'=>now('UTC')->format('Y-m-d\TH:i:s.v\Z')],['Idempotency-Key'=>'local-core-location'])->assertOk();
+  $this->actingAsApiUser($rider)->getJson($tracking)->assertOk();
+  $transition='/api/mobility/commute/trips/'.$trip.'/transition';
+  foreach(['start','board','alight','complete']as$action)$this->actingAsApiUser($driver)->postJson($transition,['action'=>$action]+(in_array($action,['board','alight'])?['passenger_id'=>$rider->id]:[]),['Idempotency-Key'=>'local-core-'.$action])->assertOk();
+  $this->assertDatabaseMissing('mobility_commute_demo_holds',['booking_id'=>$booking]);
+  $this->assertDatabaseHas('mobility_trip_lifecycles',['trip_id'=>$trip,'state'=>'completed']);
+  } finally {putenv($cohort===false?'MOBILITY_COHORT_REQUIRED':'MOBILITY_COHORT_REQUIRED='.$cohort);}
+ }
  // PHPUnit XML can differ from Laravel's inherited Docker environment.
  // Check Laravel's actual connection before RefreshDatabase can migrate:fresh.
  protected function beforeRefreshingDatabase():void {
@@ -84,7 +117,7 @@ final class MobilityCommuteProductTest extends TestCase {
  public function test_college_otp_wrong_attempts_persist_and_correct_code_is_single_use():void{
   $id=(string)Str::uuid();$code='123456';DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$id,'email'=>'synthetic@stu.pes.edu','code_hash'=>hash('sha256',$id.':'.$code.':'.config('app.key')),'expires_at'=>now()->addMinutes(5),'resend_after'=>now()->addSeconds(30),'created_at'=>now(),'updated_at'=>now()]);
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>'000000'])->assertStatus(422);$this->assertDatabaseHas('mobility_college_email_challenges',['challenge_id'=>$id,'attempts'=>1]);
-  $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code])->assertOk()->assertJsonPath('verified_college_email',true);
+  $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code,'name'=>'Synthetic Student','srn'=>'SYNTHETIC123','campus_code'=>'CAMPUS-BLR'])->assertOk()->assertJsonPath('verified_college_email',true)->assertJsonPath('student_profile.srn','SYNTHETIC123');
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code])->assertStatus(422);
   config(['mail.default'=>'log']);$this->postJson('/api/mobility/college-auth/request',['email'=>'test@stu.pes.edu'])->assertStatus(503)->assertJsonPath('error.code','COLLEGE_MAIL_UNAVAILABLE');
   foreach(['test@stu.pes.edu.evil.com','test@pes.edu','test@gmail.com']as$email)$this->postJson('/api/mobility/college-auth/request',['email'=>$email])->assertStatus(422);
@@ -188,7 +221,7 @@ final class MobilityCommuteProductTest extends TestCase {
   $r=$this->demo('rider');$d=$this->demo('driver');$date=now('Asia/Kolkata')->addDay()->toDateString();
   foreach([[$r,'rider'],[$d,'driver']]as[$u,$role])$this->actingAsApiUser($u)->putJson('/api/mobility/commute/profile',$this->prefs($role))->assertOk();
   $publish=['date'=>$date,'direction'=>'outbound','vehicle_type'=>'car','choice'=>'DIRECT_RIDER_PICKUP'];
-  $this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',$publish,['Idempotency-Key'=>'first-offer'])->assertOk();
+  $firstTrip=$this->actingAsApiUser($d)->postJson('/api/mobility/commute/offers',$publish,['Idempotency-Key'=>'first-offer'])->assertOk()->json('data.trip_id');
   $url='/api/mobility/commute/rides?date='.$date.'&direction=outbound&vehicle_type=car';$c=$this->actingAsApiUser($r)->getJson($url)->assertOk()->json('data.0');
   $id=$this->actingAsApiUser($r)->postJson('/api/mobility/commute/rides/'.$c['trip_id'].'/request',['quote_token'=>$c['quote_token']],['Idempotency-Key'=>'first-request'])->assertOk()->json('data.booking_id');
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$id.'/accept',[],['Idempotency-Key'=>'first-accept'])->assertOk();
@@ -200,6 +233,9 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($r)->postJson('/api/mobility/commute/wallet/top-up',['amount_minor'=>50000],['Idempotency-Key'=>'topup'])->assertOk();
   $this->actingAsApiUser($r)->postJson('/api/mobility/commute/bookings/'.$id.'/pay',[],['Idempotency-Key'=>'pay'])->assertOk();
   foreach(['cancel-a','cancel-b']as$key)$this->actingAsApiUser($r)->postJson('/api/mobility/commute/bookings/'.$id.'/cancel',[],['Idempotency-Key'=>$key])->assertOk()->assertJsonPath('data.wallet_state','refunded');
+  $this->assertDatabaseHas('trip_passengers',['id'=>$id,'trip_id'=>$firstTrip,'request_state'=>3]);
+  $this->assertSame(1,(int)Trip::findOrFail($firstTrip)->fresh()->seats_available);
+  $this->actingAsApiUser($r)->getJson('/api/mobility/commute/bookings')->assertOk()->assertJsonFragment(['booking_id'=>$id,'request_state'=>3]);
   $this->assertSame(1,DB::table('mobility_commute_demo_entries')->where('booking_id',$id)->where('kind','refund')->count());
   $this->actingAsApiUser($r)->getJson('/api/mobility/commute/wallet')->assertOk()->assertJsonPath('available_minor',50000);
   $this->actingAsApiUser($d)->postJson('/api/mobility/commute/bookings/'.$otherId.'/accept',[],['Idempotency-Key'=>'accept-after-cancel'])->assertOk();

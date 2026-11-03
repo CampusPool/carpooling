@@ -76,7 +76,8 @@ final class CohortController
 
     public function memberships(Request $request): JsonResponse
     {
-        if (! $request->user()?->is_admin || $request->user()->banned || ! CohortPolicy::college()) {
+        $actor = $request->user();
+        if (! $actor || ! $actor->is_admin || ! CohortPolicy::activeUser($actor) || ! CohortPolicy::college()) {
             return $this->error('OPERATOR_FORBIDDEN', 403);
         }
         $pageSize = $request->query('page_size', 50);
@@ -171,7 +172,8 @@ final class CohortController
 
     public function hostApplications(Request $request): JsonResponse
     {
-        if (! $request->user()?->is_admin || $request->user()->banned || ! CohortPolicy::college()) {
+        $actor = $request->user();
+        if (! $actor || ! $actor->is_admin || ! CohortPolicy::activeUser($actor) || ! CohortPolicy::college()) {
             return $this->error('OPERATOR_FORBIDDEN', 403);
         }
         $pageSize = $request->query('page_size', 50);
