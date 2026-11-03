@@ -19,9 +19,26 @@ scratch=$(mktemp -d "${TMPDIR:-/tmp}/dbms-level3.XXXXXX")
 name="dbms-level3-$(basename "$scratch" | tr '[:upper:]' '[:lower:]')-$$"
 sql_id=
 mongo_id=
+diagnostics() {
+  # These containers contain only synthetic fixtures and deliberately have no
+  # generated credentials. Do not dump host settings or container environments.
+  for id in "$sql_id" "$mongo_id"; do
+    if [ -n "$id" ]; then
+      docker_cmd inspect --format 'DIAGNOSTIC {{.Name}}: status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' "$id" 2>&1 || true
+      docker_cmd logs --tail 60 "$id" 2>&1 || true
+    fi
+  done
+  for probe in "$scratch/sql-probe.log" "$scratch/mongo-probe.log"; do
+    if [ -f "$probe" ]; then
+      echo "DIAGNOSTIC $(basename "$probe"):"
+      tail -n 10 "$probe"
+    fi
+  done
+}
 cleanup() {
   status=$?
   trap - 0 INT TERM
+  if [ "$status" -ne 0 ]; then diagnostics; fi
   # Only IDs created by this invocation are eligible for removal.
   for id in "$sql_id" "$mongo_id"; do
     if [ -n "$id" ] && ! docker_cmd rm -f -v "$id" >/dev/null 2>&1; then
@@ -40,8 +57,9 @@ docker_cmd info >/dev/null 2>&1 || { echo 'FAIL: Docker daemon unavailable' >&2;
 # Explicit tmpfs overrides image-declared data volumes. No ports, host mounts,
 # application networks or persistent database volumes are created or reused.
 sql_id=$(docker_cmd create --name "$name-sql" --network none \
-  --tmpfs /var/lib/mysql:rw,size=512m \
-  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=dbms_evidence_level3 mysql:8.0)
+  --tmpfs /var/lib/mysql:rw,size=1024m \
+  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=dbms_evidence_level3 mysql:8.0 \
+  --innodb-buffer-pool-size=64M --innodb-redo-log-capacity=64M --skip-log-bin)
 mongo_id=$(docker_cmd create --name "$name-mongo" --network none \
   --tmpfs /data/db:rw,size=1024m --tmpfs /data/configdb:rw,size=32m mongo:8.0)
 docker_cmd start "$sql_id" "$mongo_id" >/dev/null
@@ -51,8 +69,17 @@ sql() { docker_cmd exec -i "$sql_id" mysql --connect-timeout=2 --protocol=TCP -h
 attempt=0
 ready=0
 while [ "$attempt" -lt 90 ]; do
-  if sql -e 'SELECT 1' >/dev/null 2>&1 && \
-    docker_cmd exec "$mongo_id" mongosh --quiet 'mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000' --eval 'quit(db.runCommand({ping:1}).ok === 1 ? 0 : 1)' >/dev/null 2>&1; then
+  for id in "$sql_id" "$mongo_id"; do
+    if [ "$(docker_cmd inspect --format '{{.State.Running}}' "$id")" != true ]; then
+      echo 'FAIL: a database container exited before readiness' >&2
+      exit 1
+    fi
+  done
+  sql_ready=0
+  mongo_ready=0
+  if sql -e 'SELECT 1' > "$scratch/sql-probe.log" 2>&1; then sql_ready=1; fi
+  if docker_cmd exec "$mongo_id" mongosh --quiet 'mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000' --eval 'quit(db.runCommand({ping:1}).ok === 1 ? 0 : 1)' > "$scratch/mongo-probe.log" 2>&1; then mongo_ready=1; fi
+  if [ "$sql_ready" = 1 ] && [ "$mongo_ready" = 1 ]; then
     ready=1
     break
   fi
