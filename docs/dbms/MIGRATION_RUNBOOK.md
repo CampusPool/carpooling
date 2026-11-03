@@ -40,7 +40,7 @@ php artisan migrate:status
 ```
 
 The extension migrations are timestamped from `2026_10_17` through
-`2026_10_29`. Two timestamps intentionally contain more than one migration;
+`2026_11_02`. Two timestamps intentionally contain more than one migration;
 the complete filename (not only the timestamp prefix) is the migration name.
 Laravel's migration table records the full names and batch, so do not rename
 files after they have been applied.
@@ -80,6 +80,17 @@ have been reviewed. Do not use `migrate:fresh`, `migrate:reset`, or manual
   `nodes_geo` tables. Segment, lifecycle, dispatch, recurring, and financial
   migrations add foreign keys among extension tables and should be rolled back
   in reverse migration order.
+- `2026_11_02_000100_create_mobility_student_profiles.php` requires the host
+  `users` table. It stores canonical, unique SRNs separately from the name,
+  verified email, and membership decision. It must be rolled back before the
+  host identity table is removed.
+- `2026_11_03_000100_create_mobility_local_accounts.php` requires host
+  `users` and creates a unique normalized username plus one role mapping per user.
+  Stop local-account writes and deploy compatible code before rollback. Export
+  mapping rows if they must be retained: `down()` drops the mapping table;
+  existing host users/memberships/synthetic cars are not removed by that rollback.
+  Reapplying recreates an empty mapping table; restoring account associations
+  requires the preserved export. Roll this migration back before removing `users`.
 - Several migrations alter an earlier table (`Schema::table`) and their
   `down()` methods remove those columns, indexes, or foreign keys. Verify the
   target migration batch before rolling back because existing application rows

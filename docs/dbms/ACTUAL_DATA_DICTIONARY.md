@@ -22,6 +22,20 @@ unsigned BIGINT (unless a migration uses another explicit integer helper);
 | `mobility_commute_matches` | `match_key` string(64) PK; `trip_id`, `rider_id` unsigned integer indexed; `profile_hash` string(64); `journey` JSON; `fare_minor`, `base_fare_minor`, `surcharge_minor` integer; `pickup_at` datetime; `expires_at` timestamp; timestamps | No FK; `match_key` is the service-level quote/match boundary. |
 | `mobility_commute_booking_terms` | `booking_id` unsigned integer PK; `match_key` string(64) indexed; timestamps | No FK; snapshots the selected match key for a booking. |
 
+## Student identity
+
+| Table | Exact columns (type/role) | Keys and integrity |
+|---|---|---|
+| `mobility_student_profiles` | `user_id` unsigned integer PK; `srn_normalized` string(32); `campus_code` string(64); timestamps | `user_id → users.id` with cascade delete; `srn_normalized` unique; `campus_code` indexed. The registration service must trim and uppercase SRNs before persistence so uniqueness is canonical. `users.name` remains the name source, `mobility_verified_identities` is the verified email source, and `mobility_memberships` remains the eligibility/status source. |
+
+## Local username accounts
+
+| Table | Exact columns (type/role) | Keys and integrity |
+|---|---|---|
+| `mobility_local_accounts` | `user_id` unsigned integer PK; `username` string(32); `role` string(8); `created_at`, `updated_at` timestamps | `user_id → users.id` with cascade delete; `username` unique. The local service lowercases and trims usernames and validates role as `rider` or `driver`; the migration does not declare a SQL role CHECK. Password hashes remain in `users.password`, never in this table. |
+
+Migration `2026_11_03_000100_create_mobility_local_accounts.php` requires host `users`; it has no FK to `mobility_student_profiles`. Local accounts are enabled only in explicitly enabled local/testing pilot environments. Membership and synthetic driver rows have separate service-owned provisioning; deleting this mapping table alone does not delete those rows.
+
 ## Core route, lifecycle, and booking evidence
 
 | Table | Exact columns | Declared FK(s) |
