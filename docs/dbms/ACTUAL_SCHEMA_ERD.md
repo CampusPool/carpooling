@@ -10,6 +10,10 @@ migrations store an identifier or JSON snapshot but do not declare an FK.
 erDiagram
     users ||..o{ trips : "host platform association"
     users ||..o{ trip_passengers : "host platform association"
+    users ||--o| mobility_local_accounts : "PK/FK user_id; username unique"
+    users ||--o| mobility_student_profiles : "PK/FK user_id"
+    users ||--o{ mobility_verified_identities : "FK user_id"
+    users ||--o| mobility_memberships : "unique FK user_id"
     trips ||--o| mobility_trip_lifecycles : "FK trip_id"
     trips ||--o{ mobility_trip_participants : "FK trip_id"
     trip_passengers ||--o{ mobility_trip_participants : "FK booking_id"
@@ -89,7 +93,17 @@ do not declare cross-table foreign keys. The same is true of `booking_id` in
 the demo wallet/hold/entry tables. They must therefore be reconciled by
 service code and tests, not described as enforced referential integrity.
 
+Student registration stores the unique normalized SRN and campus code in
+`mobility_student_profiles`; the user's display name stays in the host `users`
+table, verified email in `mobility_verified_identities`, and approval status
+in `mobility_memberships`. These are separate lifecycle concerns. The profile
+table was added by migration
+`2026_11_02_000100_create_mobility_student_profiles.php` and must be installed
+after the host `users` table exists.
+
 The JSON columns (`snapshot`, `journey`, `config_snapshot`, response/payload
 columns, and snapshots in scheduled/recurring workflows) are immutable
 decision evidence, not substitutes for every relational edge. They preserve
 the terms used at quote, booking, dispatch, and financial boundaries.
+
+Local username accounts use `mobility_local_accounts.user_id` as both primary key and cascade-delete FK to `users.id`; usernames are unique. Role values are enforced by the local-account service. The mapping is independent of student-profile/verified-email tables; synthetic local access is not full student authentication.
