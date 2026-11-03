@@ -73,6 +73,9 @@ cleanup() {
     # Migration startup failures otherwise disappear with this disposable stack.
     compose logs --no-color --tail=100 mysql migrate >&2 || true
   fi
+  if [ -f .env ]; then
+    sed -i 's/^DB_HOST=.*/DB_HOST=mysql/' .env
+  fi
   compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -82,6 +85,16 @@ trap 'exit 143' TERM
 mobility_init_test_env .env
 
 compose config --quiet
+compose up -d --build mysql deps
+mysql_container=$(compose ps -q mysql)
+mysql_ip=$(docker --context "$context" inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$mysql_container")
+case "$mysql_ip" in
+  ''|*[!0-9.]*)
+    printf '%s\n' 'Unable to resolve the disposable MySQL container address.' >&2
+    exit 1
+    ;;
+esac
+sed -i "s/^DB_HOST=.*/DB_HOST=$mysql_ip/" .env
 compose up -d --build
 ready=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
