@@ -18,7 +18,10 @@ permissions:
 
 jobs:
   supplementary-proof:
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 refuses the kernel used by current ubuntu-latest.
+    # https://jira.mongodb.org/browse/SERVER-121912
+    # Ubuntu 22.04 runner currently provides a 6.8 kernel.
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

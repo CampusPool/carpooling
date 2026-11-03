@@ -31,3 +31,8 @@ The dedicated CI workflow reruns the submitted source and retains its sanitized
 verification log. This local record is supplementary model/report-fixture proof;
 it does not establish full application schema migration, concurrent race safety,
 production authentication, real payments, individual contribution or viva acceptance.
+
+The initial ubuntu-latest CI run reached a MongoDB startup refusal for its
+Linux kernel, before database assertions. The dedicated workflow uses
+ubuntu-22.04; see [MongoDB SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)
+and the [runner image inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md).
