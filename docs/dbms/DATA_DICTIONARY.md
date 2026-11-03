@@ -4,7 +4,7 @@
 |---|---|---|---|
 | `dbms_users` | `id`, `display_name` | unique display name | `users` |
 | `dbms_rides` | `driver_id`, `travel_date`, `origin_stop`, `destination_stop`, `seats_total`, `status` | driver FK; positive seats; status check | `trips`, `mobility_trip_lifecycles`, route/pickup concepts |
-| `dbms_bookings` | `ride_id`, `rider_id`, `status`, `fare_minor` | ride/rider FKs; one active booking per rider/ride; non-negative fare | `trip_passengers`, `mobility_booking_intervals`, fare snapshot |
+| `dbms_bookings` | `ride_id`, `rider_id`, `status`, `fare_minor` | ride/rider FKs; one row per rider/ride, including cancelled rows; non-negative fare | `trip_passengers`, `mobility_booking_intervals`, fare snapshot |
 | `dbms_expenses` | `ride_id`, `booking_id`, `total_minor`, `participant_count` | positive participant count; optional booking FK | `mobility_fare_snapshots` |
 | `dbms_ledger_entries` | `expense_id`, `account`, `side`, `amount_minor` | debit/credit check; idempotent account-side key | `mobility_financial_postings` |
 

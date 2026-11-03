@@ -1,0 +1,38 @@
+name: Supplementary DBMS Level 3
+
+on:
+  pull_request:
+    paths:
+      - 'docs/dbms/**'
+      - 'scripts/verify-dbms-level3.sh'
+      - '.github/workflows/dbms-level3.yml'
+  push:
+    paths:
+      - 'docs/dbms/**'
+      - 'scripts/verify-dbms-level3.sh'
+      - '.github/workflows/dbms-level3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  supplementary-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify disposable SQL and Mongo course fixtures
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dbms-level3-artifacts
+          sh scripts/verify-dbms-level3.sh 2>&1 | tee dbms-level3-artifacts/verification.log
+      - name: Upload synthetic verification log, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbms-level3-supplementary-log
+          path: dbms-level3-artifacts/verification.log
+          if-no-files-found: warn
+          retention-days: 14

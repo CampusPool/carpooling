@@ -110,4 +110,4 @@ erDiagram
     }
 ```
 
-This is a documented relationship slice, not a new migration. Exact base-table definitions come from the host platform; extension FKs and columns are defined in `backend/extensions/carpoolear/migrations/`. Relationships shown for `USERS`, `TRIPS`, and `TRIP_PASSENGERS` are conceptual host-schema links; extension relationships backed by migration FKs are enforced. `consumed_trip_id` is nullable and non-unique, so one route quote can be referenced by zero or more trips at the schema level.
+This is a documented relationship slice, not a new migration. Exact base-table definitions come from the host platform; extension FKs and columns are defined in `backend/extensions/carpoolear/migrations/`. Relationships shown for `USERS`, `TRIPS`, and `TRIP_PASSENGERS` are conceptual host-schema links; extension relationships backed by migration FKs are enforced. `consumed_trip_id` is nullable and non-unique, so each quote references at most one trip, while multiple quotes can reference the same trip.
