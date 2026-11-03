@@ -13,7 +13,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    networks: [appnet]
+    networks:
+      appnet:
+        aliases: [mysql]
 
   deps:
     build:
@@ -39,8 +41,27 @@ services:
         condition: service_completed_successfully
       mysql:
         condition: service_healthy
-    command: sh -c "php artisan migrate --force && php artisan db:seed --class=TestingSeeder --force"
-    networks: [appnet]
+    command:
+      - sh
+      - -c
+      - |
+        ready=0
+        for i in $$(seq 1 30); do
+          if php -r '$$h = getenv("DB_HOST") ?: "mysql"; if (($$s = @fsockopen($$h, 3306, $$e, $$m, 2))) { fclose($$s); exit(0); } exit(1);'; then
+            ready=1
+            break
+          fi
+          sleep 2
+        done
+        [ "$$ready" -eq 1 ] || exit 1
+        php artisan migrate --force &&
+        php artisan db:seed --class=TestingSeeder --force
+    restart: on-failure:5
+    networks:
+      appnet:
+        aliases: [migrate]
+    links:
+      - mysql:mysql
 
   app:
     build:
@@ -56,6 +77,8 @@ services:
         condition: service_completed_successfully
     command: php artisan serve --host=0.0.0.0 --port=8000
     networks: [appnet]
+    links:
+      - mysql:mysql
 
 volumes:
   carpoolear-smoke-db:

@@ -21,6 +21,8 @@ use STS\Models\Trip;
  */
 final class OfferDiscoveryController
 {
+    private const QUERY_FIELDS = ['service_date', 'from_time', 'to_time', 'pickup_point_id', 'dropoff_point_id', 'vehicle_type', 'page_size', 'after'];
+
     private const PAGE_DEFAULT = 20;
 
     private const PAGE_MAX = 50;
@@ -32,8 +34,7 @@ final class OfferDiscoveryController
     public function index(Request $request): JsonResponse
     {
         $payload = $request->query();
-        $allowed = ['service_date', 'from_time', 'to_time', 'pickup_point_id', 'dropoff_point_id', 'vehicle_type', 'page_size', 'after'];
-        if (array_diff(array_keys($payload), $allowed) !== []) {
+        if (array_diff(array_keys($payload), self::QUERY_FIELDS) !== []) {
             return $this->error('DISCOVERY_QUERY_INVALID');
         }
 
