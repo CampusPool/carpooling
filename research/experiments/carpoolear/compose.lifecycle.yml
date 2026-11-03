@@ -16,6 +16,7 @@ services:
       MOBILITY_PILOT_UI_ENABLED: "true"
       MOBILITY_COHORT_REQUIRED: "true"
       MOBILITY_COLLEGE_CODE: SYNTHETIC-LOCAL
+      LOG_CHANNEL: stderr
     volumes:
       - ../../../backend/extensions/carpoolear:/opt/mobility-extension:ro
       - ../../../backend/extensions/carpoolear/Mobility:/var/www/app/Mobility:ro

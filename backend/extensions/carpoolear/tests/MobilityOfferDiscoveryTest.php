@@ -73,6 +73,23 @@ final class MobilityOfferDiscoveryTest extends TestCase
         $this->actingAsApiUser($banned)->getJson('/api/mobility/pool-offers?service_date='.$date->format('Y-m-d'))->assertStatus(403);
     }
 
+    public function test_corrupt_quote_snapshot_is_fail_closed_without_leaking_partial_inventory(): void
+    {
+        $rider = $this->member();
+        [$host, $car] = $this->host();
+        $trip = $this->publish($host, $car, now('Asia/Kolkata')->addDays(2)->setTime(9, 0));
+
+        DB::table('mobility_route_quotes')
+            ->where('consumed_trip_id', $trip->id)
+            ->update(['snapshot' => '{}']);
+
+        $this->actingAsApiUser($rider)
+            ->getJson('/api/mobility/pool-offers?service_date='.$trip->trip_date->format('Y-m-d'))
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonMissing(['id' => $trip->id]);
+    }
+
     private function member(array $overrides = []): User
     {
         $user = User::factory()->create(array_merge(['active' => true, 'banned' => false, 'identity_validated' => true], $overrides));

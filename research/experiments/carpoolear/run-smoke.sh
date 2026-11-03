@@ -71,10 +71,11 @@ cleanup() {
   mobility_smoke_status=$?
   if [ "$mobility_smoke_status" -ne 0 ]; then
     # Migration startup failures otherwise disappear with this disposable stack.
-    compose logs --no-color --tail=100 mysql migrate >&2 || true
+    compose logs --no-color --tail=100 app mysql migrate >&2 || true
   fi
   if [ -f .env ]; then
-    sed -i 's/^DB_HOST=.*/DB_HOST=mysql/' .env
+    awk 'BEGIN { replaced = 0 } /^DB_HOST=/ { print "DB_HOST=mysql"; replaced = 1; next } { print } END { if (!replaced) print "DB_HOST=mysql" }' .env > .env.tmp
+    mv .env.tmp .env
   fi
   compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
@@ -85,7 +86,11 @@ trap 'exit 143' TERM
 mobility_init_test_env .env
 
 compose config --quiet
-compose up -d --build mysql deps
+if [ "$mode" = commute ] || [ "$mode" = race ]; then
+  compose up -d --build mysql deps routing-fixture
+else
+  compose up -d --build mysql deps
+fi
 mysql_container=$(compose ps -q mysql)
 mysql_ip=$(docker --context "$context" inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$mysql_container")
 case "$mysql_ip" in
@@ -94,7 +99,19 @@ case "$mysql_ip" in
     exit 1
     ;;
 esac
-sed -i "s/^DB_HOST=.*/DB_HOST=$mysql_ip/" .env
+if [ "$mode" = commute ] || [ "$mode" = race ]; then
+  routing_container=$(compose ps -q routing-fixture)
+  routing_ip=$(docker --context "$context" inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$routing_container")
+  case "$routing_ip" in
+    ''|*[!0-9.]*)
+      printf '%s\n' 'Unable to resolve the disposable routing fixture address.' >&2
+      exit 1
+      ;;
+  esac
+  export MOBILITY_ROUTING_FIXTURE_HOST="$routing_ip"
+fi
+awk -v host="$mysql_ip" 'BEGIN { replaced = 0 } /^DB_HOST=/ { print "DB_HOST=" host; replaced = 1; next } { print } END { if (!replaced) print "DB_HOST=" host }' .env > .env.tmp
+mv .env.tmp .env
 compose up -d --build
 ready=0
 for i in 1 2 3 4 5 6 7 8 9 10; do

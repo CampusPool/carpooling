@@ -33,7 +33,7 @@ function api(string $method, string $path, array $body = [], ?string $token = nu
     foreach ($http_response_header ?? [] as $line) {
         if (preg_match('/^HTTP\/\S+ (\d+)/', $line, $match)) $status = (int) $match[1];
     }
-    return ['status' => $status, 'json' => json_decode($raw ?: '', true)];
+    return ['status' => $status, 'json' => json_decode($raw ?: '', true), 'raw' => $raw ?: ''];
 }
 
 function step(string $name, array $response, int $expected = 200): array
@@ -41,7 +41,7 @@ function step(string $name, array $response, int $expected = 200): array
     global $report;
     $code = $response['json']['error']['code'] ?? null;
     $report['steps'][] = ['name' => $name, 'status' => $response['status'], 'expected' => $expected, 'error_code' => $code];
-    if ($response['status'] !== $expected) throw new RuntimeException($name.' returned '.$response['status'].' ('.(is_string($code) ? $code : 'no machine code').')');
+    if ($response['status'] !== $expected) throw new RuntimeException($name.' returned '.$response['status'].' ('.(is_string($code) ? $code : 'no machine code').'): '.substr((string) ($response['raw'] ?? ''), 0, 1000));
     return $response['json'] ?? [];
 }
 
