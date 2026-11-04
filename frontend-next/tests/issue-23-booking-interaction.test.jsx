@@ -44,7 +44,8 @@ function installApi() {
     const method = init.method || "GET";
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ url, method, body, key: new Headers(init.headers).get("Idempotency-Key") });
-    if (url === "/api/mobility/commute/demo-session" && method === "POST") return json({ token: "rider-token" });
+    if (url === "/api/mobility/local-auth/config") return json({ enabled: true });
+    if (url === "/api/mobility/local-auth/register" && method === "POST") return json({ token: "rider-token", role: "rider", user: { id: 9, name: body.username } }, 201);
     if (url === "/api/mobility/commute/me") return json({ profile, operator: false });
     if (url === "/api/mobility/commute/bookings") return json({ data: [] });
     if (url === "/api/mobility/commute/waitlist") return json({ data: [] });
@@ -60,7 +61,10 @@ function installApi() {
 
 async function openRide() {
   render(<Page />);
-  fireEvent.click(screen.getByRole("button", { name: /Find a ride/i }));
+  await screen.findByRole("heading", { name: "Local demo account" });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "rider_test" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "rider-pass-123" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
   await screen.findByRole("heading", { name: "Choose your route." });
   await waitFor(() => expect(screen.getByDisplayValue("Home")).toBeInTheDocument());
   fireEvent.click(screen.getByRole("button", { name: "Search rides" }));
@@ -68,6 +72,7 @@ async function openRide() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   installApi();
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });

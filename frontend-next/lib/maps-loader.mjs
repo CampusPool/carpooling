@@ -18,15 +18,22 @@ export function loadMapsSdk({ fetchImpl, documentRef, google, onReady, onUnavail
       if (!response.ok) throw Error("Map configuration is unavailable.");
       const config = await response.json();
       if (!config?.browser_key) throw Error("No Google Maps browser key is configured.");
-      if (google?.maps?.places) return ready();
+      if (!active) return;
+      const currentGoogle = documentRef.defaultView?.google || google;
+      if (currentGoogle?.maps?.places || currentGoogle?.maps?.importLibrary) return ready();
       script = documentRef.getElementById(SDK_ID);
       if (!script) {
         script = documentRef.createElement("script");
         script.id = SDK_ID;
         script.async = true;
         script.src = `https://maps.googleapis.com/maps/api/js?key=${config.browser_key}&libraries=places`;
+        script.addEventListener("load", () => { if (script.dataset) script.dataset.mobilityLoaded = "true"; }, { once: true });
+        script.addEventListener("load", ready, { once: true });
+        script.addEventListener("error", onError, { once: true });
         documentRef.head.appendChild(script);
+        return;
       }
+      if (script.dataset?.mobilityLoaded === "true") return ready();
       script.addEventListener("load", ready, { once: true });
       script.addEventListener("error", onError, { once: true });
     })

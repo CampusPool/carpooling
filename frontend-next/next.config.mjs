@@ -5,6 +5,8 @@ export default {
       { source: '/api/login', destination: `${origin}/api/login` },
       { source: '/api/cars', destination: `${origin}/api/cars` },
       { source: '/api/car-colors', destination: `${origin}/api/car-colors` },
+      { source: '/api/users/:path*', destination: `${origin}/api/users/:path*` },
+      { source: '/api/trips/:path*', destination: `${origin}/api/trips/:path*` },
       { source: '/api/mobility/:path*', destination: `${origin}/api/mobility/:path*` },
       { source: '/api/admin/:path*', destination: `${origin}/api/admin/:path*` },
       { source: '/mobility-pilot/:path*', destination: `${origin}/mobility-pilot/:path*` },

@@ -56,17 +56,23 @@ function json(body, status = 200) {
   });
 }
 
-function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false } = {}) {
+function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false, firstMeFailure = false } = {}) {
   calls = [];
   let bookingReads = 0;
   let currentWaitlist = waitlist;
+  let meReads = 0;
   const fetchMock = vi.fn(async (input, init = {}) => {
     const url = String(input);
     const method = init.method || "GET";
     calls.push({ url, method, body: init.body ? JSON.parse(init.body) : undefined, key: new Headers(init.headers).get("Idempotency-Key") });
     if (url === "/api/login" && method === "POST") return operator ? json({ token: "signed-admin-token" }) : json({ message: "invalid credentials" }, 401);
+    if (url === "/api/mobility/local-auth/config") return json({ enabled: true });
+    if (url === "/api/mobility/local-auth/register" && method === "POST") return json({ token: `${init.body ? JSON.parse(init.body).role : "rider"}-token`, role: JSON.parse(init.body).role, user: { id: 9, name: "local_test_user" } }, 201);
+    if (url === "/api/mobility/college-auth/config") return json({ campuses: ["CAMPUS-BLR"] });
+    if (url === "/api/mobility/college-auth/request") return json({ challenge_id: "challenge" });
+    if (url === "/api/mobility/college-auth/verify") return json({ token: "student-token" });
     if (url === "/api/mobility/commute/demo-session" && method === "POST") return json({ token: "rider-token" });
-    if (url === "/api/mobility/commute/me") return json({ profile, operator });
+    if (url === "/api/mobility/commute/me") return firstMeFailure && meReads++ === 0 ? json({ message: "temporary failure" }, 503) : json({ profile, operator });
     if (url === "/api/mobility/operator/dashboard") return json({ usage: { demo_actors: 1, demo_trips: 1, bookings: 0, waitlist_pending: 0, reports_open: 1, ratings_submitted: 0 }, reports: [{ id: 77, trip_id: 42, subject: "Pickup report", status: "Open", priority: "high", unread_for_admin: true }] });
     if (url === "/api/admin/support/tickets/77") return json({ data: { id: 77, trip_id: 42, subject: "Pickup report", status: "Open", message_markdown: "Synthetic report" } });
     if (url === "/api/admin/support/tickets/77/resolve" || url === "/api/admin/support/tickets/77/assign-me" || url === "/api/admin/support/tickets/77/needs-review") return json({ data: { id: 77, status: url.endsWith("resolve") ? "Resolved" : "Open" } });
@@ -76,6 +82,7 @@ function installApi({ rides = [ride], requestStatus = 200, bookings = [], rating
     }
     if (url === "/api/mobility/commute/waitlist") return json({ data: currentWaitlist });
     if (url === "/api/mobility/commute/wallet") return json({ balance_minor: 2500 });
+    if (url === "/api/mobility/commute/offers") return json({ data: [] });
     if (url.includes("/api/mobility/commute/rides?") && method === "GET") return json({ data: rides });
     if (url === "/mobility-pilot/maps-config") return json({});
     if (url === "/api/mobility/commute/profile" && method === "PUT") return json({ profile });
@@ -100,9 +107,17 @@ function installApi({ rides = [ride], requestStatus = 200, bookings = [], rating
   vi.stubGlobal("fetch", fetchMock);
 }
 
-async function signInAndWait() {
+async function createLocalAccount(role = "rider", username = `${role}_test`) {
+  await screen.findByRole("heading", { name: "Local demo account" });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: username } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "local-pass-123" } });
+  if (role === "driver") fireEvent.change(screen.getByLabelText("Account type"), { target: { value: role } });
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+}
+
+async function signInAndWait(role = "rider") {
   render(<Page />);
-  fireEvent.click(screen.getByRole("button", { name: /Find a ride/i }));
+  await createLocalAccount(role);
   await screen.findByRole("heading", { name: "Choose your route." });
   await waitFor(() => expect(screen.getByDisplayValue("Home")).toBeInTheDocument());
 }
@@ -113,6 +128,7 @@ async function searchSavedRoute() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   installApi();
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
@@ -123,6 +139,23 @@ afterEach(() => {
 });
 
 describe("rider journey interactions", () => {
+  it("keeps a verified session and retries if loading the account temporarily fails", async () => {
+    installApi({ firstMeFailure: true });
+    render(<Page />);
+    await createLocalAccount();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry account loading" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry account loading" })).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Home")).toBeInTheDocument();
+    expect(calls.filter(({ url }) => url.endsWith("local-auth/register"))).toHaveLength(1);
+  });
+  it("lets a signed-in rider switch between riding and hosting views", async () => {
+    await signInAndWait();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to hosting" }));
+    expect(await screen.findByText("DRIVER VIEW")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Switch to riding" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to riding" }));
+    expect(await screen.findByText("RIDER VIEW")).toBeInTheDocument();
+  });
   it("uses the saved profile route without an unnecessary profile PUT", async () => {
     await signInAndWait();
     await searchSavedRoute();
@@ -343,7 +376,7 @@ describe("rider journey interactions", () => {
   it("tracks completed-trip ratings per counterpart for multi-rider drivers", async () => {
     installApi({ bookings: [{ ...completedBooking, owner: true }, { ...completedBooking, owner: true, booking_id: 8, rider_id: 10 }] });
     render(<Page />);
-    fireEvent.click(screen.getByRole("button", { name: /Offer a ride/i }));
+    await createLocalAccount("driver", "driver_test");
     await screen.findByRole("heading", { name: "Choose your route." });
     await waitFor(() => expect(screen.getByDisplayValue("Home")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
@@ -362,7 +395,7 @@ describe("rider journey interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit rating" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     resolvePost(json({ data: { id: 3 } }, 201));
-    await waitFor(() => expect(screen.getByRole("button", { name: /Find a ride/i })).toBeInTheDocument());
+    await screen.findByRole("heading", { name: "Local demo account" });
     expect(screen.queryByText("Rating submitted")).not.toBeInTheDocument();
   });
 
@@ -391,7 +424,7 @@ describe("rider journey interactions", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Create trusted status link" }));
     await screen.findByRole("button", { name: "Copy link" });
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(await screen.findByRole("button", { name: /Find a ride/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Local demo account" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
     expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
   });
@@ -410,8 +443,7 @@ describe("rider journey interactions", () => {
 
   it("uses the authenticated admin support endpoints for report resolution", async () => {
     installApi({ operator: true });
-    render(<Page />);
-    fireEvent.click(screen.getByRole("button", { name: /Find a ride/i }));
+    await signInAndWait();
     await screen.findByRole("heading", { name: "Choose your route." });
     fireEvent.click(screen.getByRole("button", { name: "Operations" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open report" }));
@@ -425,7 +457,7 @@ describe("rider journey interactions", () => {
     render(<Page />);
     fireEvent.click(screen.getByText("Administrator sign-in"));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.invalid" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "synthetic-password" } });
+    fireEvent.change(screen.getByLabelText("Administrator password"), { target: { value: "synthetic-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in as administrator" }));
     expect(await screen.findByRole("button", { name: "Operations" })).toBeInTheDocument();
     expect(calls.some(({ url, method, body }) => url === "/api/login" && method === "POST" && body.email === "admin@example.invalid")).toBe(true);
