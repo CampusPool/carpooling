@@ -58,5 +58,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Check local runtime restart guards
+        run: python3 -m unittest discover -s scripts/tests -p 'test_run_local_core.py'
       - name: Verify pinned backend reconstruction and patch stack
         run: sh research/experiments/carpoolear/verify-reconstruction.sh
+
+  backend-mobility:
+    name: Full disposable backend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Run integrated Mobility suite with a dedicated disposable database
+        env:
+          MOBILITY_DOCKER_CONTEXT: default
+        run: |
+          sh scripts/prepare-carpoolear.sh
+          sh research/experiments/carpoolear/run-smoke.sh mobility

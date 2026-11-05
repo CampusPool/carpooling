@@ -1,0 +1,39 @@
+# Real road routing for local username accounts. No synthetic routing service.
+services:
+  deps:
+    environment:
+      COMPOSER_MAX_PARALLEL_HTTP: "4"
+      COMPOSER_MAX_PARALLEL_PROCESSES: "1"
+    volumes:
+      - core-php-vendor:/var/www/vendor
+  migrate:
+    volumes:
+      - core-php-vendor:/var/www/vendor:ro
+  app:
+    volumes:
+      - core-php-vendor:/var/www/vendor:ro
+    environment:
+      MOBILITY_ROUTING_PROVIDER: osrm
+      MOBILITY_ROUTING_CAR_BASE_URL: http://mobility-road-router-car:5000
+      MOBILITY_ROUTING_BIKE_BASE_URL: http://mobility-road-router-bike:5000
+      MOBILITY_ROUTING_FOOT_BASE_URL: http://mobility-road-router-foot:5000
+      MOBILITY_ROUTING_CAR_PROFILE: driving
+      MOBILITY_ROUTING_BIKE_PROFILE: driving
+      MOBILITY_ROUTING_FOOT_PROFILE: driving
+      MOBILITY_ROUTING_CAR_EXPECTED_DATA_VERSION: ${MOBILITY_PROOF_CAR_PIN:?Prepared car graph required}
+      MOBILITY_ROUTING_BIKE_EXPECTED_DATA_VERSION: ${MOBILITY_PROOF_BIKE_PIN:?Prepared motorbike graph required}
+      MOBILITY_ROUTING_FOOT_EXPECTED_DATA_VERSION: ${MOBILITY_PROOF_FOOT_PIN:?Prepared pedestrian graph required}
+      MOBILITY_ROUTING_PRICING_VERSION: local-core-v1
+      MOBILITY_ROUTING_CAR_MINOR_PER_KM: "800"
+      MOBILITY_ROUTING_BIKE_MINOR_PER_KM: "400"
+      MOBILITY_ROUTING_SYNTHETIC_ONLY: "false"
+    networks: [appnet, roads]
+networks:
+  roads:
+    external: true
+    name: mobility-road-router-internal
+# Keep the large upstream PHP dependency tree inside Docker. On macOS the
+# generated Google client files can exhaust shared-filesystem handles.
+
+volumes:
+  core-php-vendor:

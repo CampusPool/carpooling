@@ -5,7 +5,27 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import DriverOnboarding from "../components/DriverOnboarding";
+import LocalAccountSignIn from "../components/LocalAccountSignIn";
+import CanonicalPool from "../components/CanonicalPool";
+import LiveCarpool from "../components/LiveCarpool";
 type R = Record<string, any>;
+// Places (New) returns FormattableText objects. Prefer their text field for stable labels.
+const placeText = (value: any): string => {
+  if (typeof value === "string") return value.trim();
+  if (typeof value?.text === "string") return value.text.trim();
+  if (typeof value?.toString === "function") {
+    const converted = value.toString();
+    if (typeof converted === "string" && converted !== "[object Object]") return converted.trim();
+  }
+  return "";
+};
+const predictionText = (prediction: R | undefined): string => {
+  if (!prediction) return "";
+  const full = placeText(prediction.text) || placeText(prediction.description);
+  const main = placeText(prediction.mainText);
+  const secondary = placeText(prediction.secondaryText);
+  return full || [main, secondary].filter(Boolean).join(", ");
+};
 const list = (x: any) =>
   Array.isArray(x?.data) ? x.data : Array.isArray(x) ? x : [];
 const tomorrowInKolkata = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + 864e5));
@@ -66,10 +86,25 @@ async function request(
         WAITLIST_NOT_YOUR_TURN: "An earlier rider is still waiting. Refresh the waitlist later.",
         COMMUTE_QUOTE_CHANGED: "Your route or fare changed. Refresh the terms before continuing.",
         COMMUTE_BUSY_RETRY: "The ride is being updated. Please retry.",
+        USERNAME_TAKEN: "That username is already in use.",
+        INVALID_CREDENTIALS: "Username or password is incorrect.",
+        PASSWORD_TOO_LONG_BYTES: "Use a password of no more than 72 bytes.",
+        ACCOUNT_ROLE_REQUIRED: "This account type cannot perform that action.",
+        COLLEGE_EMAIL_INVALID: "Enter an eligible college email address.",
+        COLLEGE_MAIL_UNAVAILABLE: "Email delivery is unavailable. Please try again later.",
+        COLLEGE_OTP_INVALID: "That code is incorrect. Please try again.",
+        COLLEGE_OTP_EXPIRED: "That code has expired. Request a new code.",
+        COLLEGE_OTP_THROTTLED: "Too many attempts. Please try again later.",
+        COLLEGE_OTP_RETRY_LATER: "A code was recently sent. Please wait before requesting another.",
+        STUDENT_NAME_INVALID: "Enter your name, or select student profile completion if you have not completed it yet.",
+        STUDENT_SRN_INVALID: "Enter a valid student registration number.",
+        STUDENT_CAMPUS_INVALID: "Choose an available campus.",
+        STUDENT_SRN_TAKEN: "That student registration number is already in use.",
       };
       const message = (code && messages[code]) || (typeof d.message === "string" ? d.message : undefined) || (typeof d.error?.message === "string" ? d.error.message : undefined) || (typeof d.error === "string" ? d.error : undefined) || "Request failed. Please try again.";
       const error = Error(message);
       (error as Error & { status?: number }).status = r.status;
+      (error as Error & { code?: string }).code = code;
       if (r.status === 401 && typeof window !== "undefined") {
         window.dispatchEvent(new Event("mobility:unauthorized"));
       }
@@ -82,6 +117,7 @@ export default function Page() {
     [role, setRole] = useState("rider"),
     [adminEmail, setAdminEmail] = useState(""),
     [adminPassword, setAdminPassword] = useState(""),
+    [sessionSyncNeeded, setSessionSyncNeeded] = useState(false),
     [me, setMe] = useState<R>(),
     [rides, setRides] = useState<R[]>([]),
     [scanTruncated, setScanTruncated] = useState(false),
@@ -109,6 +145,8 @@ export default function Page() {
     [destination, setDestination] = useState<R>(),
     [originText, setOriginText] = useState(""),
     [destinationText, setDestinationText] = useState(""),
+    [placeSuggestions, setPlaceSuggestions] = useState<Record<"origin" | "destination", R[]>>({ origin: [], destination: [] }),
+    [placeBusy, setPlaceBusy] = useState<Record<"origin" | "destination", boolean>>({ origin: false, destination: false }),
     [direction, setDirection] = useState<"outbound" | "return">("outbound"),
     [searchTime, setSearchTime] = useState("08:30"),
     [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]),
@@ -156,6 +194,16 @@ export default function Page() {
     ...profile,
   };
   const mapRef = useRef<HTMLDivElement>(null);
+  const placeRequestGeneration = useRef({ origin: 0, destination: 0 });
+  const placeDebounceTimers = useRef<{ origin?: ReturnType<typeof setTimeout>; destination?: ReturnType<typeof setTimeout> }>({});
+  const placeDebounceResolves = useRef<{ origin?: () => void; destination?: () => void }>({});
+  function cancelPlaceDebounce(kind: "origin" | "destination") {
+    if (placeDebounceTimers.current[kind]) clearTimeout(placeDebounceTimers.current[kind]);
+    placeDebounceTimers.current[kind] = undefined;
+    const resolve = placeDebounceResolves.current[kind];
+    placeDebounceResolves.current[kind] = undefined;
+    resolve?.();
+  }
   const intentKeys = useRef(new Map<string, string>());
   const chatSendKey = useRef<{ tripId: number; text: string; key: string } | undefined>(undefined);
   const chatBlockKey = useRef<{ tripId: number; target: number; blocked: boolean; key: string } | undefined>(undefined);
@@ -166,7 +214,9 @@ export default function Page() {
   const chatGeneration = useRef(0);
   const trustedShareGeneration = useRef(0);
   function clearSession() {
+    sessionStorage.removeItem("mobility-local-session");
     setToken("");
+    setSessionSyncNeeded(false);
     setMe(undefined);
     setRides([]);
     setScanTruncated(false);
@@ -185,6 +235,12 @@ export default function Page() {
     setDestination(undefined);
     setOriginText("");
     setDestinationText("");
+    placeRequestGeneration.current.origin += 1;
+    placeRequestGeneration.current.destination += 1;
+    cancelPlaceDebounce("origin");
+    cancelPlaceDebounce("destination");
+    setPlaceSuggestions({ origin: [], destination: [] });
+    setPlaceBusy({ origin: false, destination: false });
     setRouteGeometry([]);
     setBookingRoute(undefined);
     setChatTrip(undefined);
@@ -286,7 +342,7 @@ export default function Page() {
     finally { setOperatorTicketBusy(false); }
   }
   useEffect(() => {
-    if (!token) {
+    if (!token || me?.account_role) {
       setMapStatus("idle");
       setMapError("");
       return;
@@ -307,46 +363,90 @@ export default function Page() {
       onReady: ready,
       onUnavailable: fail,
     });
-  }, [token, mapRetry]);
-  useEffect(() => {
-    if (mapStatus !== "ready" || view !== "home") return;
-    const listeners: { remove: () => void }[] = [];
-    (["origin", "destination"] as const).forEach((k) => {
-      const el = document.getElementById(
-        `${k}-place`,
-      ) as HTMLInputElement | null;
-      if (!el) return;
+  }, [token, mapRetry, me?.account_role]);
+  async function suggestPlaces(kind: "origin" | "destination", input: string) {
+    const generation = ++placeRequestGeneration.current[kind];
+    cancelPlaceDebounce(kind);
+    setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
+    if (input.trim().length < 3 || mapStatus !== "ready" || typeof window === "undefined") {
+      setPlaceBusy((current) => ({ ...current, [kind]: false }));
+      return;
+    }
+    setPlaceBusy((current) => ({ ...current, [kind]: true }));
+    try {
+      await new Promise<void>((resolve) => {
+        placeDebounceResolves.current[kind] = resolve;
+        placeDebounceTimers.current[kind] = setTimeout(() => {
+          placeDebounceTimers.current[kind] = undefined;
+          placeDebounceResolves.current[kind] = undefined;
+          resolve();
+        }, 250);
+      });
+      if (generation !== placeRequestGeneration.current[kind]) return;
       const g = (window as any).google;
-      const a = new g.maps.places.Autocomplete(el, {
-        fields: ["formatted_address", "geometry", "name"],
-      });
-      const listener = a.addListener("place_changed", () => {
-        const p = a.getPlace();
-        if (p.geometry?.location) {
-          const v = {
-            label: p.formatted_address || p.name,
-            lat: p.geometry.location.lat(),
-            lng: p.geometry.location.lng(),
-          };
-          if (k === "origin") {
-            setBookingRoute(undefined);
-            setRouteGeometry([]);
-            setNotice("");
-            setOrigin(v);
-            setOriginText(v.label);
-          } else {
-            setBookingRoute(undefined);
-            setRouteGeometry([]);
-            setNotice("");
-            setDestination(v);
-            setDestinationText(v.label);
-          }
-        }
-      });
-      listeners.push(listener);
-    });
-    return () => listeners.forEach((listener) => listener.remove());
-  }, [mapStatus, view]);
+      const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
+      const Suggestion = places?.AutocompleteSuggestion;
+      if (!Suggestion?.fetchAutocompleteSuggestions) throw Error("New Google Places suggestions are unavailable.");
+      const result = await Suggestion.fetchAutocompleteSuggestions({ input: input.trim(), includedRegionCodes: ["in"] });
+      if (generation !== placeRequestGeneration.current[kind]) return;
+      setPlaceSuggestions((current) => ({
+        ...current,
+        [kind]: (result?.suggestions || [])
+          .filter((item: R) => typeof item.placePrediction?.toPlace === "function" && Boolean(predictionText(item.placePrediction)))
+          .slice(0, 5)
+          .map((item: R) => ({ prediction: item.placePrediction, label: predictionText(item.placePrediction), key: item.placePrediction.placeId || `${kind}-${predictionText(item.placePrediction)}` })),
+      }));
+    } catch {
+      if (generation === placeRequestGeneration.current[kind]) {
+        setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
+        setNotice("Address suggestions are unavailable right now. You can use a saved commute instead.");
+      }
+    } finally {
+      if (generation === placeRequestGeneration.current[kind]) setPlaceBusy((current) => ({ ...current, [kind]: false }));
+    }
+  }
+  async function choosePlace(kind: "origin" | "destination", suggestion: R) {
+    const generation = ++placeRequestGeneration.current[kind];
+    cancelPlaceDebounce(kind);
+    setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
+    try {
+      const place = suggestion.prediction?.toPlace?.();
+      if (!place?.fetchFields) throw Error("This suggestion is no longer available. Search again.");
+      await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+      if (generation !== placeRequestGeneration.current[kind]) return;
+      const location = place.location;
+      if (!location) throw Error("Google did not return coordinates for this place.");
+      const displayName = placeText(place.displayName);
+      const value = {
+        label: place.formattedAddress || displayName || suggestion.label,
+        lat: typeof location.lat === "function" ? location.lat() : location.lat,
+        lng: typeof location.lng === "function" ? location.lng() : location.lng,
+      };
+      setBookingRoute(undefined);
+      setRouteGeometry([]);
+      setNotice("");
+      if (kind === "origin") { setOrigin(value); setOriginText(value.label); }
+      else { setDestination(value); setDestinationText(value.label); }
+    } catch {
+      if (generation === placeRequestGeneration.current[kind]) setNotice("Google could not retrieve coordinates for this address. Check the Maps/Places configuration or demo quota, then try again.");
+    }
+  }
+  function dismissPlaces(kind: "origin" | "destination") {
+    placeRequestGeneration.current[kind] += 1;
+    cancelPlaceDebounce(kind);
+    setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
+    setPlaceBusy((current) => ({ ...current, [kind]: false }));
+  }
+  useEffect(() => {
+    if (view !== "home") {
+    placeRequestGeneration.current.origin += 1;
+    placeRequestGeneration.current.destination += 1;
+    cancelPlaceDebounce("origin");
+    cancelPlaceDebounce("destination");
+    setPlaceSuggestions({ origin: [], destination: [] });
+    setPlaceBusy({ origin: false, destination: false });
+    }
+  }, [view]);
   useEffect(() => {
     if (mapStatus !== "ready" || !mapRef.current) return;
     const g = (window as any).google;
@@ -441,6 +541,19 @@ export default function Page() {
     if (sessionRole === "driver" && offersResult.status === "fulfilled") setOffers(list(offersResult.value));
     if (notificationsResult.status === "fulfilled") { setNotifications(list(notificationsResult.value)); setNotificationUnread(Number(notificationsResult.value?.unread_count || 0)); }
   }
+  useEffect(() => {
+    let active = true;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null");
+      if (saved?.token && ["rider", "driver"].includes(saved.role)) {
+        void sync(saved.token, saved.role).then(() => {
+          if (!active) return;
+          setRole(saved.role); setToken(saved.token); setView("pool");
+        }).catch(() => { if (active) sessionStorage.removeItem("mobility-local-session"); });
+      }
+    } catch { sessionStorage.removeItem("mobility-local-session"); }
+    return () => { active = false; };
+  }, []);
   async function refreshBookings() {
     setBusy(true);
     setError("");
@@ -594,6 +707,7 @@ export default function Page() {
       setRole(next);
       await sync(d.token, next);
       setToken(d.token);
+      if (process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
     } catch (e: any) {
       if (e?.status !== 401) setError(e.message);
     } finally {
@@ -621,6 +735,30 @@ export default function Page() {
       setAdminPassword("");
     } catch (e: any) {
       setError(e?.message || "Administrator sign-in failed.");
+    } finally { setBusy(false); }
+  }
+  async function signOut() {
+    const sessionToken = token;
+    clearSession();
+    setError("");
+    try {
+      const response = await fetch("/api/mobility/college-auth/logout", {
+        method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${sessionToken}` }, cache: "no-store",
+      });
+      if (!response.ok && response.status !== 401) throw new Error("Session revocation failed");
+    } catch (e: any) {
+      if (e?.status !== 401) setError("Signed out on this device, but the server could not revoke the session.");
+    }
+  }
+  async function switchCommuteView() {
+    const nextRole = role === "rider" ? "driver" : "rider";
+    setBusy(true); setError("");
+    try {
+      await sync(token, nextRole);
+      setRole(nextRole);
+      setView("home");
+    } catch (e: any) {
+      if (e?.status !== 401) setError(e?.message || "Could not switch views. Please try again.");
     } finally { setBusy(false); }
   }
   async function search(e: React.FormEvent<HTMLFormElement>) {
@@ -1015,29 +1153,35 @@ export default function Page() {
         </div>
         <section className="hero">
           <div>
-            <p className="eyebrow">CAMPUS COMMUTE DEMO</p>
+            <p className="eyebrow">CAMPUS COMMUTE</p>
             <h1>
               Share the
               <br />
               <em>way home.</em>
             </h1>
-            <p className="lede">
-              Select a role to open a local demonstration session.
-            </p>
-            <div className="demo-buttons">
-              <button onClick={() => login("rider")} disabled={busy}>
-                Find a ride <small>Rider session</small>
-              </button>
-              <button onClick={() => login("driver")} disabled={busy}>
-                Offer a ride <small>Driver session</small>
-              </button>
-            </div>
+            <p className="lede">Create separate rider and driver accounts. Open them in separate tabs to test publishing a ride, finding it, and accepting the seat request.</p>
+            <LocalAccountSignIn request={request} busy={busy} onSignedIn={async (accountToken, accountRole) => {
+              setRole(accountRole);
+              sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: accountToken, role: accountRole }));
+              try {
+                await sync(accountToken, accountRole);
+                setToken(accountToken);
+                setSessionSyncNeeded(false);
+                if (process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+              } catch (e: any) {
+                if (e?.status !== 401) {
+                  setSessionSyncNeeded(true);
+                  setToken(accountToken);
+                  setError("Signed in, but account details could not be loaded. Retry to continue.");
+                }
+              }
+            }} />
             <details className="admin-login">
               <summary>Administrator sign-in</summary>
               <p className="fine">Use an existing administrator account. This form does not create accounts or grant privileges.</p>
               <form onSubmit={loginAdmin} className="form-grid">
                 <label>Email<input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} autoComplete="username" required /></label>
-                <label>Password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} autoComplete="current-password" required /></label>
+                <label>Administrator password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} autoComplete="current-password" required /></label>
                 <button className="secondary wide" type="submit" disabled={busy}>Sign in as administrator</button>
               </form>
             </details>
@@ -1074,10 +1218,19 @@ export default function Page() {
         <div className="brand">
           <span className="logo">m</span>mobility
         </div>
-        <span className="pill">{role.toUpperCase()} SESSION</span>
+        <span className="pill">{role.toUpperCase()} VIEW</span>
+        {role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>
+          {role === "rider" ? "Switch to hosting" : "Switch to riding"}
+        </button>}
+        {sessionSyncNeeded && <button className="signout" disabled={busy} onClick={async () => {
+          setBusy(true);
+          try { await sync(token, role); setSessionSyncNeeded(false); setError(""); }
+          catch (e: any) { if (e?.status !== 401) setError("Account details are still unavailable. Please retry."); }
+          finally { setBusy(false); }
+        }}>Retry account loading</button>}
         <button
           className="signout"
-          onClick={clearSession}
+          onClick={signOut}
         >
           Sign out
         </button>
@@ -1085,7 +1238,9 @@ export default function Page() {
       <div className="layout">
         <aside>
           <p className="muted">COMMUTE</p>
-          {[
+          {(process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" ? [
+            ["pool", "Rides and bookings"],
+          ] : [
             ["home", "Overview"],
             ["rides", "Find rides"],
             ["bookings", "Bookings"],
@@ -1093,8 +1248,9 @@ export default function Page() {
             ["waitlist", "Waitlist"],
             ["wallet", "Wallet"],
             ["driver-onboarding", "Driver onboarding"],
+            ["pool", "Pool offers"],
             ...(me?.operator ? [["operator", "Operations"]] : []),
-          ].map(([v, l]) => (
+          ]).map(([v, l]) => (
             <button
               key={v}
               className={`nav ${view === v ? "active" : ""}`}
@@ -1106,7 +1262,7 @@ export default function Page() {
         </aside>
         <section className="content">
           <p className="eyebrow">
-            {savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
+            {view === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
           </p>
           <h2>
             {view === "home"
@@ -1123,22 +1279,27 @@ export default function Page() {
                   ? "Operations overview."
                 : view === "driver-onboarding"
                   ? "Apply to drive."
+                : view === "pool"
+                  ? (me?.account_role ? "Rides and bookings" : "Pool offers.")
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
           {notice && <p className="banner" role="status">{notice}</p>}
+          {me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
           {view === "home" && (
             <>
               <form className="search-card" onSubmit={search}>
-                <div className="field">
-                  <label>FROM</label>
+                <div className="field place-field" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) dismissPlaces("origin"); }} onKeyDown={(event) => { if (event.key === "Escape") dismissPlaces("origin"); }}>
+                  <label htmlFor="origin-place">FROM</label>
                   <input
                     id="origin-place"
                     placeholder={home || "Search origin"}
                     value={originText}
                     onChange={(e) => {
-                      setOriginText(e.currentTarget.value);
-                      if (e.currentTarget.value !== origin?.label) {
+                      const value = e.currentTarget.value;
+                      setOriginText(value);
+                      suggestPlaces("origin", value);
+                      if (value !== origin?.label) {
                         setOrigin(undefined);
                         setBookingRoute(undefined);
                         setNotice("");
@@ -1146,16 +1307,26 @@ export default function Page() {
                       }
                     }}
                   />
+                  {(placeBusy.origin || placeSuggestions.origin.length > 0) && (
+                    <div className="place-suggestions" role="listbox" aria-label="Origin suggestions">
+                      {placeBusy.origin && <small className="fine">Searching Google Places…</small>}
+                      {placeSuggestions.origin.map((suggestion) => (
+                        <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("origin", suggestion)}>{suggestion.label}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="field">
-                  <label>TO</label>
+                <div className="field place-field" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) dismissPlaces("destination"); }} onKeyDown={(event) => { if (event.key === "Escape") dismissPlaces("destination"); }}>
+                  <label htmlFor="destination-place">TO</label>
                   <input
                     id="destination-place"
                     placeholder={campus || "Search destination"}
                     value={destinationText}
                     onChange={(e) => {
-                      setDestinationText(e.currentTarget.value);
-                      if (e.currentTarget.value !== destination?.label) {
+                      const value = e.currentTarget.value;
+                      setDestinationText(value);
+                      suggestPlaces("destination", value);
+                      if (value !== destination?.label) {
                         setDestination(undefined);
                         setBookingRoute(undefined);
                         setNotice("");
@@ -1163,6 +1334,14 @@ export default function Page() {
                       }
                     }}
                   />
+                  {(placeBusy.destination || placeSuggestions.destination.length > 0) && (
+                    <div className="place-suggestions" role="listbox" aria-label="Destination suggestions">
+                      {placeBusy.destination && <small className="fine">Searching Google Places…</small>}
+                      {placeSuggestions.destination.map((suggestion) => (
+                        <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("destination", suggestion)}>{suggestion.label}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="field compact">
                   <label>DATE</label>
@@ -1302,6 +1481,8 @@ export default function Page() {
             </>
           )}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
+          {view === "pool" && me?.account_role && <LiveCarpool token={token} accountRole={me.account_role} />}
+          {view === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {view === "rides" && (
             <>
               {routeGeometry.length > 1 && (

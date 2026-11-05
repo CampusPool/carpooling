@@ -52,4 +52,15 @@ const response = (value) => ({ ok: true, json: async () => value });
   await tick();
   assert.equal(ready, 0, "late SDK callbacks must not update an unmounted session");
 }
+{
+  const doc = fakeDocument(); let ready = 0;
+  doc.defaultView = {};
+  let resolveConfig;
+  loadMapsSdk({ fetchImpl: () => new Promise(resolve => { resolveConfig = resolve; }), documentRef: doc, google: undefined, onReady: () => ready++, onUnavailable() {} });
+  doc.defaultView.google = { maps: { importLibrary() {} } };
+  resolveConfig(response({ browser_key: "test" }));
+  await tick();
+  assert.equal(ready, 1, "SDK loaded while config was fetching must be detected");
+  assert.equal(doc.scripts.size, 0);
+}
 console.log("maps loader failure and cleanup assertions passed");
