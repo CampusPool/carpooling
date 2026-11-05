@@ -231,7 +231,7 @@ export default function LiveCarpool({ token, accountRole = "rider" }: Props) {
           const planned = !booking.state || booking.state === "planned";
           const progress = booking.state === "completed" ? "Ride completed" : booking.state === "cancelled" ? "Ride cancelled" : booking.state === "in_progress" ? booking.participant_state === "alighted" ? "Dropped off" : booking.participant_state === "boarded" ? "On the way" : "Driver on the way" : undefined;
           return <article className={styles.card} key={booking.booking_id}>
-            <div className={styles.cardHead}><strong>{isDriver ? booking.rider_name : booking.driver_name}</strong><span className={accepted && !terminal ? styles.accepted : ""}>{progress || ["Awaiting driver", "Accepted", "Declined", "Cancelled"][Number(booking.request_state)] || "Updated"}</span></div>
+            <div className={styles.cardHead}><strong>{isDriver ? booking.rider_name : booking.driver_name}</strong><span className={accepted && !terminal ? styles.accepted : ""}>{(accepted && progress) || ["Awaiting driver", "Accepted", "Declined", "Cancelled"][Number(booking.request_state)] || "Updated"}</span></div>
             <p className={styles.route}>{booking.pickup_label}<span>↓</span>{booking.dropoff_label}</p><p>{when(booking.departure_at)} · Ride #{booking.trip_id}</p>
             <div className={styles.actions}>
               {isDriver && Number(booking.request_state) === 0 && planned && <><button type="button" className={styles.primary} disabled={busy} onClick={() => void action(booking, "accept")}>Accept rider</button><button type="button" disabled={busy} onClick={() => void action(booking, "reject")}>Decline</button></>}

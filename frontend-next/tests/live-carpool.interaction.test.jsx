@@ -97,3 +97,10 @@ describe("Google place carpool flow", () => {
     expect(transitions.every(c => Boolean(c.headers.get("Idempotency-Key")))).toBe(true);
   });
 });
+
+it.each([[2, "Declined", "in_progress"], [3, "Cancelled", "in_progress"], [2, "Declined", "completed"], [3, "Cancelled", "completed"]])("preserves request state %s (%s) when another rider trip is %s", async (requestState, expectedLabel, tripState) => {
+  bookingRows = [{ booking_id: 9, trip_id: 7, driver_name: "Arjun", request_state: requestState, state: tripState, participant_state: "accepted", departure_at: "2026-12-05T10:00:00+05:30", pickup_label: "Cubbon Park", dropoff_label: "Indiranagar" }];
+  render(<LiveCarpool token="rider-token" accountRole="rider" />);
+  await screen.findByText("Ride #7", { exact: false });
+  expect(screen.getByText(expectedLabel, { exact: true })).toBeVisible();
+});
