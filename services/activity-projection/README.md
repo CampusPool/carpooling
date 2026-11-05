@@ -28,6 +28,59 @@ time/action analysis and `(actorId, occurredAt)` supports actor/time lookups.
 The `daily` command runs a MongoDB aggregation grouped by Kolkata calendar day
 and action, returning event counts and distinct trip counts.
 
+## Private application service
+
+`npm start` runs the application sidecar. It binds `0.0.0.0:${PORT:-8090}`
+inside its private container network; do not publish its port to the host or
+internet. In addition to the database configuration below, set a private
+`MOBILITY_ACTIVITY_SERVICE_KEY` of at least 32 characters. Laravel sends that
+key in `X-Mobility-Analytics-Key`; browser requests use the authenticated Laravel
+operator API instead. Keep the key and database URLs out of browser bundles.
+
+`POST /daily` accepts only this JSON shape:
+
+```json
+{"from":"2026-11-04T00:00:00+05:30","to":"2026-11-05T00:00:00+05:30","trip_ids":[7,8]}
+```
+
+The time window is inclusive/exclusive, an integral 1–31 days. Trip IDs must be
+unique positive safe integers, at most 5000; an empty list is valid. Laravel
+derives those IDs from its authorized college/publication scope. The service
+accepts no query operators, user IDs, SQL, or Mongo pipelines. The response is
+`{status,last_synced_at,lag_seconds,daily}`, with only day/action/event-count/
+distinct-trip-count aggregate rows. Invalid credentials receive 401; invalid
+requests receive 400. `/health` is unauthenticated but returns only opaque
+`ready`/`unavailable` status, with 200/503 respectively.
+
+The worker begins immediately and replays full SQL snapshots after each
+completed run, waiting `SYNC_INTERVAL_SECONDS` (default 60) between runs. A
+single run owns projection writes. New startup, any active replay, or a failed
+replay returns 503 with `status:unavailable`, an empty `daily` array, and a safe
+message. An empty array in this response is **not** a zero-activity report.
+Only full success advances the in-memory completion timestamp and snapshot
+boundary. Restart requires another full success before reports are served.
+Results older than max(120 seconds, three sync intervals) are explicitly
+`stale`. Queries also constrain `sourceEventId` to the completed snapshot;
+results are discarded if a replay starts while a Mongo query is running.
+The app can keep displaying its independent live SQL report when this service
+is unavailable.
+
+Mongo uses a strict JSON schema for the allow-listed lifecycle document shape,
+including known lifecycle actions, positive safe identifiers and true privacy
+flags. An additional `(tripId,occurredAt)` index supports the private report.
+The runtime Mongo account needs create/modify collection validation and index
+permissions in this dedicated analytics database plus collection read/upsert;
+it needs no authority over application SQL. Use a dedicated SQL SELECT-only
+reader for `mobility_trip_events`. Existing CLI `sync` and `daily` remain
+available; do not run a separate CLI writer concurrently with the service.
+
+The Dockerfile defaults to Node 24 and supports `--build-arg
+NODE_IMAGE=node:20-bookworm` for an already cached supported local image.
+No port is published by the Dockerfile. Network operations and aggregate
+queries have explicit timeouts; each replay also has a two-minute execution
+budget. Failures are retried on the next worker cycle without logging private
+driver errors or connection strings.
+
 This collection contains lifecycle events, not a notification inbox or chat
 history. Commute booking notifications are currently stored in MySQL in
 `mobility_commute_booking_notifications` (user, booking, trip, kind, dedupe key,

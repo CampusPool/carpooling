@@ -8,7 +8,8 @@
     "test:disposable": "sh test/disposable.integration.sh",
     "test:teacher-demo": "sh test/teacher-demo.integration.sh",
     "sync": "node src/cli.mjs sync",
-    "daily": "node src/cli.mjs daily"
+    "daily": "node src/cli.mjs daily",
+    "start": "node src/service.mjs"
   },
   "engines": {
     "node": ">=20"

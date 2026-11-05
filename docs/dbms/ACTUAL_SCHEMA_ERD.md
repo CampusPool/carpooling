@@ -19,6 +19,8 @@ erDiagram
     trip_passengers ||--o{ mobility_trip_participants : "FK booking_id"
     users ||--o{ mobility_trip_participants : "FK user_id"
     trips ||--o{ mobility_trip_events : "FK trip_id"
+    trips ||--o{ mobility_booking_decision_events : "FK trip_id; cascade delete"
+    trip_passengers o|--o{ mobility_booking_decision_events : "nullable FK booking_id; null on delete"
     users ||--o{ mobility_trip_events : "FK actor_id / passenger_id"
 
     trips ||--o{ mobility_fare_snapshots : "FK trip_id"
@@ -107,3 +109,13 @@ decision evidence, not substitutes for every relational edge. They preserve
 the terms used at quote, booking, dispatch, and financial boundaries.
 
 Local username accounts use `mobility_local_accounts.user_id` as both primary key and cascade-delete FK to `users.id`; usernames are unique. Role values are enforced by the local-account service. The mapping is independent of student-profile/verified-email tables; synthetic local access is not full student authentication.
+
+## Installed operator reports
+
+Migration `2026_11_05_000100_create_operator_database_reports.php` adds the
+booking decision audit above and three database objects consumed by the
+operator API: `mobility_operator_ride_facts` (view),
+`mobility_utilization_pct` (function), and `mobility_operator_daily`
+(procedure using a recursive calendar and a window average). They report
+local driver publications in the configured college. They are not new
+booking authorities. See [application analytics](APPLICATION_ANALYTICS.md).

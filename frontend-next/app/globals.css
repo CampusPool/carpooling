@@ -10,3 +10,6 @@
 .place-suggestion:hover, .place-suggestion:focus-visible { background: #edf4ff; color: #1458f4; outline: none; }
 .place-suggestions .fine { display: block; padding: 8px 12px; }
 .local-account-login{max-width:440px;margin:22px 0;padding:22px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 12px 34px #17325a0a}.local-account-login h2{margin:0 0 8px;font-size:20px;letter-spacing:-.03em}.local-account-login .fine{margin:0 0 18px}.local-account-login .form-grid{display:grid;gap:14px}.local-account-login label{display:flex;flex-direction:column;gap:7px;color:#41516a;font-size:13px;font-weight:650}.local-account-login input,.local-account-login select{width:100%;padding:12px 13px;border:1px solid #d7e1ef;border-radius:10px;background:#fbfdff;color:var(--ink)}.local-account-login input:focus,.local-account-login select:focus{outline:3px solid #b9d0ff;border-color:#6694ff}.local-account-login .secondary{min-height:44px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;color:var(--blue);font-weight:700}.local-account-login .text-button{margin-top:15px;color:var(--blue);font-weight:650;text-decoration:underline;text-underline-offset:3px}
+
+/* Keep wide operations tables inside their scroll containers. */
+.content.operator-content{min-width:0}

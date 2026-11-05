@@ -9,6 +9,7 @@ The product is a Laravel/MySQL mobility backend extension with a Next.js client,
 - `backend/` — original MobilityPlatform Laravel extension and integration patches.
 - `frontend-next/` — Next.js client for the existing MobilityPlatform API.
 - `services/activity-projection/` — SQL-to-Mongo activity projection service and disposable tests.
+- [Operator database reports](docs/dbms/APPLICATION_ANALYTICS.md) — installed SQL views/routines/audit and private, rebuildable Mongo lifecycle summaries, with real application integration verification.
 - `scripts/` — isolated local verification and demonstration helpers.
 - `research/experiments/` — sanitized, disposable integration harnesses and pinned dependency metadata.
 - `docs/` — product contracts, evidence limits and course-facing documentation.

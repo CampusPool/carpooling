@@ -1,6 +1,9 @@
 services:
   mysql:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    # Disposable development databases only: allow the migration account to
+    # install reviewed deterministic reporting functions and audit triggers.
+    command: ["--log-bin-trust-function-creators=1"]
     environment:
       MYSQL_DATABASE: carpoolear
       MYSQL_USER: carpoolear

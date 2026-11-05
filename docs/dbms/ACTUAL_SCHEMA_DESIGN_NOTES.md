@@ -83,5 +83,24 @@ pilot.
 ## Verification boundary
 
 The authoritative source for this note is the migration set, not a guessed
-live schema. Run `git diff`, migration linting, and `scripts/verify-dbms-level3.sh` before submission. Do not connect this evidence job to the pilot
+live schema. Run `git diff`, migration linting, `scripts/verify-dbms-application.sh` and
+`scripts/verify-dbms-level3.sh` before submission. The application verifier
+exercises installed SQL reporting objects and real lifecycle-event projection;
+the Level 3 verifier remains a separate teaching model. Do not connect this evidence job to the pilot
 database, insert real user data, or call a live payment provider.
+
+## Application reports and audit
+
+[Operator analytics](APPLICATION_ANALYTICS.md) consumes a view, deterministic
+utilization function and bounded recursive-CTE/window report procedure installed
+by the application migration. The procedure's college parameter explicitly uses
+the Laravel column collation, avoiding a MySQL 8 database-default collation
+mismatch. Booking triggers append operational decision history in the original
+transaction; they do not add another booking/capacity service.
+
+A private, authenticated Node service periodically replays a consistent
+read-only MySQL event snapshot into Mongo. Laravel supplies the scoped ride IDs
+and receives aggregates plus successful-sync freshness. Failed/in-progress
+replay suppresses uncertain counts, while booking and SQL reporting stay
+independent of Mongo availability. This supplies useful operational visibility
+with syllabus SQL/NoSQL features instead of introducing another source of truth.
