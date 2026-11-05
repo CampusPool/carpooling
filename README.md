@@ -14,6 +14,14 @@ The product is a Laravel/MySQL mobility backend extension with a Next.js client,
 - `docs/` — product contracts, evidence limits and course-facing documentation.
 - `android/` — optional tracking client prototype.
 
+## Run the local carpool app
+
+Follow [RUN_LOCAL_CORE.md](RUN_LOCAL_CORE.md) for Google Places/map setup,
+local road routing and separate username/password rider and driver accounts.
+The core flow covers publication, search, requests, decisions, notifications,
+chat and trip completion. Full identity/OTP, payments, real vehicle
+registration and live GPS acceptance remain Sprint 3.
+
 ## Backend dependency
 
 The Laravel application that hosts `backend/extensions/carpoolear` is an external pinned dependency. Follow `research/experiments/carpoolear/README.md` to fetch the exact upstream revision into an ignored local checkout. The upstream project is GPLv3; preserve its license and attribution if the source is included in a future release. Do not use a preserved pilot database for tests.
@@ -28,8 +36,13 @@ npm run typecheck
 npm run build
 ```
 
-The frontend uses synthetic local identities and non-redeemable demonstration credits. Configure `MOBILITY_API_ORIGIN` only for a disposable local environment.
+The local core runner configures `MOBILITY_API_ORIGIN` for its dedicated testing
+database. Local driver accounts use synthetic vehicles. No real payment or
+vehicle verification is implied.
 
 ## Status
 
-Read `MIGRATION_STATUS.md` before opening issue PRs. This migration is a reviewable baseline proposal; it does not by itself complete Sprint 1 or establish teacher acceptance. Issue PRs must be focused, truthful and independently reviewed.
+See [core acceptance and integration evidence](docs/SPRINT1_ISSUE_39_44_EVIDENCE_2026-11-03.md)
+and the linked PR checks for delivery status. `MIGRATION_STATUS.md` records the
+earlier migration baseline. Local core acceptance and course approval are
+separate; formal course submissions remain tracked in Sprint 3.

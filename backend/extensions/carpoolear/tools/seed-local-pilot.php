@@ -74,9 +74,11 @@ $trip = Trip::factory()->create([
     'is_passenger' => 0,
 ]);
 echo "Created synthetic local-only users and an unbooked demo offer.\n";
+if (getenv('MOBILITY_PRINT_LOCAL_SEED_CREDENTIALS') !== 'false') {
 echo 'HOST_EMAIL=', $host->email, "\n";
 echo 'RIDER_EMAIL=', $rider->email, "\n";
 echo 'OPERATOR_EMAIL=', $operator->email, "\n";
 echo 'PASSWORD=', $password, "\n";
 echo 'TRIP_ID=', $trip->id, "\n";
 echo "These credentials are printed once. Do not reuse them on real accounts.\n";
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "source": {
+    "url": "https://download.geofabrik.de/asia/india/southern-zone-261018.osm.pbf",
+    "checksum_url": "https://download.geofabrik.de/asia/india/southern-zone-261018.osm.pbf.md5",
+    "bytes": 558363781,
+    "provider_md5": "83e7819ac4f691f874de0c677520ae38",
+    "sha256": "8895361363703f104ccd3755349a23b99c860216f4ba2740706b560c46a48dbc",
+    "replication_timestamp": "2026-10-18T20:25:06Z"
+  },
+  "crop": {
+    "bbox": [
+      77.2,
+      12.6,
+      78.0,
+      13.4
+    ],
+    "strategy": "complete_ways",
+    "tool": "osmium 1.19.1 / libosmium 2.23.1",
+    "bytes": 49098156,
+    "sha256": "60d07b08ab0643b8ef0243da9b6c866c0ccd1b00c3a7a94d03382adf1e90a9e0",
+    "missing_way_nodes": 0,
+    "nodes": 6029994,
+    "ways": 1228498,
+    "relations": 6345
+  },
+  "license": "ODbL-1.0",
+  "attribution": "OpenStreetMap contributors; regional extract by Geofabrik",
+  "attribution_url": "https://www.openstreetmap.org/copyright",
+  "scope": "Bengaluru software reference coverage; not approved passenger stops or an operating boundary"
+}
