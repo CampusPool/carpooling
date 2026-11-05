@@ -63,6 +63,8 @@ function installDriverApi({ bookings = [], bookingSnapshots, bookingStatuses = [
     const method = init.method || "GET";
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ url, method, body, headers: init.headers || {} });
+    if (url === "/api/mobility/local-auth/config") return json({ enabled: true });
+    if (url === "/api/mobility/local-auth/register" && method === "POST") return json({ token: "driver-token", role: "driver", user: { id: 808, name: body.username } }, 201);
     if (url === "/api/mobility/commute/demo-session" && method === "POST") return json({ token: "driver-token" });
     if (url === "/api/mobility/commute/me") return json({ profile, user: { id: 808, name: "You" } });
     if (url === "/api/mobility/commute/bookings") {
@@ -120,12 +122,17 @@ function installDriverApi({ bookings = [], bookingSnapshots, bookingStatuses = [
 
 async function signInDriver() {
   render(<Page />);
-  fireEvent.click(screen.getByRole("button", { name: /Offer a ride/i }));
+  await screen.findByRole("heading", { name: "Local demo account" });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "driver_test" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "driver-pass-123" } });
+  fireEvent.change(screen.getByLabelText("Account type"), { target: { value: "driver" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
   await screen.findByRole("heading", { name: "Choose your route." });
   await waitFor(() => expect(screen.getByDisplayValue("Home")).toBeInTheDocument());
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   installDriverApi();
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
@@ -236,7 +243,7 @@ describe("driver journey interactions", () => {
     await signInDriver();
     fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
     fireEvent.click(await screen.findByRole("button", { name: "Start trip" }));
-    expect(await screen.findByRole("button", { name: /Find a ride/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Local demo account" })).toBeInTheDocument();
   });
 
   it("preserves the driver view while warning when wallet sync is temporarily unavailable", async () => {
@@ -337,9 +344,9 @@ describe("driver journey interactions", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Trip chat" }));
     fireEvent.click(await screen.findByRole("button", { name: "Block participant" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(await screen.findByRole("button", { name: /Find a ride/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Local demo account" })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 70));
-    expect(screen.getByRole("button", { name: /Find a ride/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Local demo account" })).toBeInTheDocument();
   });
 
   it("submits a participant-scoped trip report through the canonical endpoint", async () => {
@@ -366,6 +373,7 @@ describe("driver journey interactions", () => {
 
     installDriverApi({ bookings: [lifecycleBooking("planned")], reportFailure: true });
     cleanup();
+    sessionStorage.clear();
     await signInDriver();
     fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
     fireEvent.click(await screen.findByRole("button", { name: "Report issue" }));
@@ -426,7 +434,11 @@ describe("driver journey interactions", () => {
     await screen.findByText("No messages yet.");
     fireEvent.click(screen.getByRole("button", { name: "Refresh chat" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    fireEvent.click(screen.getByRole("button", { name: /Offer a ride/i }));
+    await screen.findByRole("heading", { name: "Local demo account" });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "driver_again" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "driver-pass-123" } });
+    fireEvent.change(screen.getByLabelText("Account type"), { target: { value: "driver" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await screen.findByRole("heading", { name: "Choose your route." });
     fireEvent.click(screen.getByRole("button", { name: "Bookings" }));
     expect((await screen.findAllByRole("button", { name: "Trip chat" }))[0]).not.toBeDisabled();

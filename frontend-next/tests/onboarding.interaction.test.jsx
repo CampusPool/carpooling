@@ -8,6 +8,19 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("driver onboarding client", () => {
+  it("explains when the vehicle colour catalogue is empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (["/api/mobility/driver-onboarding/me", "/api/cars", "/api/car-colors"].includes(url)) return json({ data: [] });
+      throw new Error(`Unhandled request ${url}`);
+    }));
+    render(<DriverOnboarding token="session-token" />);
+    await screen.findByText(/No vehicle is available yet/);
+    fireEvent.click(screen.getByText("Add a vehicle"));
+    expect(await screen.findByText(/Vehicle colours are unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save owned vehicle" })).toBeDisabled();
+  });
+
   it("creates an owned vehicle and starts its application through the real API contracts", async () => {
     const calls = [];
     let vehicles = [];

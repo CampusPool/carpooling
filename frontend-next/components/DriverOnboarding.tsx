@@ -37,6 +37,7 @@ export default function DriverOnboarding({ token }: { token: string }) {
   const [applications, setApplications] = useState<Json[]>([]);
   const [vehicles, setVehicles] = useState<Json[]>([]);
   const [colours, setColours] = useState<Json[]>([]);
+  const [coloursLoaded, setColoursLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -50,6 +51,7 @@ export default function DriverOnboarding({ token }: { token: string }) {
       setApplications(rows(applicationsResponse));
       setVehicles(rows(vehicleResponse));
       setColours(rows(colourResponse));
+      setColoursLoaded(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load driver onboarding."); }
   }, [token]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -128,8 +130,9 @@ export default function DriverOnboarding({ token }: { token: string }) {
         <label>Registration number<input name="patente" maxLength={10} autoComplete="off" required /></label>
         <label>Make<input name="brand_other" maxLength={100} required /></label><label>Model<input name="model_other" maxLength={100} required /></label>
         <label>Colour<select name="car_color_id" required defaultValue=""><option value="" disabled>Select a colour</option>{colours.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        {coloursLoaded && colours.length === 0 && <p className="error wide">Vehicle colours are unavailable. Contact the administrator, then refresh.</p>}
         <label>Year<input name="year" type="number" min="1900" max={new Date().getFullYear()} required /></label>
-        <button className="primary wide" disabled={busy}>Save owned vehicle</button>
+        <button className="primary wide" disabled={busy || colours.length === 0}>Save owned vehicle</button>
       </form></details>
     </section>
 
