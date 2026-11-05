@@ -16,6 +16,7 @@ class MobilityServiceProvider extends ServiceProvider
         $this->app->bind(\STS\Mobility\Pickup\PathProvider::class, \STS\Mobility\Pickup\OsrmPathProvider::class);
         $this->mergeConfigFrom($root.'/config/routing.php', 'mobility_routing');
         $this->mergeConfigFrom($root.'/config/college.php', 'college');
+        $this->mergeConfigFrom($root.'/config/operator_analytics.php', 'operator_analytics');
     }
 
     public function boot(): void

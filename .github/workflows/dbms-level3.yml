@@ -1,0 +1,80 @@
+name: DBMS Level 3 integration
+
+on:
+  pull_request:
+    paths:
+      - 'docs/dbms/**'
+      - 'scripts/verify-dbms-level3.sh'
+      - 'scripts/verify-dbms-application.sh'
+      - 'scripts/dbms-application/**'
+      - 'scripts/prepare-carpoolear.sh'
+      - 'backend/extensions/carpoolear/**'
+      - 'backend/integrations/carpoolear/**'
+      - 'services/activity-projection/**'
+      - 'research/experiments/carpoolear/**'
+      - '.github/workflows/dbms-level3.yml'
+  push:
+    paths:
+      - 'docs/dbms/**'
+      - 'scripts/verify-dbms-level3.sh'
+      - 'scripts/verify-dbms-application.sh'
+      - 'scripts/dbms-application/**'
+      - 'scripts/prepare-carpoolear.sh'
+      - 'backend/extensions/carpoolear/**'
+      - 'backend/integrations/carpoolear/**'
+      - 'services/activity-projection/**'
+      - 'research/experiments/carpoolear/**'
+      - '.github/workflows/dbms-level3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  application-proof:
+    name: Actual application SQL and Mongo integration
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Exercise actual API journey, reports, replay and Mongo outage
+        shell: bash
+        env:
+          MOBILITY_DOCKER_CONTEXT: default
+        run: |
+          set -o pipefail
+          mkdir -p output/dbms-application-verification
+          sh scripts/verify-dbms-application.sh 2>&1 | tee output/dbms-application-verification/verification.log
+      - name: Upload sanitized application proof, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbms-application-log
+          path: output/dbms-application-verification/
+          if-no-files-found: warn
+          retention-days: 14
+  supplementary-proof:
+    # MongoDB 8.0 refuses the kernel used by current ubuntu-latest.
+    # https://jira.mongodb.org/browse/SERVER-121912
+    # Ubuntu 22.04 runner currently provides a 6.8 kernel.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify disposable SQL and Mongo course fixtures
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dbms-level3-artifacts
+          sh scripts/verify-dbms-level3.sh 2>&1 | tee dbms-level3-artifacts/verification.log
+      - name: Upload synthetic verification log, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbms-level3-supplementary-log
+          path: dbms-level3-artifacts/verification.log
+          if-no-files-found: warn
+          retention-days: 14

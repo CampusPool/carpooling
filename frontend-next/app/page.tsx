@@ -8,6 +8,7 @@ import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountSignIn from "../components/LocalAccountSignIn";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
+import OperatorAnalytics from "../components/OperatorAnalytics";
 type R = Record<string, any>;
 // Places (New) returns FormattableText objects. Prefer their text field for stable labels.
 const placeText = (value: any): string => {
@@ -1238,7 +1239,9 @@ export default function Page() {
       <div className="layout">
         <aside>
           <p className="muted">COMMUTE</p>
-          {(process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" ? [
+          {(process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" && me?.operator ? [
+            ["operator", "Operations"],
+          ] : process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" ? [
             ["pool", "Rides and bookings"],
           ] : [
             ["home", "Overview"],
@@ -1260,9 +1263,9 @@ export default function Page() {
             </button>
           ))}
         </aside>
-        <section className="content">
+        <section className={`content${view === "operator" ? " operator-content" : ""}`}>
           <p className="eyebrow">
-            {view === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
+            {view === "operator" ? "COLLEGE OPERATIONS" : view === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
           </p>
           <h2>
             {view === "home"
@@ -1977,6 +1980,7 @@ export default function Page() {
           )}
           {view === "operator" && me?.operator && (
             <div className="cards">
+              <OperatorAnalytics token={token} />
               <p className="fine">Read-only operator view. Counts are limited to the synthetic classroom demo and report subjects; ticket messages and internal notes are never exposed here.</p>
               {operatorError && <p className="error" role="alert">{operatorError}</p>}
               <div className="cards">

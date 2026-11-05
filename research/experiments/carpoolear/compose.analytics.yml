@@ -1,0 +1,43 @@
+# Optional private analytics for the disposable development stack. No host ports.
+# SQL remains the booking authority; neither service is a dependency of app.
+services:
+  app:
+    environment:
+      MOBILITY_ACTIVITY_SERVICE_URL: http://activity:8090
+      MOBILITY_ACTIVITY_SERVICE_KEY: ${MOBILITY_ACTIVITY_SERVICE_KEY:?Set a private analytics key}
+    volumes:
+      - ../../../scripts/dbms-application/probe.php:/opt/mobility/dbms-application.php:ro
+  mongo:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: analyticsroot
+      MONGO_INITDB_ROOT_PASSWORD: ${MOBILITY_MONGO_ROOT_PASSWORD:?Set a disposable Mongo root password}
+      MOBILITY_MONGO_APP_PASSWORD: ${MOBILITY_MONGO_APP_PASSWORD:?Set a database-scoped Mongo password}
+    volumes:
+      - ../../../scripts/dbms-application/mongo-init.js:/docker-entrypoint-initdb.d/analytics.js:ro
+    tmpfs:
+      - /data/db
+      - /data/configdb
+    networks: [appnet]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username analyticsroot --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)' >/dev/null"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  activity:
+    build:
+      context: ../../../services/activity-projection
+      args:
+        NODE_IMAGE: ${MOBILITY_ACTIVITY_NODE_IMAGE:-node:24-bookworm-slim}
+    environment:
+      MOBILITY_ACTIVITY_MYSQL_URL: mysql://activity_reader:synthetic-read-only@${MOBILITY_ANALYTICS_MYSQL_HOST:-mysql}:3306/carpoolear
+      MOBILITY_ACTIVITY_MYSQL_TIMEZONE: "+05:30"
+      MOBILITY_ACTIVITY_MONGODB_URI: mongodb://activity_app:${MOBILITY_MONGO_APP_PASSWORD:?Set Mongo password}@mongo:27017/mobility_analytics?authSource=mobility_analytics
+      MOBILITY_ACTIVITY_MONGODB_DB: mobility_analytics
+      MOBILITY_ACTIVITY_SERVICE_KEY: ${MOBILITY_ACTIVITY_SERVICE_KEY:?Set analytics key}
+      SYNC_INTERVAL_SECONDS: "2"
+      PORT: "8090"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks: [appnet]

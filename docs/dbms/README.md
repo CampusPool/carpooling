@@ -1,51 +1,87 @@
-# DBMS evidence pack (disposable MySQL)
+# Database deliverables
 
-This is a course/demo evidence pack for the MobilityPlatform domain. It is intentionally namespaced (`dbms_*`) and **does not modify the Laravel application migrations or the pilot schema**. The table shapes are a small, executable projection of the real migrations:
+The application uses MySQL for booking integrity and MongoDB for rebuildable
+lifecycle analytics. Its private Operations report connects Next.js to installed
+application views, a function, a procedure, transactional audit triggers and
+Mongo aggregation. Start with [application analytics](APPLICATION_ANALYTICS.md)
+for the user flow, actual schema objects, bounds, privacy and reproduction.
 
-- `trips` and `trip_passengers` are represented by `dbms_rides` and `dbms_bookings`.
-- `mobility_trip_lifecycles` is represented by the ride lifecycle/status columns.
-- `mobility_fare_snapshots` and `mobility_financial_postings` are represented by expenses and ledger rows.
-- `mobility_pickup_points` and route matching are represented by origin/destination stop columns.
+Use [Level 3 acceptance](LEVEL3_ACCEPTANCE.md) for rubric traceability and
+[four-member scope](FOUR_MEMBER_SCOPE.md) for contribution evidence and course
+acceptance boundaries.
 
-The source of truth for the production schema remains `backend/extensions/carpoolear/migrations/`. This pack is evidence of relational design and SQL techniques, not a claim that these objects are currently installed in the product database.
+## Application schema and implementation
 
-For the application migration order, disposable forward/rollback commands and
-the external-host dependency boundary, see
-[`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md).
+- [Selected-domain ERD](ACTUAL_SCHEMA_ERD.md) distinguishes declared foreign keys from logical associations.
+- [Data dictionary](ACTUAL_DATA_DICTIONARY.md), [design notes](ACTUAL_SCHEMA_DESIGN_NOTES.md) and [migration runbook](MIGRATION_RUNBOOK.md) describe the Laravel extension and its pinned external host dependency.
+- [Application analytics](APPLICATION_ANALYTICS.md) documents the operator API and actual `mobility_*` reporting objects installed by the application migration. SQL reports remain available during a Mongo outage.
+- [Historical analytics SQL](actual-analytics.sql) uses application table/column names, but its separate [fixture](actual-analytics-fixture.sql) is a minimal-column report fixture. That verification does not replace the new application journey.
+- [Activity projection](../../services/activity-projection/README.md) documents the allow-listed SQL-to-Mongo lifecycle read model, replay and credentials. It is separate from SQL notification inbox/chat storage.
 
-`actual-analytics.sql` is separate: it contains read-only reports over the actual Laravel schema (`trips`, `trip_passengers`, and the mobility tables). Those reports were run against a disposable logical clone of the local MySQL schema; they do not install or alter application objects. See `ACTUAL_SCHEMA_STATUS.md` for execution status and limits.
+The five teammate packages are merged into official main `753853f` through
+[PR83](https://github.com/CampusPool/carpooling/pull/83),
+[PR84](https://github.com/CampusPool/carpooling/pull/84),
+[PR86](https://github.com/CampusPool/carpooling/pull/86),
+[PR87](https://github.com/CampusPool/carpooling/pull/87) and
+[PR88](https://github.com/CampusPool/carpooling/pull/88). The revised 18 core
+issues are complete. Local username/password authentication with persisted
+rider/driver roles is part of that core. Full identity/OTP, payments, real
+vehicle registration and physical GPS acceptance remain Sprint 3.
 
-The repeatable automated check is `scripts/test-actual-analytics.sh`. It starts an ephemeral `mysql:8.0` Docker container, loads only the minimal report-column fixture in `actual-analytics-fixture.sql`, and asserts nonempty pool, commute, balanced, unbalanced, and missing-posting rows. It never connects to the pilot database.
+[PR85](https://github.com/CampusPool/carpooling/pull/85) delivers application
+analytics and its reproducible verifier. Read the PR checks/artifacts for
+revision-specific automated evidence. Submission and instructor acceptance
+remain separate from implementation and runtime verification.
 
-## What is demonstrated
+## Reproduce the application report
 
-`evidence.sql` creates a normalized ride/booking/expense model with primary keys, foreign keys, checks, unique constraints and indexes. It also creates:
-
-1. `dbms_active_rides`: an aggregate view with remaining capacity and accepted fare totals.
-2. `dbms_shared_expense_per_rider`: a deterministic stored function for integer minor-unit allocation.
-3. `dbms_book_ride`: a stored procedure that locks one ride row and atomically enforces the last-seat rule.
-4. `dbms_bookings_before_insert`: a trigger that rejects self-booking and invalid booking amounts.
-5. A composite search index and an `EXPLAIN` query for route/date/status filtering.
-
-## Safe verification
-
-Create an empty disposable MySQL database whose name starts with `dbms_evidence_`, then run:
+From the repository root:
 
 ```sh
-DBMS_EVIDENCE_ALLOW_DISPOSABLE=1 \
-DBMS_EVIDENCE_DATABASE=dbms_evidence_local \
-MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=root \
-scripts/verify-dbms-evidence.sh
+sh scripts/verify-dbms-application.sh
+# Choose an existing isolated Docker VM on macOS when needed:
+MOBILITY_DOCKER_CONTEXT=colima-sprint1-verify sh scripts/verify-dbms-application.sh
 ```
 
-The script refuses any database name outside the `dbms_evidence_*` namespace and refuses to run without the explicit opt-in. It only drops objects prefixed `dbms_` in that database. It never invokes Laravel migrations and never connects to the application database unless the caller deliberately supplies a matching disposable name.
+The application verifier checks a separate disposable host-backed SQL/Mongo/API
+journey. Its dedicated `application-proof` CI job and sanitized
+`dbms-application-log` artifact record the revision and results when run.
+See [the runbook](APPLICATION_ANALYTICS.md#reproduction-and-evidence) for
+isolation, overrides and evidence boundaries. Preserve pilot databases.
 
-## Concurrency demonstration
+## Supplementary course model
 
-`concurrency.sql` is a two-session runbook for the `dbms_book_ride` procedure. With one available seat, exactly one concurrent transaction can commit; the second blocks on `FOR UPDATE`, observes no capacity, and receives `SQLSTATE 45000`. Run it only against the disposable database.
+`evidence.sql` creates a normalized, namespaced (`dbms_*`) model of rides,
+bookings, expenses and ledger entries. It installs keys/constraints/indexes,
+a view, an expense-allocation function, a booking procedure and a self-booking
+trigger. The procedure requires a caller-owned transaction for capacity checks.
+These objects are separate from installed `mobility_*` application reports and
+do not decide application bookings.
 
-`scripts/test-dbms-concurrency.sh` automates that proof in a fresh ephemeral `mysql:8.0` container. It runs two parallel sessions using riders 3 and 4, asserts one successful booking and one `ride is full` failure, then checks the final accepted count and remaining capacity before cleanup.
+```sh
+sh scripts/verify-dbms-level3.sh
+MOBILITY_DOCKER_CONTEXT=colima-sprint1-verify sh scripts/verify-dbms-level3.sh
+```
 
-## Limitations
+This verifier creates disposable MySQL/Mongo containers without host data mounts
+or published ports and removes its own containers on exit. It checks SQL DML,
+joins/subqueries/CTEs, routines, constraints, minimal report fixtures and Mongo
+creation/read/update/delete, indexes and aggregation. See `level3/` and
+[dated supplementary evidence](level3/VERIFICATION.md). The `supplementary-proof`
+CI job retains its own log artifact.
 
-This is not production integration, payment processing, Google Maps integration, or proof of a live two-device workflow. It deliberately avoids changing application behavior under time pressure. A later production migration would need a reviewed mapping from these evidence objects to the existing `trips`, `trip_passengers`, and mobility tables.
+`concurrency.sql` is a manual two-session runbook. A single-session procedure
+test does not establish concurrent race safety. Historical references to
+`verify-dbms-evidence.sh`, `test-actual-analytics.sh` and
+`test-dbms-concurrency.sh` named scripts absent from this source tree; use the
+two verifiers above for their respective scopes.
+
+## Evidence boundary
+
+Current requirements permit SQL plus MongoDB and require meaningful application
+interaction. They also describe instructor-approved two-member teams. Four
+members are the user's working scope; instructor approval of that size remains
+unconfirmed. Record actual contribution links, preserve upstream attribution,
+disclose AI assistance and obtain human evaluation of originality,
+modification/viva and the submitted artifact. CI cannot award marks or establish
+those outcomes.

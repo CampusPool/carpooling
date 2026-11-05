@@ -19,6 +19,8 @@ erDiagram
     trip_passengers ||--o{ mobility_trip_participants : "FK booking_id"
     users ||--o{ mobility_trip_participants : "FK user_id"
     trips ||--o{ mobility_trip_events : "FK trip_id"
+    trips ||--o{ mobility_booking_decision_events : "FK trip_id; cascade delete"
+    trip_passengers o|--o{ mobility_booking_decision_events : "nullable FK booking_id; null on delete"
     users ||--o{ mobility_trip_events : "FK actor_id / passenger_id"
 
     trips ||--o{ mobility_fare_snapshots : "FK trip_id"
@@ -32,8 +34,8 @@ erDiagram
 
     nodes_geo ||--o{ mobility_pickup_points : "FK canonical_node_id"
     users ||--o{ mobility_route_quotes : "FK user_id"
-    trips ||--o{ mobility_route_quotes : "nullable FK consumed_trip_id"
-    mobility_route_quotes ||--o{ mobility_route_quotes : "nullable FK parent_quote_id"
+    trips o|--o{ mobility_route_quotes : "nullable FK consumed_trip_id"
+    mobility_route_quotes o|--o{ mobility_route_quotes : "nullable FK parent_quote_id"
     cars ||--o{ mobility_recurring_programs : "FK car_id"
     mobility_route_quotes ||--o| mobility_recurring_programs : "FK source_quote_id"
     mobility_recurring_programs ||--o{ mobility_recurring_occurrences : "FK program_id"
@@ -47,10 +49,10 @@ erDiagram
     mobility_route_quotes ||--o{ mobility_match_references : "FK quote_id"
     trips ||--o{ mobility_match_references : "FK trip_id"
     users ||--o{ mobility_match_references : "FK user_id"
-    trip_passengers ||--o{ mobility_match_references : "nullable FK booking_id"
+    trip_passengers o|--o{ mobility_match_references : "nullable FK booking_id"
     trip_passengers ||--o| mobility_booking_intervals : "FK booking_id"
     mobility_route_quotes ||--o{ mobility_booking_intervals : "FK quote_id"
-    mobility_match_references ||--o{ mobility_booking_intervals : "nullable FK match_reference_id"
+    mobility_match_references o|--o{ mobility_booking_intervals : "nullable FK match_reference_id"
 
     mobility_route_quotes ||--o| mobility_dispatch_requests : "FK quote_id"
     users ||--o{ mobility_dispatch_requests : "FK rider_id"
@@ -60,9 +62,9 @@ erDiagram
     cars ||--o{ mobility_dispatch_offers : "FK car_id"
     mobility_dispatch_offers ||--o| mobility_dispatch_assignments : "FK offer_id"
     mobility_dispatch_requests ||--o{ mobility_dispatch_assignments : "FK request_id"
-    mobility_dispatch_assignments ||--o| trips : "FK trip_id"
-    mobility_dispatch_assignments ||--o| trip_passengers : "FK booking_id"
-    mobility_dispatch_requests ||--o{ mobility_dispatch_events : "nullable FK request_id"
+    mobility_dispatch_assignments o|--|| trips : "FK trip_id"
+    mobility_dispatch_assignments o|--|| trip_passengers : "FK booking_id"
+    mobility_dispatch_requests o|--o{ mobility_dispatch_events : "nullable FK request_id"
 
     mobility_commute_demo_actors }o..|| users : "logical user_id; no FK"
     mobility_commute_demo_trips }o..|| trips : "logical trip_id; no FK"
@@ -107,3 +109,13 @@ decision evidence, not substitutes for every relational edge. They preserve
 the terms used at quote, booking, dispatch, and financial boundaries.
 
 Local username accounts use `mobility_local_accounts.user_id` as both primary key and cascade-delete FK to `users.id`; usernames are unique. Role values are enforced by the local-account service. The mapping is independent of student-profile/verified-email tables; synthetic local access is not full student authentication.
+
+## Installed operator reports
+
+Migration `2026_11_05_000100_create_operator_database_reports.php` adds the
+booking decision audit above and three database objects consumed by the
+operator API: `mobility_operator_ride_facts` (view),
+`mobility_utilization_pct` (function), and `mobility_operator_daily`
+(procedure using a recursive calendar and a window average). They report
+local driver publications in the configured college. They are not new
+booking authorities. See [application analytics](APPLICATION_ANALYTICS.md).

@@ -67,7 +67,7 @@ CREATE TABLE mobility_trip_events (
   created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
 );
 INSERT INTO mobility_trip_events VALUES
-(1, 101, 7, 'publish', NULL, 1, 200, '{"phone":"must-not-copy"}', REPEAT('x',64), 'secret-1', '2026-10-27 10:00:00', '2026-10-27 10:00:00'),
+(1, 101, 7, 'start', NULL, 1, 200, '{"phone":"must-not-copy"}', REPEAT('x',64), 'secret-1', '2026-10-27 10:00:00', '2026-10-27 10:00:00'),
 (2, 101, 8, 'arrive', 9, 2, 200, '{"email":"must-not-copy"}', REPEAT('y',64), 'secret-2', '2026-10-27 11:00:00', '2026-10-27 11:00:00'),
 (4, 101, 8, 'arrive', 9, 3, 200, '{}', REPEAT('w',64), 'secret-4', '2026-10-27 11:30:00', '2026-10-27 11:30:00');
 CREATE USER IF NOT EXISTS 'readonly'@'%' IDENTIFIED BY 'readonly';
@@ -104,7 +104,7 @@ printf '%s\n' "$daily" | tail -n 1 | node -e '
   process.stdin.on("data", chunk => input += chunk);
   process.stdin.on("end", () => {
     const rows = JSON.parse(input);
-    assert.deepEqual(rows, ["arrive", "cancel", "publish"].map(action => ({
+    assert.deepEqual(rows, ["arrive", "cancel", "start"].map(action => ({
       day: "2026-10-27", action, eventCount: action === "arrive" ? 2 : 1, uniqueTripCount: 1
     })));
   });
@@ -113,7 +113,7 @@ dc exec -T mongo mongosh --quiet mobility_activity_test --eval '
   const indexes = db.mobility_activity_events.getIndexes();
   const unique = indexes.find(i => i.name === "uniq_activity_source_event");
   if (!unique || !unique.unique || unique.key.sourceEventId !== 1) quit(1);
-  for (const name of ["activity_occurred_action", "activity_actor_occurred"]) {
+  for (const name of ["activity_occurred_action", "activity_actor_occurred", "activity_trip_occurred"]) {
     if (!indexes.some(i => i.name === name)) quit(1);
   }
 '

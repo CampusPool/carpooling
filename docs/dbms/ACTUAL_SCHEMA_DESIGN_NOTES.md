@@ -35,9 +35,9 @@ The application transaction should lock the authoritative trip/booking rows
 before checking capacity, insert the participant/interval, and append the
 lifecycle event in one commit. A second transaction then waits on the same row
 lock and must re-read state before accepting. This is the ACID last-seat
-property demonstrated by `docs/dbms/concurrency.sql` and the disposable
-concurrency script; it is not a claim that a new lock is installed by this
-document.
+property that `docs/dbms/concurrency.sql` describes how to demonstrate with
+two sessions; the runbook alone is not retained execution evidence and does not
+install a lock.
 
 External payment callbacks follow the same pattern: unique provider event
 identity first, then idempotent attempt/posting/outbox changes in a transaction.
@@ -56,10 +56,10 @@ Mongo services. It is currently an opt-in/isolated service: the pilot/browser
 demo does not depend on Mongo for correctness, and the relational tables remain
 authoritative.
 
-## Why this justifies four SE workstreams
+## Related engineering complexity
 
-The complexity is not “four CRUD screens.” It separates four independently
-testable engineering workstreams with explicit integration boundaries:
+The schema supports these engineering areas. Some are implemented while others
+remain future work; the DBMS four-member acceptance plan is in FOUR_MEMBER_SCOPE.md:
 
 1. **Product/discovery and maps:** commute profiles, route quotes, pickup nodes,
    route snapshots, matching references, fare/route provenance, privacy-safe
@@ -83,6 +83,24 @@ pilot.
 ## Verification boundary
 
 The authoritative source for this note is the migration set, not a guessed
-live schema. Run `git diff`, migration linting, and the existing disposable
-DBMS scripts before submission. Do not connect this evidence job to the pilot
+live schema. Run `git diff`, migration linting, `scripts/verify-dbms-application.sh` and
+`scripts/verify-dbms-level3.sh` before submission. The application verifier
+exercises installed SQL reporting objects and real lifecycle-event projection;
+the Level 3 verifier remains a separate teaching model. Do not connect this evidence job to the pilot
 database, insert real user data, or call a live payment provider.
+
+## Application reports and audit
+
+[Operator analytics](APPLICATION_ANALYTICS.md) consumes a view, deterministic
+utilization function and bounded recursive-CTE/window report procedure installed
+by the application migration. The procedure's college parameter explicitly uses
+the Laravel column collation, avoiding a MySQL 8 database-default collation
+mismatch. Booking triggers append operational decision history in the original
+transaction; they do not add another booking/capacity service.
+
+A private, authenticated Node service periodically replays a consistent
+read-only MySQL event snapshot into Mongo. Laravel supplies the scoped ride IDs
+and receives aggregates plus successful-sync freshness. Failed/in-progress
+replay suppresses uncertain counts, while booking and SQL reporting stay
+independent of Mongo availability. This supplies useful operational visibility
+with syllabus SQL/NoSQL features instead of introducing another source of truth.

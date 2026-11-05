@@ -103,3 +103,18 @@ This document distinguishes migration-defined shape from runtime behavior. It
 does not claim every migration is used by the browser demo, that payment
 providers are live, or that all recurring/dispatch/financial paths are
 integrated end-to-end.
+
+## Operator decision audit and reporting objects
+
+| Object | Columns / behavior | Integrity and scope |
+|---|---|---|
+| `mobility_booking_decision_events` | `id` unsigned big integer PK; `trip_id` unsigned integer; nullable `booking_id` unsigned integer; `college_code` string(64); nullable `previous_state`, `next_state` unsigned tiny integer; `occurred_at` datetime(6), UTC | Trip FK cascades on delete; booking FK sets NULL on delete. Index (`college_code`,`trip_id`,`id`). Transactional INSERT/UPDATE triggers record states 0 pending, 1 accepted, 2 declined, 3 cancelled only for local driver publications; unchanged-state retries do not add a record. This is an operational audit since installation, not a historical backfill or tamper-proof compliance ledger. |
+| `mobility_operator_ride_facts` | Read-only view: trip/driver/college, departure/service date, vehicle/direction/lifecycle, total/accepted/available seats, pending/declined/cancelled requests, utilization, capacity alert | Per-trip booking preaggregation avoids join fan-out; excludes owner booking rows. Includes historical suspended hosts, excludes generated fixtures. API applies configured college and bounded date filter. No materialized duplicate of bookings. |
+| `mobility_utilization_pct(offered,accepted)` | Deterministic `NO SQL` function, decimal(9,2); zero when offered <= 0 | Can exceed 100 to reveal inconsistent capacity; never grants or rejects a booking. |
+| `mobility_operator_daily(college,from,to)` | Read-only procedure; validates an inclusive 1..31-day window, fills missing dates, and calculates a seven-calendar-day average with a recursive CTE/window function | Uses six preceding days to calculate the first returned day's full average. Date grouping follows the app's Asia/Kolkata trip timestamps. |
+
+Both view and routines use `SQL SECURITY INVOKER`. Trigger writes share the
+booking transaction, so a rollback also removes its audit event. The reporting
+API returns only aggregate/operational identifiers; names, email, coordinates
+and raw lifecycle response payloads are excluded. Mongo activity summaries are
+a separate rebuildable projection of `mobility_trip_events`, not this audit table.
