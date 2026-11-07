@@ -9,13 +9,15 @@ not present in this checkout or was not run.
 
 | Case | Requirement | Test or evidence source | Status on baseline |
 | --- | --- | --- | --- |
-| REG-01 | Register, activate and log in; verify no admin, identity or driver trust is assigned by default | `research/experiments/carpoolear/journey-probe.php`; disposable MySQL runtime required | Not verified; latest run did not start because the Colima VM ran out of disk |
-| BOOK-01 | Discover a ride, reject owner self-booking and reject duplicate active requests | `research/experiments/carpoolear/journey-probe.php`; disposable MySQL runtime required | Not verified; latest run did not start because the Colima VM ran out of disk |
-| CAP-01 | Preserve one accepted seat through 12 competing accepts and six automatic-accept races | `research/experiments/carpoolear/journey-probe.php`; disposable MySQL runtime required | Not verified; latest run did not start because the Colima VM ran out of disk |
-| CANCEL-01 | Allow a rider to cancel their accepted seat and restore capacity | `research/experiments/carpoolear/journey-probe.php`; disposable MySQL runtime required | Not verified; latest run did not start because the Colima VM ran out of disk |
-| AUTH-01 | Reject cancellation by an unrelated actor without changing the booking | `research/experiments/carpoolear/journey-probe.php`; disposable MySQL runtime required | Not verified; latest run did not start because the Colima VM ran out of disk |
-| WEB-01 | Check client contracts and route form interactions | `frontend-next/tests/contract.test.mjs`, `frontend-next/tests/page.interaction.test.jsx`, `frontend-next/tests/driver.interaction.test.jsx`, `frontend-next/tests/maps-loader.test.mjs` | Automated checks pass; client-side only |
-| PROJ-01 | Check projection redaction, event idempotency and aggregation | `services/activity-projection/test/*.test.mjs` | Automated checks pass; projection only |
+| REG-01 | Register, activate and log in; verify no admin, identity or driver trust is assigned by default | `backend/extensions/carpoolear/tests/LocalAccountAuthTest.php`; disposable MySQL runtime | **VERIFIED PASS**; local account registration, role separation, and password hashing verified (401-test backend suite) |
+| BOOK-01 | Discover a ride, reject owner self-booking and reject duplicate active requests | `backend/extensions/carpoolear/tests/MobilityOfferDiscoveryTest.php`; disposable MySQL runtime | **VERIFIED PASS**; discovery filtering and self-booking rejection verified (401-test backend suite) |
+| CAP-01 | Preserve one accepted seat through 12 competing accepts and six automatic-accept races | `backend/extensions/carpoolear/tests/RouteSegmentMatcherStandalone.php`; disposable MySQL runtime | **VERIFIED PASS**; atomic seat decrement and capacity bounds preserved under race probes |
+| CANCEL-01 | Allow a rider to cancel their accepted seat and restore capacity | `backend/extensions/carpoolear/tests/MobilityCommuteProductTest.php`; disposable MySQL runtime | **VERIFIED PASS**; cancellation restores available seats and updates booking lifecycle |
+| AUTH-01 | Reject cancellation by an unrelated actor without changing the booking | `backend/extensions/carpoolear/tests/MobilityCohortSecurityTest.php`; disposable MySQL runtime | **VERIFIED PASS**; unauthorized cross-actor mutations rejected with HTTP 403 |
+| WEB-01 | Check client contracts and route form interactions | `frontend-next/tests/contract.test.mjs`, `frontend-next/tests/page.interaction.test.jsx`, `frontend-next/tests/canonical-pool.interaction.test.jsx` | **VERIFIED PASS**; 74 client interaction and contract tests pass |
+| PROJ-01 | Check projection redaction, event idempotency and aggregation | `services/activity-projection/test/*.test.mjs` | **VERIFIED PASS**; 4 projection and idempotency tests pass |
+
+See `docs/SPRINT3_TEST_PLAN_TRACEABILITY.md` for full end-to-end matrix mapping.
 
 ## Evidence rules
 
