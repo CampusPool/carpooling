@@ -1,7 +1,9 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { emitUnauthorized } from "../lib/session-events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "../app/page";
+vi.mock("../components/LiveCarpool", () => ({ default: ({ accountRole }) => <div data-testid="live-carpool">Map-backed {accountRole} ride planner</div> }));
 
 const profile = {
   role: "rider",
@@ -56,7 +58,7 @@ function json(body, status = 200) {
   });
 }
 
-function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false, firstMeFailure = false } = {}) {
+function installApi({ rides = [ride], requestStatus = 200, bookings = [], ratings = [], ratingPost, bookingsStatus = 200, waitlist = [], waitlistRefreshStatus = 200, trustedShareExpiry = new Date(Date.now() + 120 * 60 * 1000).toISOString(), operator = false, firstMeFailure = false, localAccountRole } = {}) {
   calls = [];
   let bookingReads = 0;
   let currentWaitlist = waitlist;
@@ -72,7 +74,7 @@ function installApi({ rides = [ride], requestStatus = 200, bookings = [], rating
     if (url === "/api/mobility/college-auth/request") return json({ challenge_id: "challenge" });
     if (url === "/api/mobility/college-auth/verify") return json({ token: "student-token" });
     if (url === "/api/mobility/commute/demo-session" && method === "POST") return json({ token: "rider-token" });
-    if (url === "/api/mobility/commute/me") return firstMeFailure && meReads++ === 0 ? json({ message: "temporary failure" }, 503) : json({ profile, operator });
+    if (url === "/api/mobility/commute/me") return firstMeFailure && meReads++ === 0 ? json({ message: "temporary failure" }, 503) : json({ profile, operator, ...(localAccountRole ? { account_role: localAccountRole } : {}) });
     if (url === "/api/mobility/operator/dashboard") return json({ usage: { demo_actors: 1, demo_trips: 1, bookings: 0, waitlist_pending: 0, reports_open: 1, ratings_submitted: 0 }, reports: [{ id: 77, trip_id: 42, subject: "Pickup report", status: "Open", priority: "high", unread_for_admin: true }] });
     if (url === "/api/admin/support/tickets/77") return json({ data: { id: 77, trip_id: 42, subject: "Pickup report", status: "Open", message_markdown: "Synthetic report" } });
     if (url === "/api/admin/support/tickets/77/resolve" || url === "/api/admin/support/tickets/77/assign-me" || url === "/api/admin/support/tickets/77/needs-review") return json({ data: { id: 77, status: url.endsWith("resolve") ? "Resolved" : "Open" } });
@@ -138,7 +140,57 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("saved local session recovery", () => {
+  it("ignores a late 401 from the previous account but revokes the current account on its own 401", async () => {
+    installApi({ localAccountRole: "driver" });
+    sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: "driver-token", role: "driver" }));
+    render(<Page />);
+    expect(await screen.findByRole("button", { name: "Rides and bookings" })).toBeVisible();
+    act(() => emitUnauthorized("previous-rider-token"));
+    expect(screen.getByRole("button", { name: "Rides and bookings" })).toBeVisible();
+    expect(JSON.parse(sessionStorage.getItem("mobility-local-session")).token).toBe("driver-token");
+    act(() => emitUnauthorized("driver-token"));
+    expect(await screen.findByRole("heading", { name: "Local demo account" })).toBeVisible();
+    expect(sessionStorage.getItem("mobility-local-session")).toBeNull();
+  });
+
+  it("preserves a valid saved session through temporary account API downtime and permits retry", async () => {
+    installApi({ firstMeFailure: true, localAccountRole: "rider" });
+    sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: "rider-token", role: "rider" }));
+    render(<Page />);
+    expect(await screen.findByRole("button", { name: "Retry account loading" })).toBeVisible();
+    expect(JSON.parse(sessionStorage.getItem("mobility-local-session")).token).toBe("rider-token");
+    fireEvent.click(screen.getByRole("button", { name: "Retry account loading" }));
+    expect(await screen.findByRole("button", { name: "Rides and bookings" })).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry account loading" })).not.toBeInTheDocument());
+    expect(JSON.parse(sessionStorage.getItem("mobility-local-session")).role).toBe("rider");
+  });
+});
+
+describe("local account unified navigation", () => {
+  it.each(["rider", "driver"])("opens the map-backed %s journey after sign-up, without legacy duplicate screens", async (accountRole) => {
+    installApi({ localAccountRole: accountRole });
+    render(<Page />);
+    await createLocalAccount(accountRole);
+    expect(await screen.findByTestId("live-carpool")).toHaveTextContent(`Map-backed ${accountRole} ride planner`);
+    expect(screen.getByRole("button", { name: "Rides and bookings" })).toHaveClass("active");
+    expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Find rides" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Bookings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pool offers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Switch to hosting" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Switch to riding" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Driver onboarding" }) !== null).toBe(accountRole === "driver");
+    expect(screen.queryByRole("heading", { name: "Choose your route." })).not.toBeInTheDocument();
+  });
+});
+
 describe("rider journey interactions", () => {
+  it("instructs independent browser sessions for the two-account demo", async () => {
+    render(<Page />);
+    expect(screen.getByText(/different browser profiles or a normal and private window/)).toBeInTheDocument();
+    expect(screen.queryByText(/Open them in separate tabs/)).not.toBeInTheDocument();
+  });
   it("keeps a verified session and retries if loading the account temporarily fails", async () => {
     installApi({ firstMeFailure: true });
     render(<Page />);

@@ -28,6 +28,14 @@ describe("confirmed ride conversation", () => {
     expect(keys[0]).toBeTruthy(); expect(keys[1]).toBe(keys[0]);
     expect(screen.queryByRole("button", { name: "Share my live location" })).not.toBeInTheDocument();
   });
+  it("shows chat timestamps in India Standard Time, independently of the host timezone", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => url.endsWith("/tracking")
+      ? json({ location: null, stale: true })
+      : json({ messages: [{ id: 7, user_id: 4, text: "Leaving now", created_at: "2026-11-09T08:04:00Z" }], participants: [{ id: 4, name: "Gaia" }], can_send: true })));
+    render(<RideConversation token="test-token" tripId={9} isDriver={false} />);
+    expect(await screen.findByText("Leaving now")).toBeVisible();
+    expect(screen.getByText(/01:34 pm/i)).toBeInTheDocument();
+  });
   it("never starts GPS before driver consent and stops capture and server sharing", async () => {
     let success;
     const clearWatch = vi.fn();
