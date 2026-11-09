@@ -32,8 +32,8 @@
 - Frontend suite: 111 tests in 13 files pass after adding IST scheduling and chat-display checks (see current PR CI for reproducible results).
 - Fresh `npm ci`, TypeScript typecheck and Next production build pass in the isolated worktree.
 - Backend reconstruction scripts pass and 11 local restart-guard Python tests pass.
-- Backend disposable Docker test **not yet verified on the isolated worktree**: image rebuild failed due external Debian DNS resolution (`deb.debian.org`) in that environment. Do not claim PHP integration tests passed for these changes until CI or a working isolated Docker host verifies them.
-- Fresh full-stack clone **not yet verified**: this machine has the routing crop but lacks the required private Google Maps config file. The setup script correctly refuses missing configuration.
+- Backend Docker testing on the original Simular worktree was blocked by DNS resolution of `deb.debian.org`; however, the GitHub PR checks subsequently passed the **full disposable backend suite** and SQL/Mongo application integration (8/8 checks green on PR #90 before the documentation-only amendment).
+- A **fresh clone on the Mac** of PR #90 successfully passed the offline crop and private Maps preflight, started real OSRM car/bike/foot routers in a dedicated Docker context, healthy MySQL, Laravel API, and Next.js frontend. Verified HTTP 200 for `/`, `/api/mobility/local-auth/config` and `/mobility-pilot/maps-config`; HTTP 401 for unauthenticated `/api/mobility/commute/me`. The complete two-account browser journey and provider autocomplete are not yet verified in that clean installation. See `PHASE1_FRESH_CLONE_VERIFICATION_20261109.md`.
 
 ## Required review gates before merge
 

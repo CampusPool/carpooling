@@ -11,6 +11,7 @@ real vehicle registration and live GPS acceptance remain Sprint 3.
 - A local Docker Unix-socket context, for example Linux `default`, Docker
   Desktop `desktop-linux`, or a running Colima context. Docker must have at
   least 4 GiB available; graph building uses up to 3 GiB and two CPUs.
+- **Separate Docker context for parallel checkouts:** the local OSRM router uses fixed, labeled container names. If another CampusPool/MobilityPlatform checkout already owns `mobility-road-router-car` in the selected Docker context, startup intentionally refuses to reuse a different graph mount. Use a dedicated Docker/Colima profile for a fresh-clone verification (for example `colima start --profile campuspool-phase1-verify --cpu 3 --memory 5 --disk 20` and `--context colima-campuspool-phase1-verify`). Do **not** delete or repoint someone else's router containers to get past this check.
 - The pinned routing image is linux/arm64. An ARM64 Docker host works directly;
   AMD64 requires ARM64 emulation configured in Docker. Startup preflights the
   actual binary and fails clearly before graph work when it cannot execute.
