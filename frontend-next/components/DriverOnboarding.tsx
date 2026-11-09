@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { emitUnauthorized } from "../lib/session-events";
 
 type Json = Record<string, any>;
 const rows = (value: any): Json[] => Array.isArray(value?.data) ? value.data : Array.isArray(value) ? value : [];
@@ -25,7 +26,7 @@ async function call(path: string, token: string, method = "GET", body?: Json) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) window.dispatchEvent(new Event("mobility:unauthorized"));
+    if (response.status === 401) emitUnauthorized(token);
     const code = data?.error?.code;
     const detail = data?.message || data?.error?.message || code || `Request failed (${response.status})`;
     throw new Error(String(detail));
@@ -102,7 +103,7 @@ export default function DriverOnboarding({ token }: { token: string }) {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (response.status === 401) window.dispatchEvent(new Event("mobility:unauthorized"));
+        if (response.status === 401) emitUnauthorized(token);
         if (response.status === 409) await refresh();
         throw new Error(result?.message || result?.error?.code || `Upload failed (${response.status})`);
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { emitUnauthorized } from "../lib/session-events";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import CanonicalPlacePicker from "./CanonicalPlacePicker";
 
@@ -47,7 +48,7 @@ async function api(path: string, token: string, method = "GET", data?: Json, key
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("mobility:unauthorized"));
+    if (response.status === 401 && typeof window !== "undefined") emitUnauthorized(token);
     throw new Error(errorText(body, response.status));
   }
   return body;

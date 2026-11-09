@@ -24,7 +24,7 @@ assert.match(source, /intentKeys\.current\.get\(intent\)/);
 assert.match(source, /COMMUTE CHANGES WILL SAVE BEFORE SEARCH/);
 assert.match(source, /sessionRole === "driver" \? request\("commute\/offers", t\)/);
 assert.match(source, /vehicle_preference: "both"/);
-assert.match(source, /window\.dispatchEvent\(new Event\("mobility:unauthorized"\)\)/);
+assert.match(source, /emitUnauthorized\(token\)/);
 assert.match(source, /if \(bookingsResult\.status === "fulfilled"\) setBookings/);
 assert.match(source, /if \(walletResult\.status === "fulfilled"\) setWallet/);
 assert.match(source, /commute\/notifications/);

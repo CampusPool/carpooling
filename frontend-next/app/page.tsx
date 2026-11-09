@@ -9,6 +9,7 @@ import LocalAccountSignIn from "../components/LocalAccountSignIn";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
 import OperatorAnalytics from "../components/OperatorAnalytics";
+import { emitUnauthorized, isCurrentUnauthorized } from "../lib/session-events";
 type R = Record<string, any>;
 // Places (New) returns FormattableText objects. Prefer their text field for stable labels.
 const placeText = (value: any): string => {
@@ -107,7 +108,7 @@ async function request(
       (error as Error & { status?: number }).status = r.status;
       (error as Error & { code?: string }).code = code;
       if (r.status === 401 && typeof window !== "undefined") {
-        window.dispatchEvent(new Event("mobility:unauthorized"));
+        emitUnauthorized(token);
       }
       throw error;
     }
@@ -182,6 +183,8 @@ export default function Page() {
     [operatorError, setOperatorError] = useState(""),
     [operatorTicket, setOperatorTicket] = useState<R>(),
     [operatorTicketBusy, setOperatorTicketBusy] = useState(false);
+  const activeTokenRef = useRef(token);
+  activeTokenRef.current = token;
   const profile = me?.profile || {};
   const profileForSave = {
     role,
@@ -287,7 +290,13 @@ export default function Page() {
     intentKeys.current.clear();
   }
   useEffect(() => {
-    const onUnauthorized = () => {
+    const onUnauthorized = (event: Event) => {
+      // The saved token may exist before the bootstrap sync finishes. Otherwise,
+      // compare against the active login, not whichever request resolved last.
+      let savedToken = "";
+      try { savedToken = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null")?.token || ""; } catch { /* invalid storage is handled at bootstrap */ }
+      const currentToken = savedToken || activeTokenRef.current;
+      if (!isCurrentUnauthorized(event, currentToken)) return;
       clearSession();
       setError("Your session expired. Please sign in again.");
     };
@@ -541,6 +550,7 @@ export default function Page() {
     if (walletResult.status === "fulfilled") setWallet(w);
     if (sessionRole === "driver" && offersResult.status === "fulfilled") setOffers(list(offersResult.value));
     if (notificationsResult.status === "fulfilled") { setNotifications(list(notificationsResult.value)); setNotificationUnread(Number(notificationsResult.value?.unread_count || 0)); }
+    return m;
   }
   useEffect(() => {
     let active = true;
@@ -550,7 +560,20 @@ export default function Page() {
         void sync(saved.token, saved.role).then(() => {
           if (!active) return;
           setRole(saved.role); setToken(saved.token); setView("pool");
-        }).catch(() => { if (active) sessionStorage.removeItem("mobility-local-session"); });
+        }).catch((error: Error & { status?: number }) => {
+          if (!active) return;
+          // Only invalid credentials should destroy a saved session. A temporary
+          // backend outage must leave the user able to retry without re-registering.
+          if (error?.status === 401) {
+            sessionStorage.removeItem("mobility-local-session");
+            return;
+          }
+          setRole(saved.role);
+          setToken(saved.token);
+          setView("pool");
+          setSessionSyncNeeded(true);
+          setError("Your session was preserved, but account details could not load. Retry account loading.");
+        });
       }
     } catch { sessionStorage.removeItem("mobility-local-session"); }
     return () => { active = false; };
@@ -1160,15 +1183,15 @@ export default function Page() {
               <br />
               <em>way home.</em>
             </h1>
-            <p className="lede">Create separate rider and driver accounts. Open them in separate tabs to test publishing a ride, finding it, and accepting the seat request.</p>
+            <p className="lede">Create separate rider and driver accounts. Use different browser profiles or a normal and private window, so each account keeps its own sign-in while you publish a ride, request a seat, and accept it.</p>
             <LocalAccountSignIn request={request} busy={busy} onSignedIn={async (accountToken, accountRole) => {
               setRole(accountRole);
               sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: accountToken, role: accountRole }));
               try {
-                await sync(accountToken, accountRole);
+                const identity = await sync(accountToken, accountRole);
                 setToken(accountToken);
                 setSessionSyncNeeded(false);
-                if (process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+                if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
               } catch (e: any) {
                 if (e?.status !== 401) {
                   setSessionSyncNeeded(true);
@@ -1205,6 +1228,24 @@ export default function Page() {
   const savedTime = String(
     profile[direction === "return" ? "return_time" : "outbound_time"] || "",
   ).slice(0, 5);
+  // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
+  const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
+  const activeView = localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
+  const navItems: [string, string][] = me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
+    ? [["operator", "Operations"]]
+    : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
+      ? [["pool", "Rides and bookings"], ...(localAccount && me?.account_role === "driver" ? [["driver-onboarding", "Driver onboarding"] as [string, string]] : [])]
+      : [
+          ["home", "Overview"],
+          ["rides", "Find rides"],
+          ["bookings", "Bookings"],
+          ["notifications", `Notifications${notificationUnread ? ` · ${notificationUnread}` : ""}`],
+          ["waitlist", "Waitlist"],
+          ["wallet", "Wallet"],
+          ["driver-onboarding", "Driver onboarding"],
+          ["pool", "Pool offers"],
+          ...(me?.operator ? [["operator", "Operations"] as [string, string]] : []),
+        ];
   const savedRouteChanged =
     !displayedHome ||
     !displayedCampus ||
@@ -1239,57 +1280,43 @@ export default function Page() {
       <div className="layout">
         <aside>
           <p className="muted">COMMUTE</p>
-          {(process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" && me?.operator ? [
-            ["operator", "Operations"],
-          ] : process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1" ? [
-            ["pool", "Rides and bookings"],
-          ] : [
-            ["home", "Overview"],
-            ["rides", "Find rides"],
-            ["bookings", "Bookings"],
-            ["notifications", `Notifications${notificationUnread ? ` · ${notificationUnread}` : ""}`],
-            ["waitlist", "Waitlist"],
-            ["wallet", "Wallet"],
-            ["driver-onboarding", "Driver onboarding"],
-            ["pool", "Pool offers"],
-            ...(me?.operator ? [["operator", "Operations"]] : []),
-          ]).map(([v, l]) => (
+          {navItems.map(([v, l]) => (
             <button
               key={v}
-              className={`nav ${view === v ? "active" : ""}`}
+              className={`nav ${activeView === v ? "active" : ""}`}
               onClick={() => setView(v)}
             >
               {l}
             </button>
           ))}
         </aside>
-        <section className={`content${view === "operator" ? " operator-content" : ""}`}>
+        <section className={`content${activeView === "operator" ? " operator-content" : ""}`}>
           <p className="eyebrow">
-            {view === "operator" ? "COLLEGE OPERATIONS" : view === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
+            {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
           </p>
           <h2>
-            {view === "home"
+            {activeView === "home"
               ? "Choose your route."
-              : view === "rides"
+              : activeView === "rides"
                 ? "Available rides."
-                : view === "bookings"
+                : activeView === "bookings"
                   ? "Booking activity."
-                : view === "notifications"
+                : activeView === "notifications"
                   ? "Booking notifications."
-                : view === "waitlist"
+                : activeView === "waitlist"
                   ? "Waitlist requests."
-                : view === "operator"
+                : activeView === "operator"
                   ? "Operations overview."
-                : view === "driver-onboarding"
+                : activeView === "driver-onboarding"
                   ? "Apply to drive."
-                : view === "pool"
+                : activeView === "pool"
                   ? (me?.account_role ? "Rides and bookings" : "Pool offers.")
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
           {notice && <p className="banner" role="status">{notice}</p>}
           {me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
-          {view === "home" && (
+          {!localAccount && view === "home" && (
             <>
               <form className="search-card" onSubmit={search}>
                 <div className="field place-field" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) dismissPlaces("origin"); }} onKeyDown={(event) => { if (event.key === "Escape") dismissPlaces("origin"); }}>
@@ -1457,13 +1484,15 @@ export default function Page() {
               <div className="map-card">
                 <div ref={mapRef} className="real-map">
                   <span>
-                    {mapStatus === "ready"
-                      ? "Google Maps + Places loaded"
-                      : mapStatus === "unavailable"
-                        ? `${mapError} Use Retry after checking configuration.`
-                        : "Loading Google Maps configuration…"}
+                    {me?.account_role
+                      ? "Map-based place selection is available in Pool offers."
+                      : mapStatus === "ready"
+                        ? "Google Maps + Places loaded"
+                        : mapStatus === "unavailable"
+                          ? `${mapError} Use Retry after checking configuration.`
+                          : "Loading Google Maps configuration…"}
                   </span>
-                  {mapStatus === "unavailable" && (
+                  {!me?.account_role && mapStatus === "unavailable" && (
                     <button type="button" onClick={() => setMapRetry((value) => value + 1)}>
                       Retry map
                     </button>
@@ -1484,9 +1513,9 @@ export default function Page() {
             </>
           )}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
-          {view === "pool" && me?.account_role && <LiveCarpool token={token} accountRole={me.account_role} />}
-          {view === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
-          {view === "rides" && (
+          {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
+          {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
+          {!localAccount && view === "rides" && (
             <>
               {routeGeometry.length > 1 && (
                 <div
@@ -1601,7 +1630,7 @@ export default function Page() {
               </div>
             </>
           )}
-          {view === "bookings" && (
+          {!localAccount && view === "bookings" && (
             <>
               <div className="section-head">
                 <span className="muted">Updates from the other session appear after refresh.</span>
@@ -1922,7 +1951,7 @@ export default function Page() {
             </div>
             </>
           )}
-          {view === "notifications" && (
+          {!localAccount && view === "notifications" && (
             <div className="wallet" aria-label="Booking notifications">
               <div className="section-head">
                 <span className="muted">Private in-app updates for your bookings only.</span>
@@ -1939,7 +1968,7 @@ export default function Page() {
               )}
             </div>
           )}
-          {view === "waitlist" && (
+          {!localAccount && view === "waitlist" && (
             <>
               <p className="fine">Waitlisting records interest in a full ride. It does not reserve a seat, charge credits, or automatically approve a booking. Any future opening still requires driver review.</p>
               <div className="cards">
@@ -1959,7 +1988,7 @@ export default function Page() {
               </div>
             </>
           )}
-          {view === "wallet" && (
+          {!localAccount && view === "wallet" && (
             <div className="wallet">
               <p className="eyebrow">DEMO CREDIT BALANCE</p>
               {walletUnavailable && <p className="error">Wallet is temporarily unavailable; showing the last known balance.</p>}

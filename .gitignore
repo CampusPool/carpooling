@@ -25,3 +25,7 @@ analysis/raw/
 .jarvis/artifacts/demo-2026-10-21/*.log
 
 .jarvis/artifacts/demo-2026-10-22/*.log
+
+# Python verification artifacts
+__pycache__/
+*.pyc
