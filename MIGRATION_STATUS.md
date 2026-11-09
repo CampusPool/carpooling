@@ -1,5 +1,9 @@
 # MobilityPlatform migration status
 
+ > **Historical migration baseline, not the current product status (10 November 2026).**
+ > The migration is now integrated into `main` and the synthetic ride journey has been tested against an isolated clone. For current feature boundaries see [Feature status](docs/FEATURE_STATUS.md), [Architecture](docs/ARCHITECTURE.md), and [Teacher demo](docs/COURSE_DEMO.md). The material below is retained for project provenance and should not be used as the latest acceptance report.
+
+
 This branch replaces the previous CampusPool Next.js course scaffold with the MobilityPlatform source tree while preserving the GitHub repository and its history.
 
 ## Source boundary

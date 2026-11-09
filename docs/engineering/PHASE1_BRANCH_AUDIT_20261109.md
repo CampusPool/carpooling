@@ -1,5 +1,8 @@
 # Phase 1 repository branch inventory — 9 November 2026
 
+ > **Historical snapshot:** This inventory predates the squash merge of PR #90, which left an additional divergent review branch. For the current 44-branch inventory (31 contained, 12 divergent), use [Branch maintenance — 10 November 2026](BRANCH_MAINTENANCE_20261110.md). Do not delete branches based on the old counts.
+
+
 Baseline: `origin/main` at `f08869df06347d820ef6ce32f9791bf3523464c5`.
 
 Generated read-only from remote branch refs. The classification compares commit ancestry, not whether a branch or its functionality is desirable. **No remote deletion is implied by this file.**
