@@ -30,7 +30,34 @@ describe("local username/password account screen", () => {
 
     await waitFor(() => expect(signedIn).toHaveBeenCalledWith("session-token", "driver"));
     const payload = JSON.parse(calls.find((call) => call.url.endsWith("/register")).body);
-    expect(payload).toEqual({ username: "demo_driver", password: "driver-pass-123", role: "driver" });
+    expect(payload).toEqual({ username: "demo_driver", password: "driver-pass-123", role: "driver", gender: "male" });
+  });
+
+  it("allows selecting female or other gender during registration", async () => {
+    const signedIn = vi.fn(async () => {});
+    const calls = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, init = {}) => {
+      calls.push({ url: String(input), method: init.method || "GET", body: init.body });
+      if (String(input) === "/api/mobility/local-auth/config") return json({ enabled: true });
+      if (String(input) === "/api/mobility/local-auth/register") return json({ token: "session-token-2", role: "rider", user: { id: 11, name: "demo_rider" } }, 201);
+      throw new Error(`Unhandled ${input}`);
+    }));
+
+    render(<LocalAccountSignIn request={async (path, _token, method, body) => {
+      const response = await fetch(`/api/mobility/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const value = await response.json(); if (!response.ok) throw Object.assign(new Error("Request failed"), { code: value.error?.code }); return value;
+    }} busy={false} onSignedIn={signedIn} />);
+
+    await screen.findByRole("heading", { name: "Local demo account" });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "demo_female_rider" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "rider-pass-123" } });
+    fireEvent.change(screen.getByLabelText("Account type"), { target: { value: "rider" } });
+    fireEvent.change(screen.getByLabelText("Gender"), { target: { value: "female" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => expect(signedIn).toHaveBeenCalledWith("session-token-2", "rider"));
+    const payload = JSON.parse(calls.find((call) => call.url.endsWith("/register")).body);
+    expect(payload).toEqual({ username: "demo_female_rider", password: "rider-pass-123", role: "rider", gender: "female" });
   });
 
   it("does not offer account registration when the server disables the local pilot", async () => {

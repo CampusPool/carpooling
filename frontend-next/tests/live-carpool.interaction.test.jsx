@@ -261,3 +261,49 @@ describe("Google Places outage map selection recovery", () => {
     expect(screen.getByLabelText("Pickup place")).toHaveValue("");
   });
 });
+
+describe("same gender preference in the unified ride planner", () => {
+  it("allows rider to toggle same gender rides only and sends preference on search", async () => {
+    render(<LiveCarpool token="rider-token" accountRole="rider" savedProfile={{
+      gender_identity: "woman",
+      same_gender_only: false,
+      home: { lat: 12.976, lng: 77.592, label: "Cubbon Park" },
+      campus: { lat: 12.972, lng: 77.641, label: "Indiranagar" },
+      outbound_time: "10:30",
+    }} />);
+    const toggle = screen.getByRole("button", { name: "Same gender rides only" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Your gender: Female")).toBeVisible();
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "✓ Same gender rides only" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
+    await waitFor(() => expect(calls.some(c => c.path.includes("/rides?"))).toBe(true));
+    const profileCall = calls.find(c => c.path.endsWith("/profile") && c.method === "PUT");
+    expect(profileCall.body.same_gender_only).toBe(true);
+    expect(profileCall.body.gender_identity).toBe("woman");
+  });
+
+  it("allows driver to publish a ride with same gender requests only", async () => {
+    render(<LiveCarpool token="driver-token" accountRole="driver" savedProfile={{
+      gender_identity: "man",
+      same_gender_only: false,
+      home: { lat: 12.976, lng: 77.592, label: "Cubbon Park" },
+      campus: { lat: 12.972, lng: 77.641, label: "Indiranagar" },
+      outbound_time: "10:30",
+    }} />);
+    const toggle = screen.getByRole("button", { name: "Same gender requests only" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Your gender: Male")).toBeVisible();
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "✓ Same gender requests only" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish ride" }));
+    await waitFor(() => expect(calls.some(c => c.path.endsWith("/offers") && c.method === "POST")).toBe(true));
+    const profileCall = calls.find(c => c.path.endsWith("/profile") && c.method === "PUT");
+    expect(profileCall.body.same_gender_only).toBe(true);
+    expect(profileCall.body.gender_identity).toBe("man");
+  });
+});
