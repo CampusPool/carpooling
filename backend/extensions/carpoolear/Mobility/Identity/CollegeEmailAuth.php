@@ -5,6 +5,7 @@ namespace STS\Mobility\Identity;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
@@ -36,8 +37,17 @@ final class CollegeEmailAuth
         return getenv('MOBILITY_EMAIL_TRANSPORT') === 'resend_api';
     }
 
+    private function nylasTransportEnabled(): bool
+    {
+        return getenv('MOBILITY_EMAIL_TRANSPORT') === 'nylas_api';
+    }
+
     public function deliveryAvailable(): bool
     {
+        if ($this->nylasTransportEnabled()) {
+            return strlen((string) getenv('MOBILITY_NYLAS_API_KEY')) >= 20
+                && Str::isUuid((string) getenv('MOBILITY_NYLAS_GRANT_ID'));
+        }
         // Explicit opt-in only. Missing or unverified sender keys fail closed.
         if ($this->resendTransportEnabled()) {
             $key = (string) getenv('MOBILITY_RESEND_API_KEY');
@@ -61,7 +71,7 @@ final class CollegeEmailAuth
     public function deliveryScope(): string
     {
         if (! $this->deliveryAvailable()) return 'unavailable';
-        if ($this->resendTransportEnabled()) return 'external_api_configured_unverified';
+        if ($this->resendTransportEnabled() || $this->nylasTransportEnabled()) return 'external_api_configured_unverified';
         if (app()->environment(['local', 'testing'])
             && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)) return 'local_capture';
         return 'configured_smtp_unverified';
@@ -90,7 +100,24 @@ final class CollegeEmailAuth
         try {
             $minutes = $ttl === 60 ? 'one minute' : ($ttl === 300 ? 'five minutes' : $ttl.' seconds');
             $text = 'Your college sign-in code is '.$code.'. It expires in '.$minutes.'.';
-            if ($this->resendTransportEnabled()) {
+            if ($this->nylasTransportEnabled()) {
+                $grant = (string) getenv('MOBILITY_NYLAS_GRANT_ID');
+                $response = Http::withToken((string) getenv('MOBILITY_NYLAS_API_KEY'))
+                    ->asJson()->acceptJson()->connectTimeout(4)->timeout(10)
+                    ->withHeaders(['Idempotency-Key' => $challenge])
+                    ->post('https://api.us.nylas.com/v3/grants/'.rawurlencode($grant).'/messages/send', [
+                        'to' => [['email' => $email]],
+                        'subject' => 'Your CampusPool sign-in code',
+                        'body' => $text,
+                    ]);
+                $messageId = $response->json('data.id');
+                if (! $response->successful() || ! is_string($messageId) || trim($messageId) === '') {
+                    throw new \RuntimeException('Transactional email service did not accept the message');
+                }
+                // Identifiers support delivery investigation; never log OTPs or response bodies.
+                Log::info('college_email_provider_accepted', ['provider' => 'nylas', 'message_id' => $messageId,
+                    'challenge_id' => $challenge, 'http_status' => $response->status()]);
+            } elseif ($this->resendTransportEnabled()) {
                 $http = Http::withToken((string) getenv('MOBILITY_RESEND_API_KEY'))
                     ->asJson()->connectTimeout(4)->timeout(10);
                 $proxy = trim((string) getenv('MOBILITY_RESEND_HTTPS_PROXY'));

@@ -22,6 +22,8 @@ final class CollegeEmailOtpSecurityTest extends TestCase
         putenv('MOBILITY_RESEND_API_KEY');
         putenv('MOBILITY_RESEND_FROM');
         putenv('MOBILITY_RESEND_HTTPS_PROXY');
+        putenv('MOBILITY_NYLAS_API_KEY');
+        putenv('MOBILITY_NYLAS_GRANT_ID');
         parent::tearDown();
     }
 
@@ -137,6 +139,41 @@ final class CollegeEmailOtpSecurityTest extends TestCase
                 && $request['to'] === ['synthetic.httpapi@stu.pes.edu']
                 && str_contains((string) $request['text'], 'five minutes');
         });
+    }
+
+    public function test_nylas_requires_mailbox_grant_and_accepts_queued_message_without_claiming_delivery(): void
+    {
+        putenv('MOBILITY_EMAIL_TRANSPORT=nylas_api');
+        $auth = app(CollegeEmailAuth::class);
+        $this->assertFalse($auth->deliveryAvailable());
+        putenv('MOBILITY_NYLAS_API_KEY=nyk_synthetic_test_key_1234567890');
+        putenv('MOBILITY_NYLAS_GRANT_ID=invalid/grant');
+        $this->assertFalse($auth->deliveryAvailable());
+        putenv('MOBILITY_NYLAS_GRANT_ID=13556411-b1cf-4519-88d3-9b608dc5e1df');
+        $this->assertTrue($auth->deliveryAvailable());
+        $this->assertSame('external_api_configured_unverified', $auth->deliveryScope());
+        Http::fake(['api.us.nylas.com/*' => Http::response(['data' => ['id' => 'synthetic-queued-id']], 202)]);
+        $result = $this->postJson('/api/mobility/college-auth/request', ['email' => 'synthetic.nylas@stu.pes.edu'])
+            ->assertCreated()->assertJsonPath('expires_in', 300);
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://api.us.nylas.com/v3/grants/13556411-b1cf-4519-88d3-9b608dc5e1df/messages/send'
+            && $request['to'] === [['email' => 'synthetic.nylas@stu.pes.edu']]
+            && ! isset($request['from'])
+            && $request->hasHeader('Idempotency-Key', $result->json('challenge_id')));
+        $this->assertArrayNotHasKey('code', $result->json());
+    }
+
+    public function test_nylas_rejection_or_missing_message_id_invalidates_undelivered_challenge(): void
+    {
+        putenv('MOBILITY_EMAIL_TRANSPORT=nylas_api');
+        putenv('MOBILITY_NYLAS_API_KEY=nyk_synthetic_test_key_1234567890');
+        putenv('MOBILITY_NYLAS_GRANT_ID=13556411-b1cf-4519-88d3-9b608dc5e1df');
+        foreach ([403, 200] as $status) {
+            Http::fake(['api.us.nylas.com/*' => Http::response(['data' => []], $status)]);
+            $email = 'rejected.nylas.'.$status.'@stu.pes.edu';
+            $this->postJson('/api/mobility/college-auth/request', ['email' => $email])
+                ->assertStatus(503)->assertJsonPath('error.code', 'COLLEGE_MAIL_UNAVAILABLE');
+            $this->assertNotNull(DB::table('mobility_college_email_challenges')->where('email', $email)->value('invalidated_at'));
+        }
     }
 
     public function test_resend_api_failure_invalidates_undelivered_code(): void
