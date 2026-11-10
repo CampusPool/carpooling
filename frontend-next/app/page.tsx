@@ -5,115 +5,14 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import DriverOnboarding from "../components/DriverOnboarding";
-import LocalAccountSignIn from "../components/LocalAccountSignIn";
+import LocalAccountLanding from "../components/LocalAccountLanding";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
 import OperatorAnalytics from "../components/OperatorAnalytics";
-import { emitUnauthorized, isCurrentUnauthorized } from "../lib/session-events";
-type R = Record<string, any>;
-// Places (New) returns FormattableText objects. Prefer their text field for stable labels.
-const placeText = (value: any): string => {
-  if (typeof value === "string") return value.trim();
-  if (typeof value?.text === "string") return value.text.trim();
-  if (typeof value?.toString === "function") {
-    const converted = value.toString();
-    if (typeof converted === "string" && converted !== "[object Object]") return converted.trim();
-  }
-  return "";
-};
-const predictionText = (prediction: R | undefined): string => {
-  if (!prediction) return "";
-  const full = placeText(prediction.text) || placeText(prediction.description);
-  const main = placeText(prediction.mainText);
-  const secondary = placeText(prediction.secondaryText);
-  return full || [main, secondary].filter(Boolean).join(", ");
-};
-const list = (x: any) =>
-  Array.isArray(x?.data) ? x.data : Array.isArray(x) ? x : [];
-const tomorrowInKolkata = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + 864e5));
-const cash = (x: any) => `₹${(Number(x || 0) / 100).toFixed(2)}`;
-const meters = (x: any) =>
-  typeof x === "number" && Number.isFinite(x) ? `${Math.round(x)} m` : null;
-const durationMinutes = (ride: R) => {
-  if (typeof ride.duration_minutes === "number") return ride.duration_minutes;
-  if (typeof ride.ride_seconds === "number" && ride.ride_seconds >= 0) {
-    return Math.ceil(ride.ride_seconds / 60);
-  }
-  return null;
-};
-const instant = (x: any) =>
-  typeof x === "string" && x && Number.isFinite(Date.parse(x))
-    ? new Date(x).toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
-const pickupWindow = (ride: R) => {
-  const earliest = instant(ride.pickup_window?.earliest);
-  const latest = instant(ride.pickup_window?.latest);
-  if (earliest && latest) return `${earliest} – ${latest}`;
-  return instant(ride.departure_at);
-};
-const pickupChoiceLabel = (choice: string) =>
-  choice === "ON_ROUTE_MEETING_POINT" ? "Meet along my route" : "Direct pickup";
-async function request(
-  path: string,
-  token: string,
-  method = "GET",
-  json?: R,
-  key?: string,
-) {
-  const h = new Headers({ Accept: "application/json" });
-  if (token) h.set("Authorization", `Bearer ${token}`);
-  if (json) {
-    h.set("Content-Type", "application/json");
-    h.set("Idempotency-Key", key || crypto.randomUUID());
-  }
-  const endpoint = path.startsWith("admin/") ? `/api/${path}` : `/api/mobility/${path}`;
-  const r = await fetch(endpoint, {
-    method,
-    headers: h,
-    body: json ? JSON.stringify(json) : undefined,
-    cache: "no-store",
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok)
-    {
-      const code = typeof d.error?.code === "string" ? d.error.code : undefined;
-      const messages: Record<string, string> = {
-        WAITLIST_NOT_ACTIONABLE: "This waitlist entry is not actionable yet. Refresh when a seat may be available.",
-        WAITLIST_NOT_YOUR_TURN: "An earlier rider is still waiting. Refresh the waitlist later.",
-        COMMUTE_QUOTE_CHANGED: "Your route or fare changed. Refresh the terms before continuing.",
-        COMMUTE_BUSY_RETRY: "The ride is being updated. Please retry.",
-        USERNAME_TAKEN: "That username is already in use.",
-        INVALID_CREDENTIALS: "Username or password is incorrect.",
-        PASSWORD_TOO_LONG_BYTES: "Use a password of no more than 72 bytes.",
-        ACCOUNT_ROLE_REQUIRED: "This account type cannot perform that action.",
-        COLLEGE_EMAIL_INVALID: "Enter an eligible college email address.",
-        COLLEGE_MAIL_UNAVAILABLE: "Email delivery is unavailable. Please try again later.",
-        COLLEGE_OTP_INVALID: "That code is incorrect. Please try again.",
-        COLLEGE_OTP_EXPIRED: "That code has expired. Request a new code.",
-        COLLEGE_OTP_THROTTLED: "Too many attempts. Please try again later.",
-        COLLEGE_OTP_RETRY_LATER: "A code was recently sent. Please wait before requesting another.",
-        STUDENT_NAME_INVALID: "Enter your name, or select student profile completion if you have not completed it yet.",
-        STUDENT_SRN_INVALID: "Enter a valid student registration number.",
-        STUDENT_CAMPUS_INVALID: "Choose an available campus.",
-        STUDENT_SRN_TAKEN: "That student registration number is already in use.",
-      };
-      const message = (code && messages[code]) || (typeof d.message === "string" ? d.message : undefined) || (typeof d.error?.message === "string" ? d.error.message : undefined) || (typeof d.error === "string" ? d.error : undefined) || "Request failed. Please try again.";
-      const error = Error(message);
-      (error as Error & { status?: number }).status = r.status;
-      (error as Error & { code?: string }).code = code;
-      if (r.status === 401 && typeof window !== "undefined") {
-        emitUnauthorized(token);
-      }
-      throw error;
-    }
-  return d;
-}
+import { isCurrentUnauthorized } from "../lib/session-events";
+import { request } from "../lib/legacy-api";
+import { cash, durationMinutes, instant, list, meters, placeText, pickupChoiceLabel, pickupWindow, predictionText, tomorrowInKolkata, type R } from "../lib/legacy-ui-utils";
+
 export default function Page() {
   const [token, setToken] = useState(""),
     [role, setRole] = useState("rider"),
@@ -1169,58 +1068,34 @@ export default function Page() {
     if (b.state === "in_progress") return `Trip in progress${wallet ? ` · ${wallet}` : ""}`;
     return `${requestLabel(b)}${wallet ? ` · ${wallet}` : ""}`;
   };
-  if (!token)
-    return (
-      <main className="landing">
-        <div className="brand">
-          <span className="logo">m</span>mobility
-        </div>
-        <section className="hero">
-          <div>
-            <p className="eyebrow">CAMPUS COMMUTE</p>
-            <h1>
-              Share the
-              <br />
-              <em>way home.</em>
-            </h1>
-            <p className="lede">Create separate rider and driver accounts. Use different browser profiles or a normal and private window, so each account keeps its own sign-in while you publish a ride, request a seat, and accept it.</p>
-            <LocalAccountSignIn request={request} busy={busy} onSignedIn={async (accountToken, accountRole) => {
-              setRole(accountRole);
-              sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: accountToken, role: accountRole }));
-              try {
-                const identity = await sync(accountToken, accountRole);
-                setToken(accountToken);
-                setSessionSyncNeeded(false);
-                if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
-              } catch (e: any) {
-                if (e?.status !== 401) {
-                  setSessionSyncNeeded(true);
-                  setToken(accountToken);
-                  setError("Signed in, but account details could not be loaded. Retry to continue.");
-                }
-              }
-            }} />
-            <details className="admin-login">
-              <summary>Administrator sign-in</summary>
-              <p className="fine">Use an existing administrator account. This form does not create accounts or grant privileges.</p>
-              <form onSubmit={loginAdmin} className="form-grid">
-                <label>Email<input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} autoComplete="username" required /></label>
-                <label>Administrator password<input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} autoComplete="current-password" required /></label>
-                <button className="secondary wide" type="submit" disabled={busy}>Sign in as administrator</button>
-              </form>
-            </details>
-            {error && <p className="error">{error}</p>}
-            <p className="fine">
-              Local classroom demo · synthetic credits only
-            </p>
-          </div>
-          <div className="hero-art">
-            <div className="sun" />
-            <div className="road" />
-          </div>
-        </section>
-      </main>
-    );
+  if (!token) return (
+    <LocalAccountLanding
+      request={request}
+      busy={busy}
+      error={error}
+      adminEmail={adminEmail}
+      adminPassword={adminPassword}
+      onAdminEmailChange={setAdminEmail}
+      onAdminPasswordChange={setAdminPassword}
+      onAdminSignIn={loginAdmin}
+      onSignedIn={async (accountToken, accountRole) => {
+        setRole(accountRole);
+        sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: accountToken, role: accountRole }));
+        try {
+          const identity = await sync(accountToken, accountRole);
+          setToken(accountToken);
+          setSessionSyncNeeded(false);
+          if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+        } catch (e: any) {
+          if (e?.status !== 401) {
+            setSessionSyncNeeded(true);
+            setToken(accountToken);
+            setError("Signed in, but account details could not be loaded. Retry to continue.");
+          }
+        }
+      }}
+    />
+  );
   const home = profile.home?.label || "",
     campus = profile.campus?.label || "";
   const displayedHome = direction === "return" ? destination : origin;
@@ -1258,7 +1133,7 @@ export default function Page() {
     <main className="shell">
       <header>
         <div className="brand">
-          <span className="logo">m</span>mobility
+          <span className="logo">C</span>CampusPool
         </div>
         <span className="pill">{role.toUpperCase()} VIEW</span>
         {role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>

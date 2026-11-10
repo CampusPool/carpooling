@@ -1,5 +1,8 @@
 # Class Timetable Integration and Recurring Commute Schedules
 
+ > **Current product boundary (10 November 2026):** Manual recurring-program APIs/engine are implemented and backend-tested. The present Next.js local student demo does **not** expose a complete timetable editor, and no institution-authorized official timetable feed is connected. The title describes the intended story, not an approved university integration. See [Feature status](FEATURE_STATUS.md).
+
+
 **Issue**: [#27] [5.2] Official timetable import  
 **Owner**: @NikhilJoshi441  
 **Target Milestone**: Sprint 3 Functional Story  

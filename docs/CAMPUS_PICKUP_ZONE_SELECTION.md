@@ -1,5 +1,8 @@
 # Campus and Pickup-Zone Selection Specification & Evidence
 
+ > **Course-demo boundary (10 November 2026):** The named campus gates/zones below are **illustrative catalog entries**, not evidence of university-issued designation, parking authorization, or approval. The backend catalog and agreement APIs are tested; a complete, student-facing pickup-zone selection workflow is not part of the verified local browser journey. See [Feature status](FEATURE_STATUS.md).
+
+
 **Issue**: [#26] [5.1] Campus and pickup-zone selection  
 **Owner**: @NikhilJoshi441  
 **Target Milestone**: Sprint 3 Functional Story  

@@ -1,24 +1,45 @@
-# Mobility Next.js local client
+# CampusPool Next.js client
 
-This is an in-progress Next.js interface for the existing MobilityPlatform Laravel commute API. It uses the existing MySQL backend; it does not replace it. Its current entry is a **synthetic local demonstration**, not production identity or live payment.
+This is the **student-facing web client** for the CampusPool SE + DBMS project. It is not a standalone application: it requires the pinned Laravel backend, a disposable MySQL database and (for the full map-backed demo) Google Maps/Places plus a road-routing service.
 
-## Run locally
+**Use the repository-level [README](../README.md), [teacher demo](../docs/COURSE_DEMO.md) and [local bootstrap](../RUN_LOCAL_CORE.md) for a real end-to-end run.** Those scripts configure and launch the matching API and route services. Launching Next.js alone only verifies the UI; it does not create rides without a backend.
 
-Run the client checks in a clean checkout. The client requires a separately prepared disposable Laravel API; this repository does not include or start a preserved pilot database. With Node.js 24:
+## Frontend quality checks
+
+With Node.js 24:
 
 ```sh
-cd frontend-next
 npm ci
 npm test
 npm run typecheck
 npm run build
-npm start -- --hostname 127.0.0.1 --port 3012
 ```
 
-Open `http://127.0.0.1:3012` after configuring `MOBILITY_API_ORIGIN` for an API that is explicitly disposable and loopback-only. The backend smoke harness intentionally publishes no host port, so it cannot be used as a browser target without a separately reviewed gateway. No provider key is stored here.
+These checks use test doubles/fixtures and **do not require a private Maps key or real road dataset**. GitHub Actions runs them on PRs and `main`.
 
-The client supports demo rider and driver sessions and calls the commute, participant chat and trip-report APIs through Next.js rewrites. The Google map displays server-supplied driver geometry after a matching result; the path is not live GPS. Searching by a changed route, time, or walking limit asks before saving the updated commute profile. Accounts and funds are synthetic.
+## UI entry points
 
-## Verification limits
+- `app/page.tsx`: session and route/navigation coordination for synthetic and canonical accounts. It remains a large legacy orchestration file; avoid expanding it further.
+- `components/LocalAccountLanding.tsx`: signed-out landing screen and synthetic account sign-in controls.
+- `components/LiveCarpool.tsx`: **recommended classroom demo** for local rider and driver roles; map search, publishing, matching, bookings and trip lifecycle.
+- `components/CanonicalPool.tsx`: separate path for accounts subject to membership, approved pickup and vehicle requirements. Not a drop-in duplicate of LiveCarpool.
+- `components/RideConversation.tsx` and `components/LiveAccountActivity.tsx`: scoped chat and synthetic wallet/notifications.
+- `components/OperatorAnalytics.tsx`: read-only application database/analytics reports for the operator path.
+- `lib/legacy-api.ts` and `lib/legacy-ui-utils.ts`: request/error handling and formatting helpers extracted from the large legacy page with regression tests.
 
-Type checking, build and focused mocked interaction checks have passed. A clean-clone browser journey is not claimed by this migration: the disposable backend harness is internal-network-only and no public or pilot gateway is included. OTP delivery, physical tracking, real payments, and public deployment remain outside the evidence. Follow `docs/course-20261027/DEMO_RUNBOOK.md` for the reproducible backend checks and the exact client-demo blocker.
+## Running the UI against an existing isolated API
+
+The full root bootstrap is recommended. For UI-only development with a **known disposable** Laravel API already running on loopback:
+
+```sh
+MOBILITY_API_ORIGIN=http://127.0.0.1:18086 npm run build
+MOBILITY_API_ORIGIN=http://127.0.0.1:18086 npm start -- --hostname 127.0.0.1 --port 3012
+```
+
+Use the **actual** API origin/port for your own disposable environment; `18086` was one tested isolated PR backend, **not** a permanent or publicly reachable address. Keep MySQL and upstream host setup separate. Never route a test frontend to the preserved pilot database by accident.
+
+## Verification and limits
+
+An independent Simular run completed the full synthetic rider-and-driver browser journey using a cloned Next.js frontend, a separately prepared Laravel checkout and a fresh MySQL database, with **real Google Places and route preview**. Read [the evidence and OSRM/Docker deviations](../docs/engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md) before describing this as a production-grade result.
+
+The wallet uses only demo credits. Physical GPS tracking, institutional SSO/OTP, real payments, campus-issued timetable import and hosted Ola Maps are **not** proven complete. The complete status matrix is [here](../docs/FEATURE_STATUS.md).

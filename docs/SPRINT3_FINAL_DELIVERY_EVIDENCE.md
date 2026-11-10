@@ -1,5 +1,8 @@
 # Sprint 3 Final Delivery and Verification Evidence
 
+ > **Scope clarification (10 November 2026):** The completion percentages below refer to **the assigned contributor's backend/test/documentation deliverables**, not a claim that every corresponding student-facing screen, university approval, physical-device workflow, or production integration is finished. In particular, the manual recurring-program engine is backend-tested but there is no timetable editor in the current Next.js demo, and the campus catalog is not proven university-approved. Use [Feature status](FEATURE_STATUS.md) for current product claims. Preserve the dated results below as contributor evidence.
+
+
 **Contributor**: Nikhil Suhas Joshi (@NikhilJoshi441)  
 **Assigned Issues**: [#41], [#43], [#26], [#27], [#33]  
 **Target Repository**: [CampusPool/carpooling](https://github.com/CampusPool/carpooling)  

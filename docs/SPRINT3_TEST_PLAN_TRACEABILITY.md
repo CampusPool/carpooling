@@ -1,5 +1,8 @@
 # Sprint 3 Test Plan and Comprehensive Traceability Matrix
 
+ > **Dated evidence notice (10 November 2026):** Individual test-count tables below describe the suite at the time of this contributor report. The frontend test suite has since changed; run the current GitHub CI and consult [Feature status](FEATURE_STATUS.md) for which workflows are browser-tested versus backend-only. Do not treat a test-plan mapping as proof of university approval or real payments/GPS.
+
+
 **Issue**: [#43] [N8] Testing against approved test plan  
 **Owner**: @NikhilJoshi441  
 **Target Milestone**: Sprint 3 Mandatory NFR  
