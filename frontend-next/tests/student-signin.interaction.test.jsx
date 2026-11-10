@@ -46,3 +46,29 @@ it("does not create a session when verification fails", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("That code is incorrect.");
   expect(onSignedIn).not.toHaveBeenCalled();
 });
+
+it("rejects non-PES email on the client without sending an OTP", async () => {
+  const request = vi.fn(async path => path === "college-auth/config" ? { campuses: [] } : {});
+  render(<StudentSignIn request={request} onSignedIn={vi.fn()} busy={false} />);
+  fireEvent.click(screen.getByText("Student sign-in or registration"));
+  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "attacker@gmail.com" } });
+  fireEvent.click(screen.getByText("Send code"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("@stu.pes.edu");
+  expect(request).not.toHaveBeenCalledWith("college-auth/request", "", "POST", expect.anything());
+});
+
+it("shows the server-provided OTP expiry and enforces initial resend cooldown", async () => {
+  const request = vi.fn(async path => {
+    if (path === "college-auth/config") return { campuses: [] };
+    if (path === "college-auth/request") return { challenge_id: "new-challenge", expires_in: 60, resend_after: 60 };
+    throw Error("unexpected request");
+  });
+  render(<StudentSignIn request={request} onSignedIn={vi.fn()} busy={false} />);
+  fireEvent.click(screen.getByText("Student sign-in or registration"));
+  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "Student@STU.PES.EDU" } });
+  fireEvent.click(screen.getByText("Send code"));
+  await screen.findByLabelText("Verification code");
+  expect(screen.getByRole("status")).toHaveTextContent("Code expires in 1:00");
+  expect(screen.getByText("Resend available in 1:00")).toBeDisabled();
+  expect(request).toHaveBeenCalledWith("college-auth/request", "", "POST", { email: "student@stu.pes.edu" });
+});

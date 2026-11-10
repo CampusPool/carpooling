@@ -16,7 +16,7 @@ final class LocalAccountAuth
 {
     public function enabled(): bool
     {
-        return CommuteService::demoEnabled();
+        return CommuteService::demoEnabled() && ! StudentIdentityBoundary::publicMode();
     }
 
     public function register(string $username, string $password, string $role): array

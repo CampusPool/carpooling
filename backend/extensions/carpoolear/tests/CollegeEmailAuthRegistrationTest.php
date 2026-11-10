@@ -86,7 +86,7 @@ final class CollegeEmailAuthRegistrationTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame($email, $stored->email);
         $this->assertNotNull($deliveredCode);
-        $this->assertSame(hash('sha256', $challenge.':'.$deliveredCode.':'.(string) config('app.key')), $stored->code_hash);
+        $this->assertSame(app(\STS\Mobility\Identity\CollegeEmailAuth::class)->otpDigest($challenge, $email, $deliveredCode), $stored->code_hash);
         $this->assertArrayNotHasKey('code', $response->json());
     }
 
@@ -142,7 +142,7 @@ final class CollegeEmailAuthRegistrationTest extends TestCase
         $id = (string) Str::uuid();
         DB::table('mobility_college_email_challenges')->insert([
             'challenge_id' => $id, 'email' => $email,
-            'code_hash' => hash('sha256', $id.':123456:'.config('app.key')),
+            'code_hash' => app(\STS\Mobility\Identity\CollegeEmailAuth::class)->otpDigest($id, $email, '123456'),
             'expires_at' => now()->addMinutes(5), 'resend_after' => now()->addSeconds(30),
             'created_at' => now(), 'updated_at' => now(),
         ]);

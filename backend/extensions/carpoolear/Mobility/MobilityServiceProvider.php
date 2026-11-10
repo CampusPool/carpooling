@@ -74,6 +74,7 @@ class MobilityServiceProvider extends ServiceProvider
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Dispatch\DispatchBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Journeys\PrivateScheduledBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Routing\QuotedOfferGuard::class);
+        $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Identity\StudentIdentityBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Trust\CohortGuard::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Recurrence\ProgramAdmissionGuard::class);
         $this->commands([\STS\Mobility\Journeys\EndpointRetentionCommand::class, \STS\Mobility\Recurrence\ProgramGenerationCommand::class, \STS\Mobility\Dispatch\DispatchWorkCommand::class]);

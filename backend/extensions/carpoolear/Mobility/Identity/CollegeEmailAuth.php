@@ -17,8 +17,10 @@ final class CollegeEmailAuth
     public function normalizeEmail(mixed $email): ?string
     {
         if (! is_string($email)) return null;
+        // Do not accept Unicode/confusable or whitespace-containing identifiers.
         $email = strtolower(trim($email));
-        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+        if (! preg_match('/^[\x21-\x7e]+$/D', $email) || ! filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+        if (strlen($email) > 320 || str_contains($email, '+')) return null;
         $parts = explode('@', $email, 2);
         return count($parts) === 2 && in_array($parts[1], $this->domains(), true) ? $email : null;
     }
@@ -28,7 +30,11 @@ final class CollegeEmailAuth
         $default = (string) config('mail.default', '');
         $smtp = config('mail.mailers.smtp', []);
         return $default === 'smtp' && is_array($smtp) && trim((string) ($smtp['host'] ?? '')) !== ''
-            && trim((string) ($smtp['username'] ?? '')) !== '' && trim((string) ($smtp['password'] ?? '')) !== '';
+            && (
+                (trim((string) ($smtp['username'] ?? '')) !== '' && trim((string) ($smtp['password'] ?? '')) !== '')
+                || (app()->environment(['local', 'testing']) && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)
+                    && in_array((string) ($smtp['host'] ?? ''), ['mailpit', '127.0.0.1', 'localhost'], true))
+            );
     }
 
     public function request(mixed $email, ?string $ip): array
@@ -38,23 +44,26 @@ final class CollegeEmailAuth
         if (! $this->deliveryAvailable()) throw new CollegeEmailAuthException('COLLEGE_MAIL_UNAVAILABLE', 503);
         $this->consumeRate([['send-email:'.$email,3],['send-ip:'.($ip?:'unknown'),10]],60);
         $now = now();
-        $code = (string) random_int(100000, 999999);
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $challenge = (string) Str::uuid();
         $ttl = (int) config('college.otp_ttl', 300);
         $resend = (int) config('college.otp_resend_after', 30);
-        $hash = hash('sha256', $challenge.':'.$code.':'.(string) config('app.key'));
+        $hash = $this->otpDigest($challenge, $email, $code);
         DB::transaction(function()use($challenge,$email,$hash,$ip,$now,$ttl,$resend){
             // Serialise challenge allocation across PHP workers for this email.
             DB::table('mobility_college_otp_rate_windows')->where('bucket_hash',hash('sha256','send-email:'.$email))->lockForUpdate()->first();
-            if(DB::table('mobility_college_email_challenges')->where('email',$email)->where('resend_after','>',$now)->exists())throw new CollegeEmailAuthException('COLLEGE_OTP_RETRY_LATER',429);
+            if(DB::table('mobility_college_email_challenges')->where('email',$email)->whereNull('consumed_at')->whereNull('invalidated_at')->where('expires_at','>',$now)->where('resend_after','>',$now)->exists())throw new CollegeEmailAuthException('COLLEGE_OTP_RETRY_LATER',429);
+            // New successful sends supersede every earlier code, including still-unexpired ones.
+            DB::table('mobility_college_email_challenges')->where('email',$email)->whereNull('consumed_at')->whereNull('invalidated_at')->update(['invalidated_at'=>$now,'updated_at'=>$now]);
             DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$challenge,'email'=>$email,'code_hash'=>$hash,'ip_address'=>$ip,'expires_at'=>$now->copy()->addSeconds($ttl),'resend_after'=>$now->copy()->addSeconds($resend),'created_at'=>$now,'updated_at'=>$now]);
         });
         try {
-            Mail::raw('Your college sign-in code is '.$code.'. It expires in five minutes.', function ($message) use ($email): void {
+            $minutes = $ttl === 60 ? 'one minute' : ($ttl === 300 ? 'five minutes' : $ttl.' seconds');
+            Mail::raw('Your college sign-in code is '.$code.'. It expires in '.$minutes.'.', function ($message) use ($email): void {
                 $message->to($email)->subject('Your college sign-in code');
             });
         } catch (\Throwable) {
-            DB::table('mobility_college_email_challenges')->where('challenge_id',$challenge)->update(['consumed_at'=>now(),'updated_at'=>now()]);
+            DB::table('mobility_college_email_challenges')->where('challenge_id',$challenge)->update(['invalidated_at'=>now(),'updated_at'=>now()]);
             throw new CollegeEmailAuthException('COLLEGE_MAIL_UNAVAILABLE',503);
         }
         return ['challenge_id' => $challenge, 'expires_in' => $ttl, 'resend_after' => $resend];
@@ -80,9 +89,9 @@ final class CollegeEmailAuth
     {
         $result = DB::transaction(function () use ($challengeId, $code, $registration): array {
             $challenge = DB::table('mobility_college_email_challenges')->where('challenge_id', $challengeId)->lockForUpdate()->first();
-            if (! $challenge || $challenge->consumed_at || now()->greaterThanOrEqualTo($challenge->expires_at)) throw new CollegeEmailAuthException('COLLEGE_OTP_EXPIRED', 422);
+            if (! $challenge || $challenge->consumed_at || $challenge->invalidated_at || now()->greaterThanOrEqualTo($challenge->expires_at)) throw new CollegeEmailAuthException('COLLEGE_OTP_EXPIRED', 422);
             if ((int) $challenge->attempts >= (int) config('college.otp_max_attempts', 5)) throw new CollegeEmailAuthException('COLLEGE_OTP_ATTEMPTS_EXCEEDED', 422);
-            $expected = hash('sha256', $challengeId.':'.$code.':'.(string) config('app.key'));
+            $expected = $this->otpDigest($challengeId, (string) $challenge->email, $code);
             if (! hash_equals((string) $challenge->code_hash, $expected)) {
                 DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->increment('attempts');
                 return ['error' => 'COLLEGE_OTP_INVALID'];
@@ -155,6 +164,19 @@ final class CollegeEmailAuth
         });
         if (($result['error'] ?? null) === 'COLLEGE_OTP_INVALID') throw new CollegeEmailAuthException('COLLEGE_OTP_INVALID', 422);
         return $result;
+    }
+
+    /** Bind the code to its random challenge and normalized recipient using a secret HMAC key. */
+    public function otpDigest(string $challengeId, string $email, string $code): string
+    {
+        $key = (string) config('app.key', '');
+        if ($key === '') throw new CollegeEmailAuthException('COLLEGE_AUTH_UNAVAILABLE', 503);
+        if (str_starts_with($key, 'base64:')) {
+            $decoded = base64_decode(substr($key, 7), true);
+            if ($decoded === false || strlen($decoded) < 32) throw new CollegeEmailAuthException('COLLEGE_AUTH_UNAVAILABLE', 503);
+            $key = $decoded;
+        }
+        return hash_hmac('sha256', $challengeId.':'.$email.':'.$code, $key);
     }
 
     private function isSrnUniqueViolation(QueryException $error): bool
