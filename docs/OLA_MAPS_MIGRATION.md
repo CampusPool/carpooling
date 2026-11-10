@@ -1,6 +1,6 @@
 # Ola Maps migration — review workstream (10 November 2026)
 
-This branch introduces **opt-in Ola Maps frontend and backend adapters** without deleting the already verified Google/OSRM demo. On 10 November 2026, the **synthetic LiveCarpool real-browser E2E passed** against its own cloned Laravel backend and separate MySQL database, using real Ola Places and Directions and no OSRM. See [the complete test evidence](engineering/OLA_REAL_BROWSER_E2E_20261110.md). The permanent provider migration is **not finished**: other UI paths and zero-dataset startup remain to be addressed.
+This draft PR now provides a **verified Ola-first synthetic classroom demo** while preserving the old Google/OSRM environment for rollback. The LiveCarpool headed-Chrome journey, real four-point Directions, real walking route, separate MySQL records, a no-OSRM clean Mac startup and restart have been tested. See [the detailed acceptance report](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md) for exact evidence and remaining limits.
 
 ## Provider settings and secrets
 
@@ -32,19 +32,19 @@ export OLA_MAPS_API_KEY='YOUR_PRIVATE_OLA_KEY'
 
 The Next.js API handlers are intentionally fixed-path, bounded and quota-conscious. They reject users without a valid backend session and restrict each session to 12 autocomplete, 8 Directions and 20 detail/config requests per minute **per process**; all requests have timeouts and no retries. They do not provide a distributed rate limiter or solve provider-side monthly quota management. The provider's direct SDK tile traffic is governed by the Ola account, outside these proxy limits.
 
-## Status table
+## Status table (draft PR #92, 10 November 2026)
 
-| Capability | Code implementation | Required independent verification |
+| Capability | Verified implementation | Remaining boundary |
 | --- | --- | --- |
-| Ola Web SDK v2 map style and route line | Live **browser demo passed** | Nonblocking provider style-layer warning; full pointer/zoom and referrer security review pending |
-| Places autocomplete + resolved place detail | **Real browser passed** on both accounts | Real Ola ID namespace parsing fixed; third-party site referrer policy still pending |
-| Directions preview, decoding/polyline | **Real browser passed**, both roles | Styles and visual rendering need cross-browser review |
-| Laravel car/bike/foot Directions adapters | **Real car route/booking passed**; PHP adapter checks | Full 4-point walking/bike case validation still pending |
-| Provider-specific quote / pickup identity | Added `ola-directions-v1:<mode>` plus provider-aware validation | Full pickup/quote/booking constraints, no cross-provider data reuse |
-| Booking, demo wallet, chat, lifecycle | **Real two-account Ola-only browser E2E passed** | Delayed credit release/receipt, production payments and physical GPS not tested |
-| Remove OSM road crop and OSRM images from startup | **Not done yet** | Only after Ola-only startup and E2E passes |
-| Legacy/CanonicalPool Google browser flow | **Not migrated yet** | Audit all account paths before removing Google integration |
-| Android / old backend browser prototypes | **Not migrated yet** | Decide whether required for course deliverables |
+| Ola Web SDK maps and route previews | Real browser LiveCarpool journey passed; persisted geometries can draw without extra Directions | Provider-style 3D warning and physical-device map UI not independently certified |
+| Ola Places and place details | Real driver/rider selection passed; CanonicalPool and older Next.js screen migrated | Browser key origin/referrer restrictions require provider-console action |
+| Four-point driving and walking routes | One real four-point car route with 3 legs, 4 snapped points, 180 geometry vertices; one real walking route passed | No complete real four-stop browser booking lifecycle |
+| Provider-aware quote and pickup validation | CI and MySQL suite passed; stale cross-provider quotes rejected | Adapter version is not an immutable road-graph identity |
+| Booking, wallet, chat and lifecycle | 19 functional browser checkpoints passed; SQL, independent fresh login and reload verified | Final synthetic receipt/release and real payments not E2E certified |
+| Startup without road graphs/OSRM | Clean Mac clone built, migrated 205 tables and restarted with preserved DB | Real restricted credentials and ordinary network/Docker still needed for live maps |
+| Other frontend paths | CanonicalPool and older Next.js path use Ola; Google-only Laravel assets redirect or return 410 in Ola mode | Historical HTML sources remain for explicit OSRM rollback |
+| Android GPS companion | No Google map SDK to migrate; static checks passed | Physical device test outstanding |
+| DBMS and activity projection | Full disposable backend and DBMS Level 3 CI passed | Mongo read model optional; not a settlement ledger |
 
 ## Provider response format validated in November 2026
 
@@ -75,10 +75,11 @@ No remote branches have been removed; no merge authorization is implied. **The o
 - New Laravel guard rejects unexpired OSRM quotes when the active provider is Ola, and rejects the reverse direction. This is tested against a separate MySQL testing schema in the isolated Ola MySQL container. The private endpoint API accepts **ola_place** provenance without storing provider address text.
 - Added four-point Ola routing mock to assert ordered legs, geometry, snapped waypoints, one query-string POST, and absence of retries.
 - **Previously verified:** 19-point real headed Chrome synthetic LiveCarpool test with a separately cloned backend, database and real Ola APIs. This does not establish acceptance of the new launcher or every legacy UI path.
-- **Still pending:** true fresh-clone Ola Compose startup, full headed Chrome against the *new* default launcher, multiple real multi-stop/foot routes, post-refresh/re-login state checks, full SQL/Mongo analytics, Android device checks, provider quota/billing restriction confirmation and replacing the retired legacy Laravel Google map assets with native Ola visuals (only if those optional old views are still deliverables). These must not be represented as passed.
+- **Completed independent acceptance:** no-OSRM clean Compose startup and restart; real four-point car and foot routes; SQL persisted after a two-role browser journey; independent fresh login/refresh; all earlier CI jobs green.
+- **Still external or unverified:** physical Android device; provider-console key restrictions, quotas and billing alerts; real payments/production; optional old Laravel HTML map sources are disabled in Ola mode rather than rewritten.
 - **Simular-specific blocker:** its Docker bridge could not reach the host-bound outbound proxy; the existing isolated Ola E2E worked in host-network mode. Avoid changing the original demo or weakening Docker network restrictions to hide this issue.
 
-**Release gate:** Keep [PR #92](https://github.com/CampusPool/carpooling/pull/92) a draft. No OSRM retirement or PR merge until the owner explicitly approves after all required acceptance checks.
+**Release gate:** Keep [PR #92](https://github.com/CampusPool/carpooling/pull/92) a draft. Ola requires no OSRM runtime, but preserve the rollback services and data until the owner explicitly authorizes merge and retirement.
 
 
 ### Legacy Laravel browser routing (additional guard)

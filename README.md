@@ -4,13 +4,13 @@
 
 CampusPool helps people heading to the same campus share a planned ride. A driver publishes a route and departure time; a rider finds a compatible offer, requests a seat, and follows the booking through pickup and trip completion. The project emphasizes **safe booking transactions, route-aware matching, and reproducible database evidence** rather than production ride-hailing infrastructure.
 
-**Ola Maps migration (draft PR #92):** The Ola-only launcher and the LiveCarpool/CanonicalPool/older Next.js map paths are being migrated and tested. The original Google/OSRM runtime remains an explicit rollback, **not a required Ola-only dependency**. See [migration status and remaining gaps](docs/OLA_MAPS_MIGRATION.md). Do not merge without approval.
+**Ola Maps migration (draft PR #92):** The Ola-only launcher and LiveCarpool/CanonicalPool/older Next.js map paths are implemented and independently tested within the synthetic classroom scope. The original Google/OSRM runtime remains an explicit rollback, **not a required Ola-only dependency**. See [migration status and remaining gaps](docs/OLA_MAPS_MIGRATION.md). Do not merge without approval.
 
 > **Demo, not a production transport service.** Test accounts, vehicles, wallets and fares are synthetic. No actual money is moved. University authentication, official timetable import, physical-device GPS and production deployment are **not** claimed to be complete. See [what works and what remains](docs/FEATURE_STATUS.md).
 
 ## See it work
 
-The original Google/OSRM journey and an independently cloned Ola Maps LiveCarpool journey have both been exercised on isolated stacks, but **the newer Ola-only startup and all UI paths are not yet fully E2E-certified**. The previous LiveCarpool Ola journey covered account creation → route selection → publish → find → request → accept → demo-wallet hold → chat → pickup → drop-off → complete → rider arrival confirmation. See the [test evidence and its limitations](docs/engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md).
+Both the historical Google/OSRM journey and the newer Ola Maps LiveCarpool journey have been exercised on isolated stacks. The **Ola-only fresh-clone startup and restart also passed on an independent Mac Docker profile**, with no road crop or OSRM services. The real driver/rider browser journey reached all 19 functional checkpoints, and independent MySQL verification and fresh-login/reload checks confirmed persistence. See [Ola acceptance evidence](docs/engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md). This is a synthetic college demo, not a real payment/transport system.
 
 For an instructor or teammate, follow the **[10-minute teacher demo](docs/COURSE_DEMO.md)** and the **[local setup instructions](RUN_LOCAL_CORE.md)**. The latter contains exact commands and recovery steps.
 
@@ -22,7 +22,7 @@ For an instructor or teammate, follow the **[10-minute teacher demo](docs/COURSE
 | Ola Maps and Places in selected Next.js paths (draft PR) | MySQL migrations, constraints, indexes and reports | Real payment gateway and settlement |
 | Publish, discover and request seats | Isolated SQL/Mongo application analytics | Physical-phone GPS acceptance |
 | Accept, chat, complete and confirm arrival | Backend recurrence, pickup agreements and reminders | Official timetable import / campus approval |
-| Synthetic wallet, hold and notifications | CI for frontend, backend and database integration | Ola-only fresh-startup and remaining legacy Laravel map pages still require acceptance |
+| Synthetic wallet, hold and notifications | CI for frontend, backend and database integration | Provider-side key restrictions, physical Android device acceptance and real payments remain outside demo proof |
 
 For exact behavior, backend-only capabilities, restrictions and linked evidence, use the [canonical feature-status matrix](docs/FEATURE_STATUS.md). The table above is deliberately abbreviated.
 
@@ -51,7 +51,7 @@ python3 scripts/run-local-core.py --provider ola --check
 sh scripts/run-local-core.sh --provider ola --maps-config .local/maps-demo/ola.json --project mobility-core-ola-teacher
 ~~~
 
-Open **http://127.0.0.1:3012** and use separate driver/rider browser profiles. This draft branch has not yet passed the complete clean-clone, both-role, all-feature acceptance gate; [PR #92](https://github.com/CampusPool/carpooling/pull/92) must remain unmerged pending explicit approval.
+Open **http://127.0.0.1:3012** and use separate driver/rider browser profiles. The clean-clone and two-role synthetic demo are now verified in separate environments. Read [exact limitations](docs/engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md); [PR #92](https://github.com/CampusPool/carpooling/pull/92) remains unmerged until approval.
 
 ## Test the code without demo secrets
 

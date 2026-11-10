@@ -54,7 +54,7 @@ Use two separate browser profiles (driver and rider). Register synthetic account
 
 ## Explicit OSRM/Google rollback (separate database)
 
-Until the Ola migration has its own fresh full acceptance test, keep the existing working Google/OSRM stack and data. To start an **independent rollback project** with the existing checksum-locked road crop, use:
+The Ola-only clean Mac startup, restart and separate real browser journey now have acceptance evidence; still keep the existing Google/OSRM stack and database until the owner explicitly authorizes retirement. See [acceptance report](docs/engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md). To start an **independent rollback project** with the existing checksum-locked road crop, use:
 
 ~~~sh
 sh scripts/run-local-core.sh --provider osrm \
@@ -73,11 +73,12 @@ npm ci && npm test && npm run typecheck && npm run build
 cd ..
 python3 -m unittest discover -s scripts/tests -p 'test_run_local_core.py'
 python3 scripts/check-teacher-docs.py
+sh scripts/check-ola-compose.sh
 MOBILITY_DOCKER_CONTEXT=YOUR_CONTEXT sh research/experiments/carpoolear/run-smoke.sh mobility
 ~~~
 
-The last command builds a **disposable** MySQL-backed test stack and can be resource-intensive. CI uses fixtures, not a paid provider.
+The last command builds a **disposable** MySQL-backed test stack and can be resource-intensive. CI uses fixtures, not a paid provider. **Never run php artisan test inside the serving demo container:** PHPUnit database resets can erase its data. Use only an independent disposable test project as shown above.
 
-**Known boundaries:** The wallet is synthetic; the external pinned Carpoolear backend remains a first-boot prerequisite ([license and notices](THIRD_PARTY_NOTICES.md)). Android is a GPS tracking companion with **no Google Maps rendering SDK**. The older Laravel **/mobility-pilot** and **/mobility** browser entrypoints now redirect to the Ola Next.js UI when Ola is active; their Google-only assets return HTTP 410 rather than loading Google. Their original source is preserved for the separate OSRM rollback. The old browser components themselves are not rewritten to use Ola. SQL/Mongo analytics, physical-device GPS, real-user security and quota limits require independent acceptance.
+**Known boundaries:** The wallet is synthetic; the external pinned Carpoolear backend remains a first-boot prerequisite ([license and notices](THIRD_PARTY_NOTICES.md)). Android is a GPS tracking companion with **no Google Maps rendering SDK**. The older Laravel **/mobility-pilot** and **/mobility** browser entrypoints now redirect to the Ola Next.js UI when Ola is active; their Google-only assets return HTTP 410 rather than loading Google. Their original source is preserved for the separate OSRM rollback. The old browser components themselves are not rewritten to use Ola. DBMS Level 3 integration passed CI. Physical-device GPS, production security, payment settlement and provider dashboard quota/referrer restrictions still require independent acceptance.
 
 **Do not merge [draft PR #92](https://github.com/CampusPool/carpooling/pull/92) without explicit approval.**

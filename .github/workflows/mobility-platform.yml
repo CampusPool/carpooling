@@ -62,6 +62,8 @@ jobs:
         run: python3 scripts/check-teacher-docs.py
       - name: Check local runtime restart guards
         run: python3 -m unittest discover -s scripts/tests -p 'test_run_local_core.py'
+      - name: Check the Ola-only Compose startup graph (no paid APIs)
+        run: sh scripts/check-ola-compose.sh
       - name: Verify pinned backend reconstruction and patch stack
         run: sh research/experiments/carpoolear/verify-reconstruction.sh
 
