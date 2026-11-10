@@ -1,0 +1,10 @@
+name = "campuspool-preview"
+main = "worker.mjs"
+account_id = "5cdffb2f34d9300594bdbb6f18893c6f"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[observability]
+enabled = false
+
+# ORIGIN_URL, ORIGIN_TOKEN, TESTER_PASSWORD and SESSION_SECRET are Worker secrets.

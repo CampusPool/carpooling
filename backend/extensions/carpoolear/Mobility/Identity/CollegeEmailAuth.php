@@ -4,6 +4,7 @@ namespace STS\Mobility\Identity;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
@@ -30,8 +31,22 @@ final class CollegeEmailAuth
         return count($parts) === 2 && in_array($parts[1], $this->domains(), true) ? $email : null;
     }
 
+    private function resendTransportEnabled(): bool
+    {
+        return getenv('MOBILITY_EMAIL_TRANSPORT') === 'resend_api';
+    }
+
     public function deliveryAvailable(): bool
     {
+        // Explicit opt-in only. Missing or unverified sender keys fail closed.
+        if ($this->resendTransportEnabled()) {
+            $key = (string) getenv('MOBILITY_RESEND_API_KEY');
+            $from = strtolower(trim((string) getenv('MOBILITY_RESEND_FROM')));
+            return strlen($key) >= 20
+                && filter_var($from, FILTER_VALIDATE_EMAIL) !== false
+                && ! str_ends_with($from, '.invalid')
+                && ! str_ends_with($from, '@stu.pes.edu');
+        }
         $default = (string) config('mail.default', '');
         $smtp = config('mail.mailers.smtp', []);
         return $default === 'smtp' && is_array($smtp) && trim((string) ($smtp['host'] ?? '')) !== ''
@@ -46,6 +61,7 @@ final class CollegeEmailAuth
     public function deliveryScope(): string
     {
         if (! $this->deliveryAvailable()) return 'unavailable';
+        if ($this->resendTransportEnabled()) return 'external_api_configured_unverified';
         if (app()->environment(['local', 'testing'])
             && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)) return 'local_capture';
         return 'configured_smtp_unverified';
@@ -73,9 +89,27 @@ final class CollegeEmailAuth
         });
         try {
             $minutes = $ttl === 60 ? 'one minute' : ($ttl === 300 ? 'five minutes' : $ttl.' seconds');
-            Mail::raw('Your college sign-in code is '.$code.'. It expires in '.$minutes.'.', function ($message) use ($email): void {
-                $message->to($email)->subject('Your college sign-in code');
-            });
+            $text = 'Your college sign-in code is '.$code.'. It expires in '.$minutes.'.';
+            if ($this->resendTransportEnabled()) {
+                $http = Http::withToken((string) getenv('MOBILITY_RESEND_API_KEY'))
+                    ->asJson()->connectTimeout(4)->timeout(10);
+                $proxy = trim((string) getenv('MOBILITY_RESEND_HTTPS_PROXY'));
+                if ($proxy !== '') $http = $http->withOptions(['proxy' => $proxy]);
+                $response = $http->post('https://api.resend.com/emails', [
+                    'from' => (string) getenv('MOBILITY_RESEND_FROM'),
+                    'to' => [$email],
+                    'subject' => 'Your college sign-in code',
+                    'text' => $text,
+                ]);
+                // API acceptance is not proof of inbox delivery.
+                if (! $response->successful() || ! is_string($response->json('id'))) {
+                    throw new \RuntimeException('Transactional email service did not accept the message');
+                }
+            } else {
+                Mail::raw($text, function ($message) use ($email): void {
+                    $message->to($email)->subject('Your college sign-in code');
+                });
+            }
         } catch (\Throwable) {
             DB::table('mobility_college_email_challenges')->where('challenge_id',$challenge)->update(['invalidated_at'=>now(),'updated_at'=>now()]);
             throw new CollegeEmailAuthException('COLLEGE_MAIL_UNAVAILABLE',503);

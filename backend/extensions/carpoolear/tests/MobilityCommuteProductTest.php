@@ -115,7 +115,7 @@ final class MobilityCommuteProductTest extends TestCase {
   $this->actingAsApiUser($u)->getJson('/api/mobility/commute/wallet')->assertForbidden();putenv('MOBILITY_PILOT_UI_ENABLED=false');$this->postJson('/api/mobility/commute/demo-session',['role'=>'driver'])->assertNotFound();putenv('MOBILITY_PILOT_UI_ENABLED=true');
  }
  public function test_college_otp_wrong_attempts_persist_and_correct_code_is_single_use():void{
-  $id=(string)Str::uuid();$code='123456';DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$id,'email'=>'synthetic@stu.pes.edu','code_hash'=>hash('sha256',$id.':'.$code.':'.config('app.key')),'expires_at'=>now()->addMinutes(5),'resend_after'=>now()->addSeconds(30),'created_at'=>now(),'updated_at'=>now()]);
+  $id=(string)Str::uuid();$code='123456';DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$id,'email'=>'synthetic@stu.pes.edu','code_hash'=>app(\STS\Mobility\Identity\CollegeEmailAuth::class)->otpDigest($id,'synthetic@stu.pes.edu',$code),'expires_at'=>now()->addMinutes(5),'resend_after'=>now()->addSeconds(30),'created_at'=>now(),'updated_at'=>now()]);
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>'000000'])->assertStatus(422);$this->assertDatabaseHas('mobility_college_email_challenges',['challenge_id'=>$id,'attempts'=>1]);
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code,'name'=>'Synthetic Student','srn'=>'SYNTHETIC123','campus_code'=>'CAMPUS-BLR'])->assertOk()->assertJsonPath('verified_college_email',true)->assertJsonPath('student_profile.srn','SYNTHETIC123');
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code])->assertStatus(422);
@@ -123,7 +123,7 @@ final class MobilityCommuteProductTest extends TestCase {
   foreach(['test@stu.pes.edu.evil.com','test@pes.edu','test@gmail.com']as$email)$this->postJson('/api/mobility/college-auth/request',['email'=>$email])->assertStatus(422);
  }
  public function test_otp_attempt_ceiling_and_database_ip_window_are_enforced():void{
-  $id=(string)Str::uuid();$code='123456';DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$id,'email'=>'locked@stu.pes.edu','code_hash'=>hash('sha256',$id.':'.$code.':'.config('app.key')),'expires_at'=>now()->addMinutes(5),'resend_after'=>now()->addSeconds(30),'created_at'=>now(),'updated_at'=>now()]);
+  $id=(string)Str::uuid();$code='123456';DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$id,'email'=>'locked@stu.pes.edu','code_hash'=>app(\STS\Mobility\Identity\CollegeEmailAuth::class)->otpDigest($id,'locked@stu.pes.edu',$code),'expires_at'=>now()->addMinutes(5),'resend_after'=>now()->addSeconds(30),'created_at'=>now(),'updated_at'=>now()]);
   for($i=0;$i<5;$i++)$this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>'000000'])->assertStatus(422);
   $this->postJson('/api/mobility/college-auth/verify',['challenge_id'=>$id,'code'=>$code])->assertStatus(422)->assertJsonPath('error.code','COLLEGE_OTP_ATTEMPTS_EXCEEDED');
   $this->assertDatabaseHas('mobility_college_email_challenges',['challenge_id'=>$id,'attempts'=>5]);

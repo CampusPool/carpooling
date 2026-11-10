@@ -21,6 +21,11 @@ services:
     restart: unless-stopped
     network_mode: host
     command: ["mongod", "--bind_ip", "127.0.0.1", "--auth"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ping:1}).ok ? 0 : 1)"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
     environment:
       MONGO_INITDB_ROOT_USERNAME: analyticsroot
       MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD}"
@@ -49,6 +54,7 @@ services:
     env_file: ../../.local/one-box/private.env
     environment:
       MOBILITY_EXTENSION_ROOT: /opt/mobility-extension
+      APP_TIMEZONE: UTC
       DB_HOST: 127.0.0.1
       PHP_CLI_SERVER_WORKERS: "2"
       MOBILITY_ACTIVITY_SERVICE_URL: http://127.0.0.1:8090
@@ -61,6 +67,11 @@ services:
       - ../../backend/integrations/carpoolear/MobilityIntegration:/var/www/app/MobilityIntegration:ro
       - ../../.local/one-box/private.env:/var/www/.env:ro
     command: ["php", "artisan", "serve", "--host=127.0.0.1", "--port=18083", "--no-reload"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:18083/api/mobility/college-auth/config') === false ? 1 : 0);"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,6 +95,11 @@ services:
       MOBILITY_ACTIVITY_BIND_HOST: 127.0.0.1
       SYNC_INTERVAL_SECONDS: "15"
       PORT: "8090"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
     depends_on:
       mysql:
         condition: service_healthy
@@ -100,6 +116,11 @@ services:
       MOBILITY_API_ORIGIN: http://127.0.0.1:18083
     volumes: ["../../frontend-next:/srv/frontend:ro"]
     command: ["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", "3013"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3013/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
     depends_on:
       backend:
         condition: service_started

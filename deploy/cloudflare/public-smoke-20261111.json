@@ -1,0 +1,74 @@
+{
+  "origin": "https://campuspool-preview.arjunsrikanth17.workers.dev",
+  "real_email_delivery": false,
+  "delivery_scope": "local_capture",
+  "production_ttl": 300,
+  "results": [
+    {
+      "check": "public API requires tester access",
+      "http_status": 401,
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "check": "tester login and HTTPS homepage",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "check": "frontend backend OTP config",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "check": "student-only blocks demo login",
+      "http_status": 404,
+      "expected": 404,
+      "passed": true
+    },
+    {
+      "check": "anonymous account blocked",
+      "http_status": 401,
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "check": "synthetic Mailpit OTP request",
+      "http_status": 201,
+      "expected": 201,
+      "passed": true
+    },
+    {
+      "check": "resend throttle",
+      "http_status": 429,
+      "expected": 429,
+      "passed": true
+    },
+    {
+      "check": "invalid code rejected",
+      "http_status": 422,
+      "expected": 422,
+      "passed": true
+    },
+    {
+      "check": "synthetic student registration and OTP verification",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "check": "authenticated profile",
+      "http_status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "check": "single use code replay denied",
+      "http_status": 422,
+      "expected": 422,
+      "passed": true
+    }
+  ]
+}

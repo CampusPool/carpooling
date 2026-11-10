@@ -5,6 +5,7 @@ namespace Tests\Feature\Mobility;
 use Carbon\Carbon;
 use Illuminate\Mail\Message;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use STS\Mobility\Identity\CollegeEmailAuth;
@@ -17,6 +18,10 @@ final class CollegeEmailOtpSecurityTest extends TestCase
     {
         Carbon::setTestNow();
         putenv('MOBILITY_PUBLIC_STUDENT_ONLY');
+        putenv('MOBILITY_EMAIL_TRANSPORT');
+        putenv('MOBILITY_RESEND_API_KEY');
+        putenv('MOBILITY_RESEND_FROM');
+        putenv('MOBILITY_RESEND_HTTPS_PROXY');
         parent::tearDown();
     }
 
@@ -106,6 +111,47 @@ final class CollegeEmailOtpSecurityTest extends TestCase
         $this->assertNotSame($old, $result->json('challenge_id'));
         $this->assertNotNull(DB::table('mobility_college_email_challenges')->where('challenge_id', $old)->value('invalidated_at'));
         $this->verify($old, '000123')->assertStatus(422)->assertJsonPath('error.code', 'COLLEGE_OTP_EXPIRED');
+    }
+
+    public function test_resend_http_api_accepts_only_explicitly_configured_sender(): void
+    {
+        putenv('MOBILITY_EMAIL_TRANSPORT=resend_api');
+        $this->assertFalse(app(CollegeEmailAuth::class)->deliveryAvailable());
+        putenv('MOBILITY_RESEND_API_KEY=re_synthetic_test_key_1234567890');
+        putenv('MOBILITY_RESEND_FROM=otp@campuspool.invalid');
+        $this->assertFalse(app(CollegeEmailAuth::class)->deliveryAvailable());
+        putenv('MOBILITY_RESEND_FROM=otp@stu.pes.edu');
+        $this->assertFalse(app(CollegeEmailAuth::class)->deliveryAvailable());
+        putenv('MOBILITY_RESEND_FROM=otp@campuspool.example');
+        $this->assertTrue(app(CollegeEmailAuth::class)->deliveryAvailable());
+        $this->assertSame('external_api_configured_unverified', app(CollegeEmailAuth::class)->deliveryScope());
+
+        Http::fake(['https://api.resend.com/emails' => Http::response(['id' => 'synthetic-accepted-id'], 200)]);
+        $response = $this->postJson('/api/mobility/college-auth/request', [
+            'email' => 'synthetic.httpapi@stu.pes.edu',
+        ])->assertCreated()->assertJsonPath('expires_in', 300);
+        $this->assertNotEmpty($response->json('challenge_id'));
+        Http::assertSent(function ($request): bool {
+            return $request->url() === 'https://api.resend.com/emails'
+                && $request['from'] === 'otp@campuspool.example'
+                && $request['to'] === ['synthetic.httpapi@stu.pes.edu']
+                && str_contains((string) $request['text'], 'five minutes');
+        });
+    }
+
+    public function test_resend_api_failure_invalidates_undelivered_code(): void
+    {
+        putenv('MOBILITY_EMAIL_TRANSPORT=resend_api');
+        putenv('MOBILITY_RESEND_API_KEY=re_synthetic_test_key_1234567890');
+        putenv('MOBILITY_RESEND_FROM=otp@campuspool.example');
+        Http::fake(['https://api.resend.com/emails' => Http::response(['message' => 'synthetic rejected sender'], 403)]);
+        $this->postJson('/api/mobility/college-auth/request', [
+            'email' => 'synthetic.rejected@stu.pes.edu',
+        ])->assertStatus(503)->assertJsonPath('error.code', 'COLLEGE_MAIL_UNAVAILABLE');
+        $row = DB::table('mobility_college_email_challenges')
+            ->where('email', 'synthetic.rejected@stu.pes.edu')->first();
+        $this->assertNotNull($row);
+        $this->assertNotNull($row->invalidated_at);
     }
 
     public function test_failed_mail_send_invalidates_its_challenge(): void
