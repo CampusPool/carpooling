@@ -4,6 +4,8 @@
 
 CampusPool helps people heading to the same campus share a planned ride. A driver publishes a route and departure time; a rider finds a compatible offer, requests a seat, and follows the booking through pickup and trip completion. The project emphasizes **safe booking transactions, route-aware matching, and reproducible database evidence** rather than production ride-hailing infrastructure.
 
+**Ola Maps integration in progress:** See [Ola migration workstream](docs/OLA_MAPS_MIGRATION.md) on the separate migration PR. Current `main` still uses Google browser maps and OSRM until that migration passes end-to-end verification.
+
 > **Demo, not a production transport service.** Test accounts, vehicles, wallets and fares are synthetic. No actual money is moved. University authentication, official timetable import, physical-device GPS and production deployment are **not** claimed to be complete. See [what works and what remains](docs/FEATURE_STATUS.md).
 
 ## See it work
