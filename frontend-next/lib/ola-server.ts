@@ -80,6 +80,14 @@ export function proxyFailure(error: unknown): Response {
   return Response.json({ error: { code: "OLA_UNAVAILABLE" } }, { status: 503, headers: { "Cache-Control": "no-store" } });
 }
 
+/** Ola Places identifiers include a fixed provider namespace such as
+ * 'ola-platform:5000205199247'. They are not just alphanumeric Google IDs.
+ * A strict character allow-list prevents malformed/oversized query parameters.
+ */
+export function validatedOlaPlaceId(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 3 && value.length <= 160 && /^[A-Za-z0-9:_-]+$/.test(value);
+}
+
 export function validatedCoordinates(value: unknown): value is { lat: number; lng: number } {
   return !!value && typeof value === "object" && "lat" in value && "lng" in value
     && typeof value.lat === "number" && Number.isFinite(value.lat) && value.lat >= 12.65 && value.lat <= 13.35

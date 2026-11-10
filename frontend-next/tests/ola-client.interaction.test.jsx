@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { decodeOlaPolyline, olaAutocomplete, olaDetails, olaDirections } from "../lib/ola-client";
 import OlaPlaceInput from "../components/OlaPlaceInput";
+import { validatedOlaPlaceId } from "../lib/ola-server";
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -10,6 +11,13 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn()); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("Ola-only campus routing client", () => {
+  it("accepts real Ola namespace-prefixed place IDs and rejects injection", () => {
+    expect(validatedOlaPlaceId("ola-platform:5000205199247")).toBe(true);
+    expect(validatedOlaPlaceId("ola-platform:abc_123-XYZ")).toBe(true);
+    for (const id of ["", "abc?api_key=leak", "https://evil.example/", "a b", "../etc/passwd", "x".repeat(161)]) {
+      expect(validatedOlaPlaceId(id)).toBe(false);
+    }
+  });
   it("decodes standard polyline into longitude-latitude map coordinates", () => {
     const points = decodeOlaPolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@");
     expect(points).toEqual([[-120.2, 38.5], [-120.95, 40.7], [-126.453, 43.252]]);
