@@ -12,4 +12,6 @@ Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
     Route::get('mobility/driver-onboarding/{id}/documents/{document}', [DriverOnboardingController::class, 'document'])->whereNumber('id')->whereNumber('document');
     Route::get('mobility/operator/driver-onboarding', [DriverOnboardingController::class, 'queue']);
     Route::post('mobility/operator/driver-onboarding/{id}/review', [DriverOnboardingController::class, 'review'])->whereNumber('id');
+    Route::get('mobility/driver-setup', [DriverOnboardingController::class, 'setup']);
+    Route::post('mobility/driver-setup', [DriverOnboardingController::class, 'saveSetup']);
 });

@@ -7,94 +7,91 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-describe("driver onboarding client", () => {
-  it("explains when the vehicle colour catalogue is empty", async () => {
+describe("simplified driver setup client", () => {
+  it("loads existing driver setup and displays approved vehicle and license details", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
-      if (["/api/mobility/driver-onboarding/me", "/api/cars", "/api/car-colors"].includes(url)) return json({ data: [] });
+      if (url === "/api/mobility/driver-setup") {
+        return json({
+          setup_complete: true,
+          vehicle_number: "KA01AB1234",
+          vehicle_type: "car",
+          seats_available: 3,
+          license_number: "DL1420110012345",
+          status: "approved",
+        });
+      }
       throw new Error(`Unhandled request ${url}`);
     }));
+
     render(<DriverOnboarding token="session-token" />);
-    await screen.findByText(/No vehicle is available yet/);
-    fireEvent.click(screen.getByText("Add a vehicle"));
-    expect(await screen.findByText(/Vehicle colours are unavailable/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save owned vehicle" })).toBeDisabled();
+    await screen.findByRole("heading", { name: "Vehicle and license setup" });
+    expect(await screen.findByText(/Approved to drive and publish rides/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Vehicle number")).toHaveValue("KA01AB1234");
+    expect(screen.getByLabelText("Type (car/bike)")).toHaveValue("car");
+    expect(screen.getByLabelText("Number of seats available for pooling")).toHaveValue(3);
+    expect(screen.getByLabelText("License number")).toHaveValue("DL1420110012345");
   });
 
-  it("creates an owned vehicle and starts its application through the real API contracts", async () => {
+  it("submits vehicle number, type, seats, and license number and automatically approves", async () => {
     const calls = [];
-    let vehicles = [];
-    let applications = [];
     vi.stubGlobal("fetch", vi.fn(async (input, init = {}) => {
       const url = String(input); const method = init.method || "GET";
       calls.push({ url, method, body: init.body });
-      if (url === "/api/mobility/driver-onboarding/me") return json({ data: applications });
-      if (url === "/api/cars" && method === "GET") return json({ data: vehicles });
-      if (url === "/api/car-colors") return json({ data: [{ id: 3, name: "Blue" }] });
-      if (url === "/api/cars" && method === "POST") {
-        const payload = JSON.parse(init.body);
-        expect(payload).toMatchObject({ patente: "KA01AB1234", brand_other: "Honda", model_other: "City", car_color_id: "3", year: "2024" });
-        vehicles = [{ id: 17, brand_other: "Honda", model_other: "City", patente: "KA01AB1234", year: 2024 }];
-        return json({ id: 17 }, 201);
+      if (url === "/api/mobility/driver-setup" && method === "GET") {
+        return json({ setup_complete: false, vehicle_number: "", vehicle_type: "car", seats_available: 3, license_number: "", status: "pending" });
       }
-      if (url === "/api/mobility/driver-onboarding" && method === "POST") {
+      if (url === "/api/mobility/driver-setup" && method === "POST") {
         const payload = JSON.parse(init.body);
-        expect(payload).toMatchObject({ car_id: "17", vehicle_type: "car", legal_passenger_capacity: "4", profile_display_name: "A Driver", profile_phone: "9876543210" });
-        applications = [{ id: 44, status: "pending", version: 1, profile_display_name: "A Driver", vehicle_type: "car", legal_passenger_capacity: 4, vehicle: { brand: "Honda", model: "City" }, checklist: [{ document_type: "driver_license", required: true, status: "missing" }] }];
-        return json({ onboarding_id: 44, status: "pending", version: 1 }, 201);
+        expect(payload).toEqual({
+          vehicle_number: "KA-05-NB-5555",
+          vehicle_type: "car",
+          seats_available: 4,
+          license_number: "KA0520210009999",
+        });
+        return json({
+          setup_complete: true,
+          vehicle_number: "KA05NB5555",
+          vehicle_type: "car",
+          seats_available: 4,
+          license_number: "KA0520210009999",
+          status: "approved",
+          message: "Driver setup complete. Vehicle and driver license automatically accepted.",
+        }, 200);
       }
       throw new Error(`Unhandled request ${method} ${url}`);
     }));
 
     render(<DriverOnboarding token="session-token" />);
-    await screen.findByText(/No vehicle is available yet/);
-    fireEvent.click(screen.getByText("Add a vehicle"));
-    fireEvent.change(screen.getByLabelText("Registration number"), { target: { value: "KA01AB1234" } });
-    fireEvent.change(screen.getByLabelText("Make"), { target: { value: "Honda" } });
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "City" } });
-    fireEvent.change(screen.getByLabelText("Colour"), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2024" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save owned vehicle" }));
-    await screen.findByText(/Honda City/);
+    await screen.findByRole("heading", { name: "Vehicle and license setup" });
 
-    fireEvent.change(screen.getByLabelText("Owned vehicle"), { target: { value: "17" } });
-    fireEvent.change(screen.getByLabelText(/^Legal passenger seats/), { target: { value: "4" } });
-    fireEvent.change(screen.getByLabelText("Driver display name"), { target: { value: "A Driver" } });
-    fireEvent.change(screen.getByLabelText("Phone (optional)"), { target: { value: "9876543210" } });
-    fireEvent.click(screen.getByRole("button", { name: "Start application" }));
-    await screen.findByText("Waiting for manual review");
-    expect(screen.getByText("Driver licence")).toBeInTheDocument();
-    expect(calls.some(({ url, method }) => url === "/api/mobility/driver-onboarding" && method === "POST")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Vehicle number"), { target: { value: "KA-05-NB-5555" } });
+    fireEvent.change(screen.getByLabelText("Type (car/bike)"), { target: { value: "car" } });
+    fireEvent.change(screen.getByLabelText("Number of seats available for pooling"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("License number"), { target: { value: "KA0520210009999" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save driver setup" }));
+
+    await screen.findByText(/Driver setup complete. Vehicle and driver license automatically accepted./);
+    expect(await screen.findByText(/Approved to drive and publish rides/)).toBeInTheDocument();
+    expect(calls.some(c => c.url === "/api/mobility/driver-setup" && c.method === "POST")).toBe(true);
   });
 
-  it("sends legacy approved applications missing capacity back for operator review", async () => {
-    const calls = [];
-    let application = { id: 8, status: "approved", version: 5, legal_passenger_capacity: null, profile_display_name: "Legacy Driver", profile_phone: null, vehicle_type: "car", vehicle: { brand: "Honda", model: "City" }, checklist: [{ document_type: "rc", required: true, status: "accepted", expires_at: "2027-10-29" }] };
-    vi.stubGlobal("fetch", vi.fn(async (input, init = {}) => {
-      const url = String(input); const method = init.method || "GET"; calls.push({ url, method, body: init.body });
-      if (url === "/api/mobility/driver-onboarding/me") return json({ data: [application] });
-      if (url === "/api/cars") return json({ data: [] });
-      if (url === "/api/car-colors") return json({ data: [] });
-      if (url === "/api/mobility/driver-onboarding/8/profile" && method === "PUT") {
-        const body = JSON.parse(init.body);
-        expect(body).toMatchObject({ legal_passenger_capacity: "3", expected_version: 5 });
-        application = { ...application, legal_passenger_capacity: 3, status: "needs_resubmission", version: 6 };
-        return json({ onboarding_id: 8, legal_passenger_capacity: 3, version: 6 });
+  it("limits motorbike passenger capacity to 1", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/mobility/driver-setup") {
+        return json({ setup_complete: false, vehicle_number: "", vehicle_type: "car", seats_available: 3, license_number: "", status: "pending" });
       }
-      if (url === "/api/mobility/driver-onboarding/8/submit" && method === "POST") {
-        application = { ...application, status: "pending", version: 7 };
-        return json({ onboarding_id: 8, status: "pending", version: 7 });
-      }
-      throw new Error(`Unhandled request ${method} ${url}`);
+      throw new Error(`Unhandled request ${url}`);
     }));
 
     render(<DriverOnboarding token="session-token" />);
-    await screen.findByText(/This older approval has no reviewed passenger capacity/);
-    fireEvent.change(screen.getAllByLabelText(/^Legal passenger seats/)[1], { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Correction requested");
-    fireEvent.click(screen.getByRole("button", { name: "Submit checklist for review" }));
-    await screen.findByText("Waiting for manual review");
-    expect(calls.some(({ url, method }) => url === "/api/mobility/driver-onboarding/8/submit" && method === "POST")).toBe(true);
+    await screen.findByRole("heading", { name: "Vehicle and license setup" });
+
+    fireEvent.change(screen.getByLabelText("Type (car/bike)"), { target: { value: "bike" } });
+    expect(screen.getByLabelText("Number of seats available for pooling")).toHaveValue(1);
+    expect(screen.getByLabelText("Number of seats available for pooling")).toBeDisabled();
+    expect(screen.getByText(/Motorbikes allow 1 pooling passenger seat./)).toBeInTheDocument();
   });
 });

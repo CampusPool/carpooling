@@ -135,4 +135,37 @@ final class DriverOnboardingHttpTest extends TestCase
         $this->assertDatabaseHas('mobility_driver_onboardings', ['id' => $onboardingId, 'profile_display_name' => 'Synthetic Driver']);
         $this->assertDatabaseHas('mobility_driver_documents', ['id' => $documentId, 'onboarding_id' => $onboardingId]);
     }
+
+    public function test_simplified_driver_setup_automatically_accepts_license_and_approves_driver(): void
+    {
+        $driver = User::factory()->create(['active' => true, 'banned' => false]);
+        DB::table('mobility_memberships')->insert([
+            'user_id' => $driver->id, 'college_code' => 'CAMPUS-BLR', 'affiliation' => 'student', 'status' => 'approved', 'version' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $res = $this->actingAsApiUser($driver)->postJson('/api/mobility/driver-setup', [
+            'vehicle_number' => 'KA-01-MJ-9999',
+            'vehicle_type' => 'car',
+            'seats_available' => 3,
+            'license_number' => 'DL-0420110012345',
+        ])->assertOk();
+
+        $res->assertJsonPath('status', 'approved')
+            ->assertJsonPath('vehicle_number', 'KA01MJ9999')
+            ->assertJsonPath('seats_available', 3)
+            ->assertJsonPath('license_number', 'DL-0420110012345')
+            ->assertJsonPath('setup_complete', true);
+
+        // Verify driver is approved for publishing in CohortPolicy
+        $this->assertTrue(CohortPolicy::hostApproved((int) $driver->id));
+
+        // Verify GET endpoint returns the approved setup
+        $getRes = $this->actingAsApiUser($driver)->getJson('/api/mobility/driver-setup')->assertOk();
+        $getRes->assertJsonPath('setup_complete', true)
+            ->assertJsonPath('vehicle_number', 'KA01MJ9999')
+            ->assertJsonPath('vehicle_type', 'car')
+            ->assertJsonPath('seats_available', 3)
+            ->assertJsonPath('license_number', 'DL-0420110012345')
+            ->assertJsonPath('status', 'approved');
+    }
 }

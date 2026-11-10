@@ -304,6 +304,240 @@ final class DriverOnboardingController
         return $locked;
     }
 
+    public function setup(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! CohortPolicy::activeUser($user)) return $this->error('ACCOUNT_RESTRICTED', 403);
+
+        $onboarding = DB::table('mobility_driver_onboardings')->where('user_id', $user->id)->latest('id')->first();
+        $car = Car::withTrashed()->where('user_id', $user->id)->latest('id')->first();
+        $licenseDoc = $onboarding ? DB::table('mobility_driver_documents')
+            ->where('onboarding_id', $onboarding->id)
+            ->where('document_type', 'driver_license')
+            ->latest('id')
+            ->first() : null;
+
+        $licenseNumber = '';
+        if ($licenseDoc) {
+            if (str_starts_with((string)$licenseDoc->storage_path, 'licenses/')) {
+                $licenseNumber = substr($licenseDoc->storage_path, strlen('licenses/'));
+            } elseif (preg_match('/license:\s*([A-Za-z0-9-]+)/i', (string)$licenseDoc->review_reason, $matches)) {
+                $licenseNumber = $matches[1];
+            }
+        }
+
+        $isApproved = CohortPolicy::hostApproved((int) $user->id);
+
+        return response()->json([
+            'setup_complete' => (bool) ($car && $onboarding && $isApproved),
+            'vehicle_number' => $car ? (string) $car->patente : '',
+            'vehicle_type' => $onboarding ? (string) $onboarding->vehicle_type : ($car && strtolower((string)$car->brand_other) === 'motorbike' ? 'bike' : 'car'),
+            'seats_available' => $onboarding ? (int) ($onboarding->legal_passenger_capacity ?? 1) : 1,
+            'license_number' => $licenseNumber,
+            'status' => $isApproved ? 'approved' : ($onboarding->status ?? 'pending'),
+        ]);
+    }
+
+    public function saveSetup(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! CohortPolicy::activeUser($user)) return $this->error('ACCOUNT_RESTRICTED', 403);
+
+        $data = $request->validate([
+            'vehicle_number' => ['required', 'string', 'min:3', 'max:20'],
+            'vehicle_type' => ['required', 'in:car,bike'],
+            'seats_available' => ['required', 'integer', 'min:1', 'max:6'],
+            'license_number' => ['required', 'string', 'min:4', 'max:32'],
+        ]);
+
+        if ($data['vehicle_type'] === 'bike' && (int)$data['seats_available'] !== 1) {
+            return $this->error('BIKE_CAPACITY_LIMIT', 422);
+        }
+
+        $vehicleNumber = substr(strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $data['vehicle_number']))), 0, 10);
+        $licenseNumber = strtoupper(trim(preg_replace('/\s+/', '', $data['license_number'])));
+        $vehicleType = $data['vehicle_type'];
+        $seatsAvailable = (int) $data['seats_available'];
+
+        $result = DB::transaction(function () use ($user, $vehicleNumber, $licenseNumber, $vehicleType, $seatsAvailable): array {
+            $now = now();
+
+            // Ensure membership is active and approved
+            $member = DB::table('mobility_memberships')->where('user_id', $user->id)->first();
+            if (! $member) {
+                DB::table('mobility_memberships')->insert([
+                    'user_id' => $user->id,
+                    'college_code' => CohortPolicy::college(),
+                    'affiliation' => 'student',
+                    'status' => 'approved',
+                    'version' => 1,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // 1. Car Color
+            $colorId = DB::table('car_colors')->orderBy('id')->value('id');
+            if (! $colorId) {
+                $colorId = DB::table('car_colors')->insertGetId([
+                    'name' => 'Synthetic local demo color',
+                    'slug' => 'local-demo-'.$user->id,
+                    'hex' => '#64748b',
+                    'is_active' => true,
+                    'sort_order' => 0,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // 2. Car record
+            $car = Car::withTrashed()->where('user_id', $user->id)->first();
+            if ($car) {
+                if ($car->trashed()) $car->restore();
+                $car->patente = $vehicleNumber;
+                $car->brand_other = $vehicleType === 'bike' ? 'Motorbike' : 'Car';
+                $car->model_other = 'Vehicle';
+                $car->car_color_id = $colorId;
+                $car->year = (int) $now->format('Y');
+                $car->save();
+            } else {
+                $carId = DB::table('cars')->insertGetId([
+                    'patente' => $vehicleNumber,
+                    'description' => 'Driver vehicle',
+                    'user_id' => $user->id,
+                    'brand_other' => $vehicleType === 'bike' ? 'Motorbike' : 'Car',
+                    'model_other' => 'Vehicle',
+                    'car_color_id' => $colorId,
+                    'year' => (int) $now->format('Y'),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                $car = Car::query()->findOrFail($carId);
+            }
+
+            $fingerprint = CohortPolicy::vehicleFingerprint($car);
+
+            // 3. Host Application
+            $application = DB::table('mobility_host_applications')->where('user_id', $user->id)->first();
+            if ($application) {
+                DB::table('mobility_host_applications')->where('id', $application->id)->update([
+                    'car_id' => $car->id,
+                    'vehicle_type' => $vehicleType,
+                    'vehicle_fingerprint' => $fingerprint,
+                    'status' => 'approved',
+                    'reviewed_by' => $user->id,
+                    'reviewed_at' => $now,
+                    'review_reason' => 'Automatically accepted driver setup',
+                    'updated_at' => $now,
+                ]);
+                $applicationId = $application->id;
+            } else {
+                $applicationId = DB::table('mobility_host_applications')->insertGetId([
+                    'user_id' => $user->id,
+                    'car_id' => $car->id,
+                    'vehicle_type' => $vehicleType,
+                    'vehicle_fingerprint' => $fingerprint,
+                    'status' => 'approved',
+                    'version' => 1,
+                    'reviewed_by' => $user->id,
+                    'reviewed_at' => $now,
+                    'review_reason' => 'Automatically accepted driver setup',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // 4. Driver Onboarding
+            $onboarding = DB::table('mobility_driver_onboardings')->where('user_id', $user->id)->first();
+            if ($onboarding) {
+                DB::table('mobility_driver_onboardings')->where('id', $onboarding->id)->update([
+                    'host_application_id' => $applicationId,
+                    'car_id' => $car->id,
+                    'vehicle_type' => $vehicleType,
+                    'vehicle_fingerprint' => $fingerprint,
+                    'profile_display_name' => $user->name,
+                    'legal_passenger_capacity' => $seatsAvailable,
+                    'status' => 'approved',
+                    'reviewed_by' => $user->id,
+                    'reviewed_at' => $now,
+                    'review_reason' => 'Automatically accepted license: '.$licenseNumber,
+                    'updated_at' => $now,
+                ]);
+                $onboardingId = $onboarding->id;
+            } else {
+                $onboardingId = DB::table('mobility_driver_onboardings')->insertGetId([
+                    'user_id' => $user->id,
+                    'host_application_id' => $applicationId,
+                    'car_id' => $car->id,
+                    'vehicle_type' => $vehicleType,
+                    'vehicle_fingerprint' => $fingerprint,
+                    'profile_display_name' => $user->name,
+                    'status' => 'approved',
+                    'version' => 1,
+                    'reviewed_by' => $user->id,
+                    'submitted_at' => $now,
+                    'reviewed_at' => $now,
+                    'review_reason' => 'Automatically accepted license: '.$licenseNumber,
+                    'legal_passenger_capacity' => $seatsAvailable,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // 5. Driver Documents - Automatically accept driver license and auto-approve checklist
+            DB::table('mobility_driver_documents')->updateOrInsert(
+                ['onboarding_id' => $onboardingId, 'document_type' => 'driver_license'],
+                [
+                    'version' => 1,
+                    'storage_path' => 'licenses/'.$licenseNumber,
+                    'mime_type' => 'text/plain',
+                    'byte_size' => strlen($licenseNumber),
+                    'expires_at' => $now->copy()->addYears(5)->toDateString(),
+                    'status' => 'accepted',
+                    'review_reason' => 'Automatically accepted license: '.$licenseNumber,
+                    'submitted_by' => $user->id,
+                    'reviewed_by' => $user->id,
+                    'reviewed_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]
+            );
+
+            foreach (DriverOnboardingPolicy::requiredTypes() as $docType) {
+                if ($docType === 'driver_license') continue;
+                DB::table('mobility_driver_documents')->updateOrInsert(
+                    ['onboarding_id' => $onboardingId, 'document_type' => $docType],
+                    [
+                        'version' => 1,
+                        'storage_path' => 'auto-approved/'.$docType,
+                        'mime_type' => 'text/plain',
+                        'byte_size' => 1,
+                        'expires_at' => DriverOnboardingPolicy::expiring($docType) ? $now->copy()->addYears(2)->toDateString() : null,
+                        'status' => 'accepted',
+                        'review_reason' => 'Automatically accepted under simplified driver setup',
+                        'submitted_by' => $user->id,
+                        'reviewed_by' => $user->id,
+                        'reviewed_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]
+                );
+            }
+
+            return [
+                'setup_complete' => true,
+                'vehicle_number' => $vehicleNumber,
+                'vehicle_type' => $vehicleType,
+                'seats_available' => $seatsAvailable,
+                'license_number' => $licenseNumber,
+                'status' => 'approved',
+                'message' => 'Driver setup complete. Vehicle and driver license automatically accepted.',
+            ];
+        });
+
+        return response()->json($result, 200);
+    }
+
     private function operator(Request $request, ?int $targetUserId = null): bool {
         $user = $request->user();
         if (! $user || ! $user->is_admin || ! CohortPolicy::activeUser($user) || CohortPolicy::college() === null) return false;
