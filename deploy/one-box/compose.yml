@@ -1,0 +1,110 @@
+name: campuspool-pes-box3
+services:
+  mysql:
+    image: mysql:8.0
+    network_mode: host
+    restart: unless-stopped
+    command: ["--log-bin-trust-function-creators=1", "--bind-address=127.0.0.1", "--mysqlx-bind-address=127.0.0.1"]
+    environment:
+      MYSQL_DATABASE: carpoolear
+      MYSQL_USER: carpoolear
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root --password=\"$$MYSQL_ROOT_PASSWORD\" --silent >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    network_mode: host
+    command: ["mongod", "--bind_ip", "127.0.0.1", "--auth"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: analyticsroot
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD}"
+      MOBILITY_MONGO_APP_PASSWORD: "${MONGO_APP_PASSWORD}"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - ../../scripts/dbms-application/mongo-init.js:/docker-entrypoint-initdb.d/analytics.js:ro
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      MP_SMTP_BIND_ADDR: "127.0.0.1:1025"
+      MP_UI_BIND_ADDR: "127.0.0.1:8025"
+      MP_DATABASE: /data/mailpit.db
+    volumes: ["mailpit-data:/data"]
+  backend:
+    build:
+      context: ../../research/experiments/carpoolear
+      dockerfile: Dockerfile.smoke
+      network: host
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /var/www
+    env_file: ../../.local/one-box/private.env
+    environment:
+      MOBILITY_EXTENSION_ROOT: /opt/mobility-extension
+      DB_HOST: 127.0.0.1
+      PHP_CLI_SERVER_WORKERS: "2"
+      MOBILITY_ACTIVITY_SERVICE_URL: http://127.0.0.1:8090
+      MOBILITY_ACTIVITY_SERVICE_KEY: "${MOBILITY_ACTIVITY_SERVICE_KEY}"
+    volumes:
+      - ../../research/vendor/carpoolear_hardened:/var/www
+      - ../../research/vendor/carpoolear_backend/vendor:/var/www/vendor:ro
+      - ../../backend/extensions/carpoolear:/opt/mobility-extension:ro
+      - ../../backend/extensions/carpoolear/Mobility:/var/www/app/Mobility:ro
+      - ../../backend/integrations/carpoolear/MobilityIntegration:/var/www/app/MobilityIntegration:ro
+      - ../../.local/one-box/private.env:/var/www/.env:ro
+    command: ["php", "artisan", "serve", "--host=127.0.0.1", "--port=18083", "--no-reload"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+  activity:
+    build:
+      context: ../../services/activity-projection
+      network: host
+      args:
+        HTTP_PROXY: "${BOX3_BUILD_PROXY:-}"
+        HTTPS_PROXY: "${BOX3_BUILD_PROXY:-}"
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      MOBILITY_ACTIVITY_MYSQL_URL: "mysql://activity_reader:${ACTIVITY_READER_PASSWORD}@127.0.0.1:3306/carpoolear"
+      MOBILITY_ACTIVITY_MYSQL_TIMEZONE: "+05:30"
+      MOBILITY_ACTIVITY_MONGODB_URI: "mongodb://activity_app:${MONGO_APP_PASSWORD}@127.0.0.1:27017/mobility_analytics?authSource=mobility_analytics"
+      MOBILITY_ACTIVITY_MONGODB_DB: mobility_analytics
+      MOBILITY_ACTIVITY_SERVICE_KEY: "${MOBILITY_ACTIVITY_SERVICE_KEY}"
+      MOBILITY_ACTIVITY_BIND_HOST: 127.0.0.1
+      SYNC_INTERVAL_SECONDS: "15"
+      PORT: "8090"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+  frontend:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /srv/frontend
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      MOBILITY_API_ORIGIN: http://127.0.0.1:18083
+    volumes: ["../../frontend-next:/srv/frontend:ro"]
+    command: ["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", "3013"]
+    depends_on:
+      backend:
+        condition: service_started
+volumes:
+  mysql-data:
+  mongo-data:
+  mongo-config:
+  mailpit-data:
