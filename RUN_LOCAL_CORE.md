@@ -78,6 +78,6 @@ MOBILITY_DOCKER_CONTEXT=YOUR_CONTEXT sh research/experiments/carpoolear/run-smok
 
 The last command builds a **disposable** MySQL-backed test stack and can be resource-intensive. CI uses fixtures, not a paid provider.
 
-**Known boundaries:** The wallet is synthetic; the external pinned Carpoolear backend remains a first-boot prerequisite ([license and notices](THIRD_PARTY_NOTICES.md)). Android is a GPS tracking companion with **no Google Maps rendering SDK**. The older Laravel **/mobility-pilot/maps** and **/commute** browser pages retain Google-only map integrations and require separate migration or explicit deprecation before retirement. SQL/Mongo analytics, physical-device GPS, real-user security and quota limits require independent acceptance.
+**Known boundaries:** The wallet is synthetic; the external pinned Carpoolear backend remains a first-boot prerequisite ([license and notices](THIRD_PARTY_NOTICES.md)). Android is a GPS tracking companion with **no Google Maps rendering SDK**. The older Laravel **/mobility-pilot** and **/mobility** browser entrypoints now redirect to the Ola Next.js UI when Ola is active; their Google-only assets return HTTP 410 rather than loading Google. Their original source is preserved for the separate OSRM rollback. The old browser components themselves are not rewritten to use Ola. SQL/Mongo analytics, physical-device GPS, real-user security and quota limits require independent acceptance.
 
 **Do not merge [draft PR #92](https://github.com/CampusPool/carpooling/pull/92) without explicit approval.**

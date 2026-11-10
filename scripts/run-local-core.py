@@ -186,6 +186,7 @@ def main():
         write_private_ola_env(private_env, config["api_key"])
         env["MOBILITY_OLA_ENV_FILE"] = str(private_env.resolve())
         env["MOBILITY_OLA_HTTPS_PROXY"] = args.ola_https_proxy
+        env["MOBILITY_FRONTEND_URL"] = f"http://127.0.0.1:{args.frontend_port}"
     run(["sh", "-c", '. "$1/scripts/mobility-runtime.sh"; mobility_init_test_env "$2/.env"', "sh", ROOT, EXP], env=env)
     compose = docker + ["compose", "--project-name", args.project]
     for name in core_compose_files(args.provider):

@@ -75,7 +75,12 @@ No remote branches have been removed; no merge authorization is implied. **The o
 - New Laravel guard rejects unexpired OSRM quotes when the active provider is Ola, and rejects the reverse direction. This is tested against a separate MySQL testing schema in the isolated Ola MySQL container. The private endpoint API accepts **ola_place** provenance without storing provider address text.
 - Added four-point Ola routing mock to assert ordered legs, geometry, snapped waypoints, one query-string POST, and absence of retries.
 - **Previously verified:** 19-point real headed Chrome synthetic LiveCarpool test with a separately cloned backend, database and real Ola APIs. This does not establish acceptance of the new launcher or every legacy UI path.
-- **Still pending:** true fresh-clone Ola Compose startup, full headed Chrome against the *new* default launcher, multiple real multi-stop/foot routes, post-refresh/re-login state checks, full SQL/Mongo analytics, Android device checks, provider quota/billing restriction confirmation and migration of the separately served legacy Laravel maps/commute browser views. These must not be represented as passed.
+- **Still pending:** true fresh-clone Ola Compose startup, full headed Chrome against the *new* default launcher, multiple real multi-stop/foot routes, post-refresh/re-login state checks, full SQL/Mongo analytics, Android device checks, provider quota/billing restriction confirmation and replacing the retired legacy Laravel Google map assets with native Ola visuals (only if those optional old views are still deliverables). These must not be represented as passed.
 - **Simular-specific blocker:** its Docker bridge could not reach the host-bound outbound proxy; the existing isolated Ola E2E worked in host-network mode. Avoid changing the original demo or weakening Docker network restrictions to hide this issue.
 
 **Release gate:** Keep [PR #92](https://github.com/CampusPool/carpooling/pull/92) a draft. No OSRM retirement or PR merge until the owner explicitly approves after all required acceptance checks.
+
+
+### Legacy Laravel browser routing (additional guard)
+
+In Ola mode, **GET /mobility** and **GET /mobility-pilot** redirect to the maintained Next.js UI at the launcher-selected local port. Requests for their Google-only static map scripts, and the legacy Google browser-key endpoint, return 410 rather than making Google requests. The legacy source files and their original OSRM-mode routes remain untouched for rollback. Two Laravel HTTP regression tests (12 assertions) verified both Ola gating and OSRM restoration. This retires the legacy map execution paths for the Ola default **without claiming those older HTML implementations were ported**.

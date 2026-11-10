@@ -17,6 +17,7 @@ services:
       - core-php-vendor:/var/www/vendor:ro
     environment:
       MOBILITY_ROUTING_PROVIDER: ola
+      MOBILITY_FRONTEND_URL: ${MOBILITY_FRONTEND_URL:-http://127.0.0.1:3012}
       MOBILITY_ROUTING_PRICING_VERSION: local-core-v1
       MOBILITY_ROUTING_CAR_MINOR_PER_KM: "800"
       MOBILITY_ROUTING_BIKE_MINOR_PER_KM: "400"

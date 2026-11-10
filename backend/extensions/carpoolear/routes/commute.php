@@ -9,6 +9,10 @@ Route::prefix('api/mobility/commute')->middleware(['api','logged'])->group(funct
 });
 Route::middleware('web')->get('mobility/{asset?}',function(?string$asset=null){
  if(!filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN))abort(404);
+ if(config('mobility_routing.provider')==='ola'){
+   if($asset===null)return redirect()->away(rtrim((string)(getenv('MOBILITY_FRONTEND_URL')?:'http://127.0.0.1:3012'),'/').'/',302);
+   return response('Use the Ola-enabled CampusPool Next.js application.',410,['Cache-Control'=>'private, no-store','X-Content-Type-Options'=>'nosniff']);
+ }
  $files=[''=>'commute.html','commute.css'=>'commute.css','commute.mjs'=>'commute.mjs','active-ride-state.mjs'=>'active-ride-state.mjs','trip-chat-ui.mjs'=>'trip-chat-ui.mjs','place-search.mjs'=>'place-search.mjs','commute-map.mjs'=>'commute-map.mjs'];if(!isset($files[$asset??'']))abort(404);$file=$files[$asset??''];$root=rtrim(getenv('MOBILITY_EXTENSION_ROOT')?:dirname(__DIR__),'/');
  $type=str_ends_with($file,'.html')?'text/html':(str_ends_with($file,'.css')?'text/css':'text/javascript');
  // Google Maps propagates the response nonce to its inserted scripts/styles.

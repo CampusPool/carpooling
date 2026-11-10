@@ -38,7 +38,7 @@ Laravel / pinned Carpoolear backend ── MySQL (bookings, rides, wallet, chat)
 Ola Directions / walking routes (server-side; no mandatory OSRM graph)
 ~~~
 
-The tracked Laravel extension is installed into an [exact pinned external Carpoolear backend](THIRD_PARTY_NOTICES.md) during startup. It is **not** a standalone Laravel host copied into this repository. The old Google/OSRM path stays available as a separately configured rollback; those services are **not required** for the Ola-only launcher. See [architecture](docs/ARCHITECTURE.md) and [known un-migrated legacy views](docs/OLA_MAPS_MIGRATION.md).
+The tracked Laravel extension is installed into an [exact pinned external Carpoolear backend](THIRD_PARTY_NOTICES.md) during startup. It is **not** a standalone Laravel host copied into this repository. The old Google/OSRM path stays available as a separately configured rollback; those services are **not required** for the Ola-only launcher. See [architecture](docs/ARCHITECTURE.md) and [Ola-mode legacy-view redirection and remaining limitations](docs/OLA_MAPS_MIGRATION.md).
 
 ## Run locally
 
