@@ -47,6 +47,10 @@ registered domain. Routing: dedicated Worker → provider private HTTPS port
 
 - Public anonymous API: HTTP 401.
 - Tester login then homepage: HTTP 200 with normal TLS validation.
+- Built-in browser tester form initially returned HTTP 403. Its referrer
+  policy suppressed the origin required by the form POST. The deployed
+  fix sends the origin for same-site form navigation and keeps the exact
+  origin check. Retesting the native form opened the CampusPool homepage.
 - Private InstaBox origin without credential: HTTP 401.
 - Private InstaBox origin with credential: HTTP 200.
 - Only frontend port 3013 is published; tester and origin credentials are
@@ -68,6 +72,7 @@ keep the pilot sending.
 | Anonymous OTP config | HTTP 401 |
 | Authorized PES OTP requested using the uppercase SRN | HTTP 201, 300-second expiry |
 | Nylas mailbox API and dashboard | HTTP 200, message listed in Sent |
+| Follow-up OTP through the live browser form | Opened the verification screen with a five-minute timer; backend recorded Nylas acceptance |
 | Nylas delivery timeline | HTTP 403 with the send-only key |
 | PES inbox receipt and sign-in using the email | Pending tester confirmation |
 

@@ -21,7 +21,7 @@ export async function validSession(cookie, secret, now=Date.now()) {
   if (!match || Number(match[1]) <= now || Number(match[1]) > now+8*3600000) return false;
   return equal(match[2], await signature(match[1], secret));
 }
-const page = `<!doctype html><meta name="viewport" content="width=device-width"><title>CampusPool tester access</title><main style="font:18px system-ui;max-width:440px;margin:12vh auto;padding:24px"><h1>CampusPool tester access</h1><p>This private preview uses a tester access key. Student email delivery is still being configured.</p><form method="post" action="/_tester"><label>Tester access key <input name="password" type="password" required autocomplete="current-password" style="display:block;width:100%;margin:16px 0;padding:10px;box-sizing:border-box"></label><button style="padding:10px 20px">Open CampusPool</button></form></main>`;
+const page = `<!doctype html><meta name="viewport" content="width=device-width"><title>CampusPool tester access</title><main style="font:18px system-ui;max-width:440px;margin:12vh auto;padding:24px"><h1>CampusPool tester access</h1><p>Enter the access key shared by the CampusPool team to open this private preview. Once inside, sign in separately with your PES email or SRN.</p><form method="post" action="/_tester"><label>Tester access key <input name="password" type="password" required autocomplete="current-password" style="display:block;width:100%;margin:16px 0;padding:10px;box-sizing:border-box"></label><button style="padding:10px 20px">Open CampusPool</button></form></main>`;
 function reply(body, status, headers={}) {
   return new Response(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',...headers}});
 }
@@ -30,7 +30,12 @@ export default {
     const url = new URL(request.url);
     if (!env.TESTER_PASSWORD || !env.SESSION_SECRET || !env.ORIGIN_TOKEN || !env.ORIGIN_URL) return reply('Preview unavailable',503);
     if (url.pathname === '/_tester') {
-      if (request.method === 'GET') return reply(page,200,{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"});
+      // Native form submissions need their same-origin Origin header for the POST check.
+      if (request.method === 'GET') return reply(page,200,{
+        'Content-Type':'text/html; charset=utf-8',
+        'Referrer-Policy':'same-origin',
+        'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+      });
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return reply('Forbidden',403);
       if (Number(request.headers.get('Content-Length')||0)>1024) return reply('Request too large',413);
       const body = await request.text();

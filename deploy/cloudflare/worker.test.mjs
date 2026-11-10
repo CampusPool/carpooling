@@ -8,8 +8,11 @@ test('anonymous pages redirect and anonymous APIs cannot reach origin',async()=>
  assert.equal((await worker.fetch(new Request('https://preview.workers.dev/api/mobility/commute/me'),env)).status,401);
 });
 test('tester login rejects cross-origin, bad passwords and forged sessions',async()=>{
+ const form=await worker.fetch(new Request('https://preview.workers.dev/_tester'),env);
+ assert.equal(form.headers.get('Referrer-Policy'),'same-origin');
  const login=(origin,password)=>worker.fetch(new Request('https://preview.workers.dev/_tester',{method:'POST',headers:{Origin:origin},body:new URLSearchParams({password})}),env);
  assert.equal((await login('https://evil.example',env.TESTER_PASSWORD)).status,403);
+ assert.equal((await login('null',env.TESTER_PASSWORD)).status,403);
  assert.equal((await login('https://preview.workers.dev','wrong')).status,403);
  const response=await login('https://preview.workers.dev',env.TESTER_PASSWORD);
  assert.equal(response.status,303);
