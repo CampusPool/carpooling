@@ -8,6 +8,7 @@ import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
+import PesTimetable from "../components/PesTimetable";
 import OperatorAnalytics from "../components/OperatorAnalytics";
 import { isCurrentUnauthorized } from "../lib/session-events";
 import { request } from "../lib/legacy-api";
@@ -1109,7 +1110,7 @@ export default function Page() {
   const navItems: [string, string][] = me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
     ? [["operator", "Operations"]]
     : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
-      ? [["pool", "Rides and bookings"], ...(localAccount && me?.account_role === "driver" ? [["driver-onboarding", "Driver onboarding"] as [string, string]] : [])]
+      ? [["pool", "Rides and bookings"], ...(localAccount ? [["timetable", "My timetable"] as [string, string]] : []), ...(localAccount && me?.account_role === "driver" ? [["driver-onboarding", "Driver onboarding"] as [string, string]] : [])]
       : [
           ["home", "Overview"],
           ["rides", "Find rides"],
@@ -1167,7 +1168,7 @@ export default function Page() {
         </aside>
         <section className={`content${activeView === "operator" ? " operator-content" : ""}`}>
           <p className="eyebrow">
-            {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
+            {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : activeView === "timetable" ? "MY SCHEDULE" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
           </p>
           <h2>
             {activeView === "home"
@@ -1186,6 +1187,8 @@ export default function Page() {
                   ? "Apply to drive."
                 : activeView === "pool"
                   ? (me?.account_role ? "Rides and bookings" : "Pool offers.")
+                : activeView === "timetable"
+                  ? "My timetable"
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
@@ -1389,6 +1392,7 @@ export default function Page() {
           )}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
+          {activeView === "timetable" && localAccount && <PesTimetable token={token} />}
           {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
             <>
