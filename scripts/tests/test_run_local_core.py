@@ -3,6 +3,8 @@ import argparse
 import copy
 import importlib.util
 import json
+import os
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -63,12 +65,68 @@ class ManagedRestartTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "PHP dependency volume is missing"):
             core.managed_restart(self.state, **(self.args | {"dependency_volume_exists": False}))
 
+    def test_provider_switch_cannot_reuse_a_persistent_database(self):
+        self.save()
+        with self.assertRaisesRegex(ValueError, "another routing provider"):
+            core.managed_restart(self.state, provider="ola", **self.args)
+        self.save(self.saved | {"provider": "ola"})
+        self.assertTrue(core.managed_restart(self.state, provider="ola", **self.args))
+        with self.assertRaisesRegex(ValueError, "another routing provider"):
+            core.managed_restart(self.state, provider="osrm", **self.args)
+
     def test_invalid_state_does_not_become_a_new_project(self):
         for value in ("not json", "[]"):
             with self.subTest(value=value):
                 self.state.write_text(value)
                 with self.assertRaises(ValueError):
                     core.managed_restart(self.state, **self.args)
+
+
+class OlaOnlyBootstrapTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.keyfile = Path(self.temp.name) / "ola.json"
+        self.test_key = "A" * 32  # Synthetic and never accepted by a live provider.
+        self.keyfile.write_text(json.dumps({"kind": "ola_maps_demo", "api_key": self.test_key}))
+        os.chmod(self.keyfile, 0o600)
+        self.parser = argparse.ArgumentParser()
+
+    def args(self, **kwargs):
+        return argparse.Namespace(provider="ola", dataset=None, maps_config=self.keyfile, **kwargs)
+
+    def test_ola_does_not_need_bengaluru_dataset_or_road_compose(self):
+        dataset, path, config = core.provider_input(self.args(), self.parser)
+        self.assertIsNone(dataset)
+        self.assertEqual(path, self.keyfile)
+        self.assertEqual(config["browser_key"], self.test_key)
+        names = core.core_compose_files("ola")
+        self.assertIn("compose.core-ola.yml", names)
+        self.assertNotIn("compose.core-roads.yml", names)
+        self.assertNotIn("compose.core-ola.yml", core.core_compose_files("osrm"))
+        manifest = (core.EXP / "compose.core-ola.yml").read_text().lower()
+        self.assertNotIn("mobility-road-router", manifest)
+        self.assertNotIn(".osm.pbf", manifest)
+        self.assertNotIn("osrm-backend", manifest)
+
+    def test_rejects_unprotected_or_invalid_ola_configuration(self):
+        os.chmod(self.keyfile, 0o644)
+        with self.assertRaises(SystemExit):
+            core.provider_input(self.args(), self.parser)
+        os.chmod(self.keyfile, 0o600)
+        for contents in ("{", "[]", '{}', '{"kind":"ola_maps_demo","api_key":"short"}'):
+            self.keyfile.write_text(contents)
+            with self.subTest(contents=contents), self.assertRaises(SystemExit):
+                core.provider_input(self.args(), self.parser)
+
+    def test_ola_env_is_private_and_replaced_without_printing_key(self):
+        path = Path(self.temp.name) / "runtime" / "ola.env"
+        core.write_private_ola_env(path, self.test_key)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(path.read_text(), "OLA_MAPS_API_KEY=" + self.test_key + "\n")
+        core.write_private_ola_env(path, "B" * 32)
+        self.assertNotIn(self.test_key, path.read_text())
+        self.assertFalse(path.with_suffix(".tmp").exists())
 
 
 class RouterRestartTests(unittest.TestCase):

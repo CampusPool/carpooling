@@ -1,110 +1,83 @@
-# Run the local core carpool app
+# Run CampusPool locally — Ola Maps (PR #92)
 
-This runs real Google place selection and map previews with a local OSRM road
-router, username/password rider/driver accounts, ride requests/decisions,
-notifications, chat and trip lifecycle. Full authentication, OTP, payments,
-real vehicle registration and live GPS acceptance remain Sprint 3.
+This is a **synthetic teaching demo**, not a production transport service. The Ola-only launcher does not download the Bengaluru road crop, compile road graphs, start OSRM, or require ARM emulation. Laravel + MySQL still handle authentication, seat inventory, rides, chat, and demonstration credits.
+
+**Status:** This is draft PR #92. The previous isolated LiveCarpool E2E passed with real Ola Places and Directions. The new launcher and other UI paths need a fresh full acceptance run before OSRM can be retired. See [Ola migration status](docs/OLA_MAPS_MIGRATION.md).
 
 ## Prerequisites
 
-- Git, Python 3.9+, Node 24/npm, Docker with Compose v2.
-- A local Docker Unix-socket context, for example Linux `default`, Docker
-  Desktop `desktop-linux`, or a running Colima context. Docker must have at
-  least 4 GiB available; graph building uses up to 3 GiB and two CPUs.
-- **Separate Docker context for parallel checkouts:** the local OSRM router uses fixed, labeled container names. If another CampusPool/MobilityPlatform checkout already owns `mobility-road-router-car` in the selected Docker context, startup intentionally refuses to reuse a different graph mount. Use a dedicated Docker/Colima profile for a fresh-clone verification (for example `colima start --profile campuspool-phase1-verify --cpu 3 --memory 5 --disk 20` and `--context colima-campuspool-phase1-verify`). Do **not** delete or repoint someone else's router containers to get past this check.
-- The pinned routing image is linux/arm64. An ARM64 Docker host works directly;
-  AMD64 requires ARM64 emulation configured in Docker. Startup preflights the
-  actual binary and fails clearly before graph work when it cannot execute.
-- Internet access on first setup for pinned upstream backend, Composer/npm
-  dependencies and Docker images. No provider or map credentials are needed
-  for PR CI, which uses explicit test fixtures rather than Google.
-- The supplied offline crop in your teammate folder's `assets/` directory.
-  This development asset is ODbL data and must **not** be committed to a PR.
-  Its identity and attribution are in `assets/source-lock.json` and
-  `assets/NOTICE.md`. The original dated regional download is unavailable;
-  do not substitute a current extract or skip the checksum.
-- Your own Google Maps **browser** key with Maps JavaScript, Places and route
-  preview access, restricted appropriately for localhost. This is external
-  input, not source code. No server key should be supplied to the browser.
+- Git, Python 3.9+, Node.js 24/npm and Docker with Compose v2.
+- Docker available through a **local Unix socket** (Docker Desktop, local Engine or Colima), with at least 4 GiB assigned.
+- Internet access for the **pinned external Laravel host**, Composer/npm dependencies and Docker images.
+- Your **own Ola Maps credentials** for Web SDK, Places, and Directions. Set provider-side API restrictions, quota limits, billing alerts and allowed web referrers.
+- A dedicated test project/database. Never reuse an existing OSRM-backed database with Ola.
 
-## Private Google configuration
+## Private Ola configuration
 
-Create `.local/maps-demo/google.json` in your working repository (ignored by
-Git), with this structure, replacing the placeholder locally:
+Make an ignored local file at **.local/maps-demo/ola.json** with permissions 600.
 
-```json
-{"kind":"google_maps_demo","browser_key":"YOUR_BROWSER_KEY"}
-```
+~~~sh
+mkdir -p .local/maps-demo
+chmod 700 .local/maps-demo
+~~~
 
-Run `chmod 600 .local/maps-demo/google.json`. The helper validates it, copies
-it directly into the test-only backend container without printing it, and
-restores that container copy after recreation. It is never included in a PR.
+~~~json
+{
+  "kind": "ola_maps_demo",
+  "api_key": "YOUR_PRIVATE_OLA_SERVER_KEY",
+  "browser_key": "YOUR_REFERRER_RESTRICTED_OLA_BROWSER_KEY"
+}
+~~~
 
-## Start
+~~~sh
+chmod 600 .local/maps-demo/ola.json
+~~~
 
-After applying the assigned packages and their prerequisites, from the repo:
+The browser key is optional but if omitted it defaults to the server key, which is inappropriate for a public deployment without proper restrictions. The Maps Web SDK necessarily exposes a **browser-visible** key; the server key stays in backend configuration and is **not** put into Next.js public environment variables. Never paste real credentials into Git, screenshots, logs, issue comments, or chat.
 
-```sh
-sh scripts/run-local-core.sh \
-  --dataset /absolute/path/to/your-teammate-folder/assets/bbox-77.20-12.60-78.00-13.40-complete-ways.osm.pbf \
+## Validate and start
+
+~~~sh
+python3 scripts/run-local-core.py --provider ola --check
+sh scripts/run-local-core.sh --provider ola \
+  --maps-config .local/maps-demo/ola.json \
+  --project mobility-core-ola-teacher
+~~~
+
+The check does **not** start Docker or contact the API. Startup reconstructs the pinned Carpoolear Laravel backend, applies CampusPool extensions, prepares a **new MySQL project**, launches the application gateway and starts Next.js at **http://127.0.0.1:3012**. No Bengaluru PBF file or OSRM image is needed for the Ola branch.
+
+For a different Docker context, supply **--context YOUR_DOCKER_CONTEXT**. For a busy frontend port, use **--frontend-port 3013**. Use a unique **--project mobility-core-ola-YOURNAME** for each independent checkout. The launcher retains the MySQL volume and on restart verifies checkout, Docker context, project, volume and routing provider identity. Never change a managed database's provider or run destructive Docker cleanup against someone else's stack.
+
+On a proxy-restricted host, configure the optional **MOBILITY_OLA_HTTPS_PROXY=http://host-reachable-from-container:port**. The proxy must be reachable *inside Docker*; 127.0.0.1 within a bridged container is not the Docker host. Simular Box 1 has unusual bridge egress restrictions, so the previous host-network E2E is not by itself a fresh Compose acceptance test.
+
+Use two separate browser profiles (driver and rider). Register synthetic accounts, select Ola pickup and destination, preview a route, publish, find, request, accept, chat, complete and confirm arrival. Refresh and sign in again to verify server-persisted state. A successful homepage is not a whole-journey pass.
+
+## Explicit OSRM/Google rollback (separate database)
+
+Until the Ola migration has its own fresh full acceptance test, keep the existing working Google/OSRM stack and data. To start an **independent rollback project** with the existing checksum-locked road crop, use:
+
+~~~sh
+sh scripts/run-local-core.sh --provider osrm \
+  --project mobility-core-osrm-rollback \
+  --dataset /absolute/path/to/bbox-77.20-12.60-78.00-13.40-complete-ways.osm.pbf \
   --maps-config .local/maps-demo/google.json
-```
+~~~
 
-The default Docker context comes from `docker context show`. To select one,
-add `--context YOUR_LOCAL_CONTEXT`. The default frontend is
-`http://127.0.0.1:3012/`; change it with `--frontend-port 3013` if occupied.
-Use `--project mobility-core-YOURNAME` (lowercase) to keep a separate database
-when another checkout already owns the default project. Do not run this
-helper against another project's database or recreate the existing 31796 demo.
+That fallback needs the original ARM64 OSRM image (or working ARM emulation), three prepared road graphs and a mode-600 private Google browser configuration in JSON with kind **google_maps_demo** and key **browser_key**. The separate original demonstration must not be modified or deleted. **Do not use docker compose down -v** on a project with data you want to preserve.
 
-On first run, it reconstructs the pinned backend, builds the probe image,
-verifies the supplied crop, builds the three road graphs, starts the private
-routers and migrates a dedicated testing database. Graph preparation can take
-several minutes and uses roughly 1.5 GiB of disk. Future runs reuse verified
-graphs, the managed database and a project-owned Docker volume for PHP
-dependencies. Keeping the large dependency tree inside Docker avoids macOS
-shared-filesystem file-handle limits; do not commit or export that cache. It does not seed a fake route or require a
-fixture stop catalog: registered accounts can select actual Bengaluru places.
+## Repeatable checks
 
-The managed database is retained when you stop the UI with Ctrl-C. Re-run the
-same command and project to resume it. Startup refuses an unknown database
-volume or an unrelated router container instead of overwriting it. Read
-`.local/core-runtime/PROJECT/state.json` for its project/context/volume identity.
-To stop background services while keeping data, use
-`docker --context CONTEXT stop PROJECT-gateway-1 PROJECT-app-1 PROJECT-mysql-1`.
-Do not use `down -v` unless deliberately discarding that isolated test data.
-Restart also checks the stored checkout, context, project and database volume
-identity before preparing anything. A missing database or PHP dependency
-volume is refused; restore the original managed resources or choose a new
-project explicitly. A deleted database is never silently treated as a restart.
+~~~sh
+cd frontend-next
+npm ci && npm test && npm run typecheck && npm run build
+cd ..
+python3 -m unittest discover -s scripts/tests -p 'test_run_local_core.py'
+python3 scripts/check-teacher-docs.py
+MOBILITY_DOCKER_CONTEXT=YOUR_CONTEXT sh research/experiments/carpoolear/run-smoke.sh mobility
+~~~
 
-## Fresh-clone limitations
+The last command builds a **disposable** MySQL-backed test stack and can be resource-intensive. CI uses fixtures, not a paid provider.
 
-This project is **not** a two-file standalone prototype. The Laravel host is fetched at its pinned upstream revision, the OSRM street graphs are generated from an independently supplied checksum-locked OSM crop, and a private Google Maps browser key is needed for live provider interaction. A fresh clone with these prerequisites can run the application, but the repository intentionally contains neither the proprietary browser key nor the large ODbL routing dataset.
+**Known boundaries:** The wallet is synthetic; the external pinned Carpoolear backend remains a first-boot prerequisite ([license and notices](THIRD_PARTY_NOTICES.md)). Android is a GPS tracking companion with **no Google Maps rendering SDK**. The older Laravel **/mobility-pilot/maps** and **/commute** browser pages retain Google-only map integrations and require separate migration or explicit deprecation before retirement. SQL/Mongo analytics, physical-device GPS, real-user security and quota limits require independent acceptance.
 
-Google address suggestions may fail if the **Places API (New)** is disabled, billing is missing, a browser-referrer restriction is wrong, or requests are blocked by the network. Check the Google Cloud Console, key restrictions and browser console; do not paste API keys into issues. The map-click fallback works for selecting coordinates when Places suggestions are unavailable. Google Maps failing to load entirely is a separate error and prevents map-click selection.
-
-Use future local times in **Asia/Kolkata**: the app now rejects departures too close to the present and rolls a saved daily commute time forward to tomorrow if that time has already passed today.
-
-## Check and verify
-
-Add `--check` to validate your exact crop and private browser config without
-starting Docker, downloading dependencies, or changing the runtime. This is
-input validation, not proof of a successful runtime or real-provider journey.
-
-In two separate browser profiles (or a normal and private window), register one driver and one rider. Two tabs in the same browser profile can share and overwrite the same session. Select the
-same Google pickup/destination, a future time, and matching date (pickup
-tolerance 15 minutes). Publish, find, request, accept, chat, start, pickup,
-drop-off and complete. One passenger seat per offer and Bengaluru road bounds
-are deliberate local limits. GPS tracking code is retained but deferred.
-
-Automated checks are `npm ci && npm test && npm run typecheck && npm run build`
-inside `frontend-next`, and from the root:
-
-```sh
-MOBILITY_DOCKER_CONTEXT=YOUR_LOCAL_CONTEXT sh research/experiments/carpoolear/run-smoke.sh mobility
-```
-
-That backend command owns a separate disposable test database and fixtures;
-it does not reset the running core app. The PR workflow now runs the full
-backend suite alongside frontend, activity projection and reconstruction.
+**Do not merge [draft PR #92](https://github.com/CampusPool/carpooling/pull/92) without explicit approval.**

@@ -41,6 +41,33 @@ final class MobilityOlaDirectionsClientTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_four_point_pickup_and_dropoff_route_keeps_three_ordered_legs(): void
+    {
+        $points = [$this->points()[0], $this->points()[1],
+            ['lat' => 12.976, 'lng' => 77.597], $this->points()[2]];
+        $body = ['status' => 'SUCCESS', 'routes' => [[
+            'overview_polyline' => self::encode(array_map(fn ($p) => [$p['lat'], $p['lng']], $points)),
+            'legs' => [
+                ['distance' => 500, 'duration' => 120, 'start_location' => $points[0], 'end_location' => $points[1]],
+                ['distance' => 600, 'duration' => 135, 'start_location' => $points[1], 'end_location' => $points[2]],
+                ['distance' => 700, 'duration' => 150, 'start_location' => $points[2], 'end_location' => $points[3]],
+            ],
+        ]]];
+        Http::fake(fn () => Http::response($body));
+        $route = (new OlaPathProvider(new OlaDirectionsClient))->path($points, 'car');
+        $this->assertSame(1800, $route['distance_meters']);
+        $this->assertSame(405, $route['duration_seconds']);
+        $this->assertCount(4, $route['waypoints']);
+        $this->assertCount(3, $route['legs']);
+        $this->assertCount(4, $route['geometry']);
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && $request->body() === ''
+            && str_contains($request->url(), 'waypoints=12.971%2C77.595%7C12.976%2C77.597')
+            && str_contains($request->url(), 'origin=12.97%2C77.59')
+            && str_contains($request->url(), 'destination=12.98%2C77.6'));
+        Http::assertSentCount(1);
+    }
+
     public function test_two_point_quote_provider_returns_ola_identity(): void
     {
         $body = $this->routeBody();

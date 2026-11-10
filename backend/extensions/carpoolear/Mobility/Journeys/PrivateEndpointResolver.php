@@ -19,7 +19,7 @@ final class PrivateEndpointResolver
         if (array_diff(array_keys($input), ['lat', 'lng', 'source']) || array_diff(['lat', 'lng', 'source'], array_keys($input))) throw new PickupException('ENDPOINT_INPUT_INVALID');
         foreach (['lat', 'lng'] as $field) if ((! is_int($input[$field]) && ! is_float($input[$field])) || ! is_finite((float) $input[$field])) throw new PickupException('ENDPOINT_INPUT_INVALID');
         if ($input['lat'] < 12.65 || $input['lat'] > 13.35 || $input['lng'] < 77.2 || $input['lng'] > 77.95
-            || ! in_array($input['source'], ['map_pin', 'device_gps', 'google_place'], true)) throw new PickupException('ENDPOINT_INPUT_INVALID');
+            || ! in_array($input['source'], ['map_pin', 'device_gps', 'google_place', 'ola_place'], true)) throw new PickupException('ENDPOINT_INPUT_INVALID');
         if (! preg_match('/^[\x21-\x7E]{1,100}$/D', $key)) throw new PickupException('INVALID_IDEMPOTENCY_KEY');
         $point = ['lat' => round((float) $input['lat'], 7), 'lng' => round((float) $input['lng'], 7)];
         $hash = hash('sha256', json_encode($point + ['source' => $input['source']], JSON_THROW_ON_ERROR));

@@ -1,8 +1,8 @@
 # CampusPool Next.js client
 
-This is the **student-facing web client** for the CampusPool SE + DBMS project. It is not a standalone application: it requires the pinned Laravel backend, a disposable MySQL database and (for the full map-backed demo) Google Maps/Places plus a road-routing service.
+This is the **student-facing web client** for the CampusPool SE + DBMS project. It is not a standalone application: it requires the pinned Laravel backend, a disposable MySQL database and, for the Ola mode, valid Ola Maps Web SDK/Places/Directions credentials. A local OSRM server and the Bengaluru crop are not required for that mode.
 
-**Use the repository-level [README](../README.md), [teacher demo](../docs/COURSE_DEMO.md) and [local bootstrap](../RUN_LOCAL_CORE.md) for a real end-to-end run.** Those scripts configure and launch the matching API and route services. Launching Next.js alone only verifies the UI; it does not create rides without a backend.
+**Use the repository-level [README](../README.md), [teacher demo](../docs/COURSE_DEMO.md) and [local bootstrap](../RUN_LOCAL_CORE.md) for a real end-to-end run.** Those scripts configure the independent Laravel/MySQL API and the selected routing provider. Launching Next.js alone only verifies the UI; it does not create rides without a backend.
 
 ## Frontend quality checks
 
@@ -42,4 +42,4 @@ Use the **actual** API origin/port for your own disposable environment; `18086` 
 
 An independent Simular run completed the full synthetic rider-and-driver browser journey using a cloned Next.js frontend, a separately prepared Laravel checkout and a fresh MySQL database, with **real Google Places and route preview**. Read [the evidence and OSRM/Docker deviations](../docs/engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md) before describing this as a production-grade result.
 
-The wallet uses only demo credits. Physical GPS tracking, institutional SSO/OTP, real payments, campus-issued timetable import and hosted Ola Maps are **not** proven complete. The complete status matrix is [here](../docs/FEATURE_STATUS.md).
+The wallet uses only demo credits. The Ola LiveCarpool E2E passed in an isolated environment, but the new launch path, all older browser views, physical GPS tracking, SSO/OTP, real payments and official timetable import remain **unverified or out of scope**. The complete status matrix is [here](../docs/FEATURE_STATUS.md).

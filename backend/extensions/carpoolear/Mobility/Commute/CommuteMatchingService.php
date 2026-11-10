@@ -120,7 +120,7 @@ final class CommuteMatchingService {
    $source=json_decode($m->journey,true,512,JSON_THROW_ON_ERROR);
    if($pickupChoice!=='both'&&$source['choice']!==$pickupChoice)continue;
    try{$j=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$m->vehicle_type,$source['choice'],min((int)($p['max_walk_meters']??999),$source['max_walk_meters']),$source['max_detour_meters'],$source['max_detour_seconds']);}catch(RoutingException|PickupException$e){
-    // An off-road map pin can fail an individual OSRM candidate. Do not
+    // An off-road map pin can fail a route-provider candidate. Do not
     // turn one unsuitable published ride into a 500 for the entire search.
     // Graph mismatches, deadlines and provider outages must still surface.
     if(!in_array($e->machineCode,['NO_ROUTE','ROUTE_INVALID','ROUTE_DIRECTION_INCOMPATIBLE','NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS'],true))throw $e;

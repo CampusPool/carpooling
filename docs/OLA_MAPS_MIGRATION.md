@@ -65,3 +65,17 @@ cd frontend-next && npm ci && npm test && npm run typecheck && npm run build
 ```
 
 No remote branches have been removed; no merge authorization is implied. **The original OSRM/Google implementation is preserved until evidence is complete.**
+
+
+## PR #92 implementation update — November 10, 2026
+
+- Ola-only launcher is now the default provider selection. It bypasses dataset hashing, OSRM graph preparation, ARM OSRM image pulls and OSRM Compose services. **Separate OSRM rollback** remains opt-in through the previous image/crop and a different project/database.
+- Private mode-600 provider configuration is mandatory. Laravel uses a private ignored runtime environment file; Next.js accesses the authenticated Ola API proxy and only the SDK browser key is exposed. Local Maps proxy rate limits and eight-second provider timeout remain in place. Actual quota and referrer restrictions must be set in the Ola provider console.
+- CanonicalPool's address search now uses the authenticated Ola Places proxy when Ola is selected, and still requires choosing an **approved catalog stop** before booking. The older Next.js screen also has an Ola map/Places path; persisted route geometry can be drawn without another Directions call.
+- New Laravel guard rejects unexpired OSRM quotes when the active provider is Ola, and rejects the reverse direction. This is tested against a separate MySQL testing schema in the isolated Ola MySQL container. The private endpoint API accepts **ola_place** provenance without storing provider address text.
+- Added four-point Ola routing mock to assert ordered legs, geometry, snapped waypoints, one query-string POST, and absence of retries.
+- **Previously verified:** 19-point real headed Chrome synthetic LiveCarpool test with a separately cloned backend, database and real Ola APIs. This does not establish acceptance of the new launcher or every legacy UI path.
+- **Still pending:** true fresh-clone Ola Compose startup, full headed Chrome against the *new* default launcher, multiple real multi-stop/foot routes, post-refresh/re-login state checks, full SQL/Mongo analytics, Android device checks, provider quota/billing restriction confirmation and migration of the separately served legacy Laravel maps/commute browser views. These must not be represented as passed.
+- **Simular-specific blocker:** its Docker bridge could not reach the host-bound outbound proxy; the existing isolated Ola E2E worked in host-network mode. Avoid changing the original demo or weakening Docker network restrictions to hide this issue.
+
+**Release gate:** Keep [PR #92](https://github.com/CampusPool/carpooling/pull/92) a draft. No OSRM retirement or PR merge until the owner explicitly approves after all required acceptance checks.

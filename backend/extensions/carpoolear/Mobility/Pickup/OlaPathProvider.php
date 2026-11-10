@@ -4,7 +4,7 @@ namespace STS\Mobility\Pickup;
 
 use STS\Mobility\Routing\OlaDirectionsClient;
 
-/** Detailed routing adapter for pickup and walking geometry. Not wired yet. */
+/** Detailed routing adapter for pickup and walking geometry. */
 final class OlaPathProvider implements PathProvider
 {
     public function __construct(private readonly OlaDirectionsClient $client) {}

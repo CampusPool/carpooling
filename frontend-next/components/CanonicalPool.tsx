@@ -258,8 +258,8 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
       {!capabilities.discover && <p className="review-note">Ride discovery is available after an operator approves your college membership.</p>}
       <form className="form-grid pool-form" onSubmit={find}>
         <label>Travel date<input name="service_date" type="date" min={todayIndia()} defaultValue={todayIndia()} required /></label>
-        <CanonicalPlacePicker label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
-        <CanonicalPlacePicker label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
         <details className="pool-search-options"><summary>Time and vehicle preferences <span>Optional</span></summary>
           <div className="form-grid pool-form pool-search-options-grid">
             <label>Earliest pickup<input name="from_time" type="time" defaultValue="00:00" required /></label>
@@ -280,8 +280,8 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
       {!capabilities.publish && <p className="review-note">Publishing requires approved college membership and an operator approved vehicle. Start or review vehicle approval in Driver onboarding.</p>}
       <form className="form-grid pool-form" onSubmit={getQuote}>
         <label>Approved vehicle<select name="car_id" required defaultValue="">{pointOptions("Choose approved vehicle")}{approvedVehicles.map((app) => { const car = cars.find((item) => Number(item.id ?? item.car_id) === app.car_id); const name = car ? [vehiclePart(car.brand) || vehiclePart(car.brand_other), vehiclePart(car.model) || vehiclePart(car.model_other)].filter(Boolean).join(" ") : ""; return <option key={`${app.car_id}-${app.vehicle_type}`} value={app.car_id}>{app.vehicle_type === "bike" ? "Motorbike" : "Car"} #{app.car_id}{name ? ` · ${name}` : ""}</option>; })}</select></label>
-        <CanonicalPlacePicker label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
-        <CanonicalPlacePicker label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
         <button className="primary wide" disabled={busy || !capabilities.publish || approvedVehicles.length === 0 || points.length < 2}>{busy ? "Getting quote…" : "Get route quote"}</button>
       </form>
       {approvedVehicles.length === 0 && <p className="fine">No approved host vehicle with a reviewed passenger-seat capacity is available. Use Driver onboarding to complete or correct the capacity, then wait for operator review.</p>}

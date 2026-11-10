@@ -7,7 +7,7 @@ use Illuminate\Support\Str;
 
 /**
  * Ola Directions API adapter. Normalizes provider data without pretending its
- * data_version is an OSRM graph SHA. Not wired into the booking system yet.
+ * data_version is an OSRM graph SHA. Used by the live routing bindings.
  */
 final class OlaDirectionsClient
 {

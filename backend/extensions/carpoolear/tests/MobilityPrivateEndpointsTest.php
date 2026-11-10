@@ -39,6 +39,15 @@ final class MobilityPrivateEndpointsTest extends TestCase
         $this->assertSame(0, DB::table('mobility_private_endpoints')->count());
     }
 
+    public function test_ola_place_provenance_is_accepted_without_storing_address(): void
+    {
+        $user = $this->member();
+        $this->actingAsApiUser($user)->postJson('/api/mobility/private-endpoints',
+            ['lat' => 12.97, 'lng' => 77.59, 'source' => 'ola_place'],
+            ['Idempotency-Key' => 'ola-place-provenance'])->assertCreated()->assertJsonPath('data.source', 'ola_place');
+        $this->assertDatabaseHas('mobility_private_endpoints', ['user_id' => $user->id, 'source' => 'ola_place']);
+    }
+
     public function test_expiry_retention_preserves_opaque_identity_and_never_revives_retry(): void
     {
         $user = $this->member(); $body = ['lat' => 12.97, 'lng' => 77.59, 'source' => 'device_gps'];
