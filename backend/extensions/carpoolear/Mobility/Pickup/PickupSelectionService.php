@@ -238,8 +238,8 @@ final class PickupSelectionService
             $this->pair($option['pedestrian_pickup_location'] ?? null);
             if ($option['pedestrian_pickup_location'] != $option['walking_path']['waypoints'][1]['location']) throw new PickupException('MALFORMED_OPTION');
             foreach (['walking_distance_meters', 'walking_duration_seconds', 'unmapped_access_gap_meters', 'handoff_gap_meters', 'total_access_meters'] as $key) $this->nonnegative($option[$key] ?? null);
-            if ($this->distance([$origin['lng'], $origin['lat']], $option['walking_path']['waypoints'][0]['location']) > 50
-                || $this->distance($option['vehicle_pickup_location'], $option['pedestrian_pickup_location']) > 50
+            if ($this->distance([$origin['lng'], $origin['lat']], $option['walking_path']['waypoints'][0]['location']) > 250
+                || $this->distance($option['vehicle_pickup_location'], $option['pedestrian_pickup_location']) > 250
                 || $option['walking_distance_meters'] !== $option['walking_path']['distance_meters']
                 || $option['walking_duration_seconds'] !== $option['walking_path']['duration_seconds']) throw new PickupException('MALFORMED_OPTION');
             $snaps = array_sum(array_map(static fn (array $waypoint): float => (float) ($waypoint['distance_meters'] ?? 0), $option['walking_path']['waypoints']));

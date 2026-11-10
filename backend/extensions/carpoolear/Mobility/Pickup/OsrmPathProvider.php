@@ -43,7 +43,7 @@ final class OsrmPathProvider implements PathProvider
         }
 
         $coordinates = implode(';', array_map(static fn (array $point): string => $point['lng'].','.$point['lat'], $points));
-        $radius = $mode === 'foot' ? 50 : 250;
+        $radius = $mode === 'foot' ? 250 : 250;
         $url = rtrim($base, '/').'/route/v1/'.$profile.'/'.$coordinates;
         try {
             $response = Http::connectTimeout(min(2, $timeoutSeconds))->timeout($timeoutSeconds)->withoutRedirecting()->acceptJson()->get($url, [
