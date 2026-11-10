@@ -44,7 +44,7 @@ The tracked Laravel extension is installed into an [exact pinned external Carpoo
 
 A Git clone alone is **not** enough: install Docker with Compose v2, Node.js 24, Python 3.9+, Git, and supply **your own, appropriately restricted Ola credentials**. You do **not** need the Bengaluru road crop or ARM emulation in the Ola mode.
 
-Follow the tested commands, permission requirements, validation, rollback instructions, and current limitations in **[RUN_LOCAL_CORE.md](RUN_LOCAL_CORE.md)**. For example, after creating a mode-600, ignored configuration file:
+Follow the tested commands, permission requirements, validation, rollback instructions, and current limitations in **[RUN_LOCAL_CORE.md](RUN_LOCAL_CORE.md)**. A separate, loopback-only [Ola VPS staging runbook](deploy/ola/README.md) also provides production-mode containers, independent private keys, health checks and a persistent MySQL volume; it is **not public-hosting approval**. For example, after creating a mode-600, ignored configuration file:
 
 ~~~sh
 python3 scripts/run-local-core.py --provider ola --check

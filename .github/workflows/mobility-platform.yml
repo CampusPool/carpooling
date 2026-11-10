@@ -64,6 +64,10 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p 'test_run_local_core.py'
       - name: Check the Ola-only Compose startup graph (no paid APIs)
         run: sh scripts/check-ola-compose.sh
+      - name: Check Ola VPS staging credential and database safety rules
+        run: python3 -m unittest discover -s deploy/ola/tests -p 'test_*.py'
+      - name: Check VPS staging Compose configurations without provider credentials
+        run: sh deploy/ola/check-compose.sh
       - name: Verify pinned backend reconstruction and patch stack
         run: sh research/experiments/carpoolear/verify-reconstruction.sh
 
