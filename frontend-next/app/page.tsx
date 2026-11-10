@@ -1112,7 +1112,7 @@ export default function Page() {
   ).slice(0, 5);
   // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
   const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
-  const activeView = localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
+  const activeView = (studentPreview || localAccount) && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
   const navItems: [string, string][] = studentPreview
     ? [["pool", "Campus rides"], ["driver-onboarding", "Driver onboarding"]]
     : me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
@@ -1200,7 +1200,7 @@ export default function Page() {
           {error && <p className="error banner" role="alert">{error}</p>}
           {notice && <p className="banner" role="status">{notice}</p>}
           {!studentPreview && me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
-          {!localAccount && view === "home" && (
+          {activeView === "home" && (
             <>
               <form className="search-card" onSubmit={search}>
                 <div className="field place-field" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) dismissPlaces("origin"); }} onKeyDown={(event) => { if (event.key === "Escape") dismissPlaces("origin"); }}>
