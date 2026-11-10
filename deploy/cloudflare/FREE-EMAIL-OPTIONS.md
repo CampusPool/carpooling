@@ -6,17 +6,18 @@ Student Pack domain benefits for other projects. Do not register a domain.
 
 | Option | Fit for this deployment | Actual boundary |
 | --- | --- | --- |
-| Nylas provider-owned domain | Candidate for a small pilot | Nylas verified `campuspool-preview.nylas.email` without DNS setup. A Sandbox-scoped key received HTTP 403 from the transactional domain endpoint. A dedicated mailbox can send through the grant endpoint. The free plan caps each mailbox at 20 outbound messages per day. |
+| Nylas provider-owned domain | Active on the tester preview | Nylas verified `campuspool-preview.nylas.email` and accepted an OTP sent from its dedicated mailbox. The free plan caps each mailbox at 20 outbound messages per day. |
 | Brevo | Currently blocked | This actual account demands phone verification before creating a sending credential; owner declined phone verification. No key created. |
 | Resend | Requires a different prerequisite | Arbitrary recipients need a verified sender domain. The default test sender is not a substitute for production student delivery. |
 | Mailjet | Possible individual-sender fallback | Supports email-address verification, but official documentation warns that freemail senders may land in spam or fail delivery. No account created or delivery tested. |
 | Gmail SMTP | Possible existing-mailbox fallback | Needs an owner-authorized mailbox plus supported OAuth or an app password; do not assume ordinary account passwords or browser cookies are deployable SMTP credentials. |
 | Cloudflare Email Routing | Does not solve this alone | Existing workers.dev hosting supplies no owned email DNS zone. Routing handles incoming mail; arbitrary-recipient sending requires Workers Paid. |
 
-The live test returned HTTP 503 after Nylas rejected the Sandbox credential.
-The backend was restored to `local_capture` using private Mailpit. The
-mailbox transport is implemented and passed its focused backend tests.
-Provisioning and live delivery through a mailbox-scoped key are pending.
+The initial Sandbox credential received HTTP 403 on the transactional domain
+endpoint. The dedicated mailbox replaced that approach. The Cloudflare preview
+returned HTTP 201 for the authorized PES OTP and Nylas recorded HTTP 200 and
+showed the message in Sent. Provider delivery status and PES inbox receipt are
+still pending.
 
 For the mailbox pilot, configure `MOBILITY_EMAIL_TRANSPORT=nylas_api`,
 `MOBILITY_NYLAS_GRANT_ID` and `MOBILITY_NYLAS_API_KEY` in the private backend

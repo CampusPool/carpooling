@@ -1,7 +1,7 @@
 # Deployment evidence — 11 November 2026 IST
 
-Status: tester-only HTTPS preview deployed. External student email delivery
-is not yet configured or confirmed. Nothing has been merged into main.
+The tester-only HTTPS preview is deployed. Nylas accepted the authorized
+PES OTP for sending. PES inbox receipt and sign-in are pending.
 
 ## Phase 1: inventory
 
@@ -56,16 +56,25 @@ registered domain. Routing: dedicated Worker → provider private HTTPS port
 
 ## Phases 4–5: real email boundary
 
-The running application still reports `delivery_scope=local_capture`.
-The Resend HTTPS transport code is available and tested with fake provider
-responses, but no Resend sender/key is configured. Brevo account onboarding
-was investigated with the owner; its phone-verification warning and separate
-SMTP email-verification flow must be resolved before a real delivery claim.
+InstaBox 3 sends through the Nylas HTTPS mailbox API from
+`otp@campuspool-preview.nylas.email`. Nylas manages and verified the sender
+domain. The server credential is bound to that mailbox with only
+`messages.send` and expires on December 11, 2026. Rotate it before expiry to
+keep the pilot sending.
 
-No real OTP was sent to the owner's PES address by this deployment run.
-Provider acceptance, provider delivery, inbox receipt, and real-inbox
-sign-in have not passed. The account owner's decision against phone
-verification must be respected.
+| Live email check | Actual result |
+| --- | --- |
+| Tester HTTPS homepage and OTP config after backend recreation | HTTP 200, `delivery_scope=external_api_configured_unverified` |
+| Anonymous OTP config | HTTP 401 |
+| Authorized PES OTP requested using the uppercase SRN | HTTP 201, 300-second expiry |
+| Nylas mailbox API and dashboard | HTTP 200, message listed in Sent |
+| Nylas delivery timeline | HTTP 403 with the send-only key |
+| PES inbox receipt and sign-in using the email | Pending tester confirmation |
+
+The dedicated mailbox transport passed 20 focused backend tests and 155
+assertions. The earlier Sandbox domain API request returned HTTP 403 and was
+rolled back before this mailbox deployment. See [free email
+options](FREE-EMAIL-OPTIONS.md) for the provider comparison.
 
 ## Phase 6: verification
 

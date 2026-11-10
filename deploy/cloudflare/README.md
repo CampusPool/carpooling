@@ -81,6 +81,16 @@ purchase. Nothing was purchased or upgraded.
 
 ## Outbound OTP email
 
+The tester preview uses the free Nylas mailbox
+`otp@campuspool-preview.nylas.email`. Configure `MOBILITY_EMAIL_TRANSPORT=nylas_api`,
+`MOBILITY_NYLAS_GRANT_ID`, and `MOBILITY_NYLAS_API_KEY` in the private backend
+environment with `MOBILITY_MAILPIT_MODE=false`. Bind the key to the mailbox with
+only `messages.send`. Recreate the backend after installing or rotating the key
+and verify the OTP config through the tester preview. The current pilot key
+expires December 11, 2026. See the [verification record](VERIFICATION-20261111.md)
+for the live send result and [free email options](FREE-EMAIL-OPTIONS.md) for
+provider limits.
+
 The Resend HTTPS transport was recovered from uncommitted Simular 3 work.
 It is explicitly selected with `MOBILITY_EMAIL_TRANSPORT=resend_api` and needs
 `MOBILITY_RESEND_API_KEY` plus `MOBILITY_RESEND_FROM`. Missing credentials,
