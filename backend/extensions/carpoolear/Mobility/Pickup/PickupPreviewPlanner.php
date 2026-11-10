@@ -80,7 +80,7 @@ class PickupPreviewPlanner
                 $snaps = array_sum(array_column($walk['waypoints'], 'distance_meters'));
                 $walkEnd = $walk['waypoints'][1]['location'];
                 $handoffGap = $this->distance(['lng' => $pickup[0], 'lat' => $pickup[1]], ['lng' => $walkEnd[0], 'lat' => $walkEnd[1]]);
-                if ($handoffGap > 50) {
+                if ($handoffGap > 250) {
                     continue;
                 }
                 // Unmapped endpoint gaps are displayed separately and counted conservatively
@@ -152,7 +152,7 @@ class PickupPreviewPlanner
                 $handoff = $this->distance(['lng' => $pickup[0], 'lat' => $pickup[1]], ['lng' => $walkEnd[0], 'lat' => $walkEnd[1]]);
                 $gaps = (int) ceil(array_sum(array_column($walk['waypoints'], 'distance_meters')));
                 $total = $walk['distance_meters'] + $gaps + (int) ceil($handoff);
-                if ($handoff > 50 || $total > $maxWalk) continue;
+                if ($handoff > 250 || $total > $maxWalk) continue;
                 $meeting[] = ['available' => true, 'choice' => 'ON_ROUTE_MEETING_POINT', 'route_position' => $candidate['position'],
                     'vehicle_pickup_location' => $pickup, 'pedestrian_pickup_location' => $walkEnd, 'handoff_gap_meters' => $handoff,
                     'walking_distance_meters' => $walk['distance_meters'], 'walking_duration_seconds' => $walk['duration_seconds'],
@@ -206,7 +206,7 @@ class PickupPreviewPlanner
             || ! is_array($legs) || ! array_is_list($legs) || count($legs) !== count($points) - 1) {
             throw new PickupException('PICKUP_ROUTE_INVALID', 503);
         }
-        $radius = $mode === 'foot' ? 50 : 250;
+        $radius = $mode === 'foot' ? 250 : 250;
         foreach ($waypoints as $index => $waypoint) {
             $pair = $waypoint['location'] ?? null;
             if (! is_array($pair) || ! array_is_list($pair) || count($pair) !== 2) {

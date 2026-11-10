@@ -32,13 +32,13 @@ final class MobilityPickupPathProviderTest extends TestCase
             && str_contains($request->url(), 'overview=full') && str_contains($request->url(), 'geometries=geojson') && str_contains($request->url(), 'radiuses=250%3B250'));
     }
 
-    public function test_foot_requires_foot_graph_and_uses_50_meter_snaps(): void
+    public function test_foot_requires_foot_graph_and_uses_250_meter_snaps(): void
     {
         config(['mobility_routing.foot_base_url' => 'http://walk.example.test', 'mobility_routing.foot_profile' => 'distance-walk',
             'mobility_routing.foot_expected_data_version' => $this->version('foot')]);
         Http::fake(fn ($request) => Http::response($this->body('foot')));
         (new OsrmPathProvider)->path($this->points(), 'foot');
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'radiuses=50%3B50') && str_contains($request->url(), '/route/v1/distance-walk/'));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'radiuses=250%3B250') && str_contains($request->url(), '/route/v1/distance-walk/'));
 
         config(['mobility_routing.foot_expected_data_version' => $this->version('car')]);
         $this->reject(fn () => (new OsrmPathProvider)->path($this->points(), 'foot'), 'ROUTING_MISCONFIGURED');
@@ -52,7 +52,7 @@ final class MobilityPickupPathProviderTest extends TestCase
             [fn (array $body): array => tap($body, function (&$value): void { $value['routes'][0]['geometry']['type'] = 'Polygon'; }), 'ROUTE_INVALID'],
             [fn (array $body): array => tap($body, function (&$value): void { $value['routes'][0]['distance'] = 'NaN'; }), 'ROUTE_INVALID'],
             [fn (array $body): array => tap($body, function (&$value): void { $value['routes'][0]['legs'] = []; }), 'ROUTE_INVALID'],
-            [fn (array $body): array => tap($body, function (&$value): void { $value['waypoints'][0]['distance'] = 51; }), 'ROUTE_SNAP_INVALID'],
+            [fn (array $body): array => tap($body, function (&$value): void { $value['waypoints'][0]['distance'] = 251; }), 'ROUTE_SNAP_INVALID'],
         ];
         foreach ($cases as [$mutate, $code]) {
             Http::swap(new \Illuminate\Http\Client\Factory);
