@@ -13,6 +13,8 @@ import { isCurrentUnauthorized } from "../lib/session-events";
 import { request } from "../lib/legacy-api";
 import { cash, durationMinutes, instant, list, meters, placeText, pickupChoiceLabel, pickupWindow, predictionText, tomorrowInKolkata, type R } from "../lib/legacy-ui-utils";
 
+const studentPreview = process.env.NEXT_PUBLIC_STUDENT_ONLY === "1";
+
 export default function Page() {
   const [token, setToken] = useState(""),
     [role, setRole] = useState("rider"),
@@ -251,7 +253,7 @@ export default function Page() {
     finally { setOperatorTicketBusy(false); }
   }
   useEffect(() => {
-    if (!token || me?.account_role) {
+    if (!token || me?.account_role || studentPreview) {
       setMapStatus("idle");
       setMapError("");
       return;
@@ -407,6 +409,11 @@ export default function Page() {
     profile.home?.lng,
   ]);
   async function sync(t: string, sessionRole = role) {
+    if (studentPreview) {
+      const identity = await request("commute/me", t);
+      setMe(identity);
+      return identity;
+    }
     const [meResult, bookingsResult, waitlistResult, walletResult, offersResult, notificationsResult] = await Promise.allSettled([
       request("commute/me", t),
       request("commute/bookings", t),
@@ -1085,7 +1092,7 @@ export default function Page() {
           const identity = await sync(accountToken, accountRole);
           setToken(accountToken);
           setSessionSyncNeeded(false);
-          if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+          if (studentPreview || identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
         } catch (e: any) {
           if (e?.status !== 401) {
             setSessionSyncNeeded(true);
@@ -1106,7 +1113,9 @@ export default function Page() {
   // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
   const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
   const activeView = localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
-  const navItems: [string, string][] = me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
+  const navItems: [string, string][] = studentPreview
+    ? [["pool", "Campus rides"], ["driver-onboarding", "Driver onboarding"]]
+    : me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
     ? [["operator", "Operations"]]
     : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
       ? [["pool", "Rides and bookings"], ...(localAccount && me?.account_role === "driver" ? [["driver-onboarding", "Driver onboarding"] as [string, string]] : [])]
@@ -1130,13 +1139,13 @@ export default function Page() {
     Number(displayedCampus.lng) !== Number(profile.campus?.lng) ||
     searchTime !== savedTime;
   return (
-    <main className="shell">
+    <main className={studentPreview ? "shell student-preview" : "shell"}>
       <header>
         <div className="brand">
           <span className="logo">C</span>CampusPool
         </div>
-        <span className="pill">{role.toUpperCase()} VIEW</span>
-        {role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>
+        {!studentPreview && <span className="pill">{role.toUpperCase()} VIEW</span>}
+        {!studentPreview && role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>
           {role === "rider" ? "Switch to hosting" : "Switch to riding"}
         </button>}
         {sessionSyncNeeded && <button className="signout" disabled={busy} onClick={async () => {
@@ -1185,12 +1194,12 @@ export default function Page() {
                 : activeView === "driver-onboarding"
                   ? "Apply to drive."
                 : activeView === "pool"
-                  ? (me?.account_role ? "Rides and bookings" : "Pool offers.")
+                  ? (studentPreview ? "Campus rides" : me?.account_role ? "Rides and bookings" : "Pool offers.")
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
           {notice && <p className="banner" role="status">{notice}</p>}
-          {me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
+          {!studentPreview && me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
           {!localAccount && view === "home" && (
             <>
               <form className="search-card" onSubmit={search}>
@@ -1389,7 +1398,7 @@ export default function Page() {
           )}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
-          {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
+          {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
             <>
               {routeGeometry.length > 1 && (

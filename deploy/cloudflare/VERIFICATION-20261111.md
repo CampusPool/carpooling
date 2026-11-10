@@ -1,7 +1,7 @@
 # Deployment evidence — 11 November 2026 IST
 
-The tester-only HTTPS preview is deployed. Nylas accepted the authorized
-PES OTP for sending. PES inbox receipt and sign-in are pending.
+The tester-only HTTPS preview is deployed. The tester received the Nylas
+OTP in the PES inbox and signed in through the live browser form.
 
 ## Phase 1: inventory
 
@@ -49,7 +49,7 @@ registered domain. Routing: dedicated Worker → provider private HTTPS port
 - Tester login then homepage: HTTP 200 with normal TLS validation.
 - Built-in browser tester form initially returned HTTP 403. Its referrer
   policy suppressed the origin required by the form POST. The deployed
-  fix sends the origin for same-site form navigation and keeps the exact
+  fix sends the origin for same-origin form navigation and keeps the exact
   origin check. Retesting the native form opened the CampusPool homepage.
 - Private InstaBox origin without credential: HTTP 401.
 - Private InstaBox origin with credential: HTTP 200.
@@ -74,7 +74,9 @@ keep the pilot sending.
 | Nylas mailbox API and dashboard | HTTP 200, message listed in Sent |
 | Follow-up OTP through the live browser form | Opened the verification screen with a five-minute timer; backend recorded Nylas acceptance |
 | Nylas delivery timeline | HTTP 403 with the send-only key |
-| PES inbox receipt and sign-in using the email | Pending tester confirmation |
+| PES inbox receipt and sign-in using the email | Tester confirmed receipt and successful sign-in; the same browser showed the authenticated page and Sign out |
+| Student landing after frontend redeploy | Existing session restored to Campus rides at a 641px browser width; student navigation remained visible |
+| Ride search for the signed-in student | Discovery permitted, but the live route catalog contains fewer than two pickup points and search remains disabled |
 
 The dedicated mailbox transport passed 20 focused backend tests and 155
 assertions. The earlier Sandbox domain API request returned HTTP 403 and was
