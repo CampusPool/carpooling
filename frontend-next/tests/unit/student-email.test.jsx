@@ -11,6 +11,12 @@ describe("PES student email guidance", () => {
   ])("rejects %s", (email) => {
     expect(normalizeStudentEmail(email)).toBeNull();
   });
+  it("maps uppercase PES SRN to the exact verified student mailbox", () => {
+    expect(normalizeStudentEmail("PES1UG24AM920")).toBe("pes1ug24am920@stu.pes.edu");
+    expect(normalizeStudentEmail("pes1ug24am920@stu.pes.edu")).toBe("pes1ug24am920@stu.pes.edu");
+    expect(normalizeStudentEmail("PES1UG24AM920@wrong.edu")).toBeNull();
+    expect(normalizeStudentEmail("PES1UG24AM920.attacker")).toBeNull();
+  });
   it("formats five-minute and one-minute clocks", () => {
     expect(formatOtpCountdown(300)).toBe("5:00");
     expect(formatOtpCountdown(60)).toBe("1:00");

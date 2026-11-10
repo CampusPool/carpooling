@@ -26,7 +26,7 @@ it("public student mode exposes only verified-student OTP and hides synthetic/de
   expect(screen.queryByRole("heading", { name: "Local demo account" })).not.toBeInTheDocument();
   expect(screen.queryByText("Administrator sign-in")).not.toBeInTheDocument();
   fireEvent.click(studentHeading);
-  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "student@stu.pes.edu" } });
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
   fireEvent.click(screen.getByRole("button", { name: "Send code" }));
   expect(await screen.findByLabelText("Verification code")).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("5:00");

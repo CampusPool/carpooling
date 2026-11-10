@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 final class CollegeEmailAuthController
 {
     public function __construct(private CollegeEmailAuth $auth) {}
-    public function config(): JsonResponse { return $this->json(['domains' => $this->auth->domains(), 'campuses' => $this->auth->campuses(), 'delivery_available' => $this->auth->deliveryAvailable(), 'demo_available' => \STS\Mobility\Commute\CommuteService::demoEnabled() && ! StudentIdentityBoundary::publicMode(), 'student_only' => StudentIdentityBoundary::publicMode()]); }
+    public function config(): JsonResponse { return $this->json(['domains' => $this->auth->domains(), 'campuses' => $this->auth->campuses(), 'delivery_available' => $this->auth->deliveryAvailable(), 'delivery_scope' => $this->auth->deliveryScope(), 'demo_available' => \STS\Mobility\Commute\CommuteService::demoEnabled() && ! StudentIdentityBoundary::publicMode(), 'student_only' => StudentIdentityBoundary::publicMode()]); }
     public function requestCode(Request $request): JsonResponse
     {
         $email = $this->auth->normalizeEmail($request->input('email'));

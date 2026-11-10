@@ -19,6 +19,11 @@ final class CollegeEmailAuth
         if (! is_string($email)) return null;
         // Do not accept Unicode/confusable or whitespace-containing identifiers.
         $email = strtolower(trim($email));
+        // PES UG SRN is an exact-domain email shorthand, never an auth bypass.
+        // Resolve it to the same canonical mailbox before starting any challenge.
+        if (preg_match('/^pes[0-9]ug[0-9]{2}[a-z]{2,4}[0-9]{3,4}$/D', $email)) {
+            $email .= '@stu.pes.edu';
+        }
         if (! preg_match('/^[\x21-\x7e]+$/D', $email) || ! filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
         if (strlen($email) > 320 || str_contains($email, '+')) return null;
         $parts = explode('@', $email, 2);
@@ -35,6 +40,15 @@ final class CollegeEmailAuth
                 || (app()->environment(['local', 'testing']) && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)
                     && in_array((string) ($smtp['host'] ?? ''), ['mailpit', '127.0.0.1', 'localhost'], true))
             );
+    }
+
+    /** A local mail catcher is not evidence of real inbox delivery. */
+    public function deliveryScope(): string
+    {
+        if (! $this->deliveryAvailable()) return 'unavailable';
+        if (app()->environment(['local', 'testing'])
+            && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)) return 'local_capture';
+        return 'configured_smtp_unverified';
     }
 
     public function request(mixed $email, ?string $ip): array

@@ -45,6 +45,9 @@ final class CollegeEmailOtpSecurityTest extends TestCase
     {
         $auth = app(CollegeEmailAuth::class);
         $this->assertSame('student@stu.pes.edu', $auth->normalizeEmail(' Student@STU.PES.EDU '));
+        $this->assertSame('pes1ug24am920@stu.pes.edu', $auth->normalizeEmail('PES1UG24AM920'));
+        $this->assertSame('pes1ug24am920@stu.pes.edu', $auth->normalizeEmail('PES1UG24AM920@STU.PES.EDU'));
+        $this->assertNull($auth->normalizeEmail('PES1UG24AM920@attacker.edu'));
         foreach (['student@gmail.com', 'student@evil-stu.pes.edu', 'student@stu.pes.edu.evil.com',
             'student+alias@stu.pes.edu', 'student＠stu.pes.edu', "student\n@stu.pes.edu"] as $invalid) {
             $this->assertNull($auth->normalizeEmail($invalid));

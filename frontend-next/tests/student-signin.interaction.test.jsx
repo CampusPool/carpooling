@@ -15,7 +15,7 @@ it("requests a code and submits student registration before starting a session",
   const onSignedIn = vi.fn(async () => {});
   render(<StudentSignIn request={request} onSignedIn={onSignedIn} busy={false} />);
   fireEvent.click(screen.getByText("Student sign-in or registration"));
-  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "student@stu.pes.edu" } });
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
   fireEvent.click(screen.getByText("Send code"));
   await screen.findByLabelText("Verification code");
   fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "123456" } });
@@ -38,7 +38,7 @@ it("does not create a session when verification fails", async () => {
   const onSignedIn = vi.fn();
   render(<StudentSignIn request={request} onSignedIn={onSignedIn} busy={false} />);
   fireEvent.click(screen.getByText("Student sign-in or registration"));
-  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "student@stu.pes.edu" } });
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
   fireEvent.click(screen.getByText("Send code"));
   await screen.findByLabelText("Verification code");
   fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "000000" } });
@@ -51,7 +51,7 @@ it("rejects non-PES email on the client without sending an OTP", async () => {
   const request = vi.fn(async path => path === "college-auth/config" ? { campuses: [] } : {});
   render(<StudentSignIn request={request} onSignedIn={vi.fn()} busy={false} />);
   fireEvent.click(screen.getByText("Student sign-in or registration"));
-  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "attacker@gmail.com" } });
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "attacker@gmail.com" } });
   fireEvent.click(screen.getByText("Send code"));
   expect(await screen.findByRole("alert")).toHaveTextContent("@stu.pes.edu");
   expect(request).not.toHaveBeenCalledWith("college-auth/request", "", "POST", expect.anything());
@@ -65,7 +65,7 @@ it("shows the server-provided OTP expiry and enforces initial resend cooldown", 
   });
   render(<StudentSignIn request={request} onSignedIn={vi.fn()} busy={false} />);
   fireEvent.click(screen.getByText("Student sign-in or registration"));
-  fireEvent.change(screen.getByLabelText("College email"), { target: { value: "Student@STU.PES.EDU" } });
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "Student@STU.PES.EDU" } });
   fireEvent.click(screen.getByText("Send code"));
   await screen.findByLabelText("Verification code");
   expect(screen.getByRole("status")).toHaveTextContent("Code expires in 1:00");

@@ -16,6 +16,7 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [campuses, setCampuses] = useState<string[]>([]);
+  const [deliveryScope, setDeliveryScope] = useState<string>("unavailable");
   const [expiryAt, setExpiryAt] = useState(0);
   const [resendAt, setResendAt] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -25,6 +26,7 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     let active = true;
     request("college-auth/config", "").then(result => {
       if (active && Array.isArray(result.campuses)) setCampuses(result.campuses.filter((item: unknown): item is string => typeof item === "string"));
+      if (active) setDeliveryScope(typeof result.delivery_scope === "string" ? result.delivery_scope : "unavailable");
     }).catch(() => { if (active) setCampuses([]); });
     return () => { active = false; };
   }, [request]);
@@ -43,7 +45,7 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
   async function issueCode() {
     const normalized = normalizeStudentEmail(email);
     if (!normalized) {
-      setError("Use your exact @stu.pes.edu student email address.");
+      setError("Use your @stu.pes.edu email address or PES student SRN.");
       return;
     }
     setPending(true); setError("");
@@ -85,9 +87,11 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
 
   return <details className="admin-login">
     <summary>Student sign-in or registration</summary>
-    <p className="fine">Verify your @stu.pes.edu email using a six-digit code, valid for five minutes. Never enter your college portal password.</p>
+    <p className="fine">Enter your @stu.pes.edu address or your PES SRN. Verification codes last five minutes. Never enter your college portal password.</p>
+    {deliveryScope === "local_capture" && <p className="fine" role="note">Development testing: emails are captured in Mailpit and do not reach your PES inbox.</p>}
+    {deliveryScope === "unavailable" && <p className="fine" role="note">External email delivery is not confirmed for this environment.</p>}
     {!challenge ? <form onSubmit={sendCode} className="form-grid">
-      <label>College email<input type="email" autoComplete="email" placeholder="student@stu.pes.edu" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+      <label>College email or SRN<input type="text" autoComplete="username" placeholder="PES1UG24AM920 or student@stu.pes.edu" value={email} onChange={e => setEmail(e.target.value)} required /></label>
       <button type="submit" className="secondary wide" disabled={busy || pending}>Send code</button>
     </form> : <form onSubmit={verifyCode} className="form-grid">
       <p className="fine">Enter the six-digit code sent to {email}.</p>
