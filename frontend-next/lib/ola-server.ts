@@ -60,7 +60,7 @@ export async function olaProviderRequest(path: string, params: Record<string, st
   let response: Response;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4500);
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       response = await fetch(url, {
         method, headers: { accept: "application/json", "X-Request-Id": crypto.randomUUID() },
