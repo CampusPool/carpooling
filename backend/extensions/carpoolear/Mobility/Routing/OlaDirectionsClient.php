@@ -48,9 +48,11 @@ final class OlaDirectionsClient
         try {
             // POST and fixed, audited host. Disable redirects so credentials are not
             // forwarded to third-party domains; never return/log the request URL.
+            // Ola Directions expects a query-string POST with *no JSON body*;
+            // Laravel's ->post($url) sends [] and Ola returns HTTP 400.
             $response = Http::connectTimeout(min(2, $timeoutSeconds))->timeout($timeoutSeconds)
                 ->withoutRedirecting()->acceptJson()->withHeaders(['X-Request-Id' => (string) Str::uuid()])
-                ->post(self::HOST.'?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
+                ->send('POST', self::HOST.'?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
         } catch (\Throwable) {
             throw new RoutingException('ROUTE_PROVIDER_UNAVAILABLE');
         }

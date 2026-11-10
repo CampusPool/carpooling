@@ -32,6 +32,7 @@ final class MobilityOlaDirectionsClientTest extends TestCase
         $this->assertCount(3, $path['waypoints']);
         $this->assertCount(2, $path['legs']);
         Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && $request->body() === ''
             && str_starts_with($request->url(), 'https://api.olamaps.io/routing/v1/directions?')
             && str_contains($request->url(), 'mode=driving')
             && str_contains($request->url(), 'waypoints=12.971%2C77.595')
