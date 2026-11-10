@@ -144,12 +144,17 @@ final class OfferService
             }
             // Never consume a stale OSRM quote after switching to Ola (or vice
             // versa), even if the quote has not yet reached its five-minute TTL.
-            // Only explicit testing fixtures may omit a provider route identity.
+            // Test-only fake route providers (segment-fake, dispatch-test, etc.)
+            // intentionally carry no real provider identity. Accept them only
+            // in Laravel's testing environment when the quote was explicitly
+            // marked synthetic. Never exempt a quote that *claims* OSRM or Ola:
+            // such a quote must match the active provider even in test mode.
             $activeProvider = config('mobility_routing.provider');
             $quoteProvider = $snapshot['provider'] ?? null;
             $quoteVersion = $snapshot['data_version'] ?? null;
             $expectedVersion = RouteDataVersion::expected((string) $snapshot['vehicle_type']);
-            $isFixture = $synthetic && $quoteProvider === 'synthetic' && $quoteVersion === null && app()->environment('testing');
+            $isFixture = $synthetic && app()->environment('testing')
+                && is_string($quoteProvider) && ! in_array($quoteProvider, ['osrm', 'ola'], true);
             if (! $isFixture && (! in_array($activeProvider, ['ola', 'osrm'], true)
                 || $quoteProvider !== $activeProvider
                 || ! RouteDataVersion::validForProvider($quoteVersion, (string) $snapshot['vehicle_type'], $activeProvider)
