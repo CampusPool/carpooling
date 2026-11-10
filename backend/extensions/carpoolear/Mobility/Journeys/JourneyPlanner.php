@@ -193,7 +193,7 @@ final class JourneyPlanner
             || ! is_array($path['geometry'] ?? null) || ! array_is_list($path['geometry']) || count($path['geometry']) < 2 || count($path['geometry']) > 20000) throw new PickupException('JOURNEY_ROUTE_INVALID', 503);
         foreach ($points as $index => $point) {
             $this->point($point); $snap = $path['waypoints'][$index];
-            $actual = $this->fromPair($snap['location'] ?? null); $radius = $mode === 'foot' ? 50 : 250;
+            $actual = $this->fromPair($snap['location'] ?? null); $radius = $mode === 'foot' ? 250 : 250;
             if (! is_numeric($snap['distance_meters'] ?? null) || ! is_finite((float) $snap['distance_meters']) || $snap['distance_meters'] < 0 || $snap['distance_meters'] > $radius || self::distance($point, $actual) > $radius) throw new PickupException('JOURNEY_ROUTE_INVALID', 503);
         }
         foreach ($path['geometry'] as $pair) $this->fromPair($pair);
