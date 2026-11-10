@@ -124,6 +124,7 @@ final class CollegeEmailOtpSecurityTest extends TestCase
     public function test_public_mode_rejects_demo_endpoints_and_unverified_jwt(): void
     {
         putenv('MOBILITY_PUBLIC_STUDENT_ONLY=true');
+        $this->getJson('/api/mobility/college-auth/config')->assertOk()->assertJsonPath('student_only', true);
         $this->getJson('/api/mobility/local-auth/config')->assertNotFound();
         $this->postJson('/api/mobility/commute/demo-session', ['role' => 'rider'])->assertNotFound();
 
