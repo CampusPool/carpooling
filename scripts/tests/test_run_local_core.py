@@ -98,7 +98,7 @@ class OlaOnlyBootstrapTests(unittest.TestCase):
     def test_ola_does_not_need_bengaluru_dataset_or_road_compose(self):
         dataset, path, config = core.provider_input(self.args(), self.parser)
         self.assertIsNone(dataset)
-        self.assertEqual(path, self.keyfile)
+        self.assertEqual(path, self.keyfile.resolve())
         self.assertEqual(config["browser_key"], self.test_key)
         names = core.core_compose_files("ola")
         self.assertIn("compose.core-ola.yml", names)
