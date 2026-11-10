@@ -1,6 +1,6 @@
 # Ola Maps migration — review workstream (10 November 2026)
 
-This branch introduces **opt-in Ola Maps frontend and backend adapters** without deleting the already verified Google/OSRM demo. The intended permanent choice is Ola Maps for browser maps/places and backend routing, but **this branch is not accepted for production or classroom delivery until a real browser E2E against its own Laravel and MySQL passes**.
+This branch introduces **opt-in Ola Maps frontend and backend adapters** without deleting the already verified Google/OSRM demo. On 10 November 2026, the **synthetic LiveCarpool real-browser E2E passed** against its own cloned Laravel backend and separate MySQL database, using real Ola Places and Directions and no OSRM. See [the complete test evidence](engineering/OLA_REAL_BROWSER_E2E_20261110.md). The permanent provider migration is **not finished**: other UI paths and zero-dataset startup remain to be addressed.
 
 ## Provider settings and secrets
 
@@ -36,12 +36,12 @@ The Next.js API handlers are intentionally fixed-path, bounded and quota-conscio
 
 | Capability | Code implementation | Required independent verification |
 | --- | --- | --- |
-| Ola Web SDK v2 map style, map clicks and route line | Added as opt-in `OlaMapPanel` | Real Chrome tile load, zoom, pointer interactions and key referrer restrictions |
-| Places autocomplete + resolved place detail | Added as `OlaPlaceInput` and authenticated Next proxy | Real browser search and select, CORS/provider response, coordinates |
-| Directions preview, decoding/polyline | Added as server proxy and browser decoder | Actual Bengaluru route displayed correctly in browser |
-| Laravel car/bike/foot Directions adapters | Added `OlaDirectionsClient`, `OlaRouteProvider`, `OlaPathProvider` | PHP integration CI, real 2-point and 4-point provider routing, walking snaps |
+| Ola Web SDK v2 map style and route line | Live **browser demo passed** | Nonblocking provider style-layer warning; full pointer/zoom and referrer security review pending |
+| Places autocomplete + resolved place detail | **Real browser passed** on both accounts | Real Ola ID namespace parsing fixed; third-party site referrer policy still pending |
+| Directions preview, decoding/polyline | **Real browser passed**, both roles | Styles and visual rendering need cross-browser review |
+| Laravel car/bike/foot Directions adapters | **Real car route/booking passed**; PHP adapter checks | Full 4-point walking/bike case validation still pending |
 | Provider-specific quote / pickup identity | Added `ola-directions-v1:<mode>` plus provider-aware validation | Full pickup/quote/booking constraints, no cross-provider data reuse |
-| Booking, demo wallet, chat, lifecycle | No intentional changes | Must rerun complete two-account browser E2E using a *cloned PR backend + new DB* |
+| Booking, demo wallet, chat, lifecycle | **Real two-account Ola-only browser E2E passed** | Delayed credit release/receipt, production payments and physical GPS not tested |
 | Remove OSM road crop and OSRM images from startup | **Not done yet** | Only after Ola-only startup and E2E passes |
 | Legacy/CanonicalPool Google browser flow | **Not migrated yet** | Audit all account paths before removing Google integration |
 | Android / old backend browser prototypes | **Not migrated yet** | Decide whether required for course deliverables |
