@@ -104,7 +104,8 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
   const [searchSummary, setSearchSummary] = useState<{ distance_meters: number; duration_seconds: number }>();
   const [searched, setSearched] = useState(false);
   const [searchReasons, setSearchReasons] = useState<string[]>([]);
-  const [detourKm, setDetourKm] = useState("3");
+  const [pickupWindow, setPickupWindow] = useState<number>();
+  const [detourKm, setDetourKm] = useState("4");
   const [detourMinutes, setDetourMinutes] = useState("10");
   const attempts = useRef(new Map<string, string>());
   const edited = useRef(Boolean(rideDefaults));
@@ -209,6 +210,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       } else {
         const result = await api(`mobility/address-rides/rides?direction=outbound&date=${encodeURIComponent(date)}&vehicle_type=both&pickup_choice=both`, token);
         setRides(rows(result)); setSearchSummary(result.route_summary);
+        setPickupWindow(result.pickup_window_minutes);
         setSearchReasons(Array.isArray(result.excluded) ? result.excluded.map((item: Json) => item.reason) : []);
         setSearched(true);
       }
@@ -273,13 +275,13 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       <form className={styles.form} onSubmit={submit}>
         <header className={styles.wide}><h2>{mode === "offer" ? "Create a ride" : "Find a ride"}</h2>
           <p>{mode === "offer" ? "Choose where you’ll drive and when you’ll leave." : "Choose your pickup, destination and departure time."}</p></header>
-        <AddressPlacePicker label="Pickup" value={origin} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("origin", place)} />
+        <AddressPlacePicker label={mode === "offer" ? "Driver pickup" : "Pickup"} value={origin} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("origin", place)} />
         <AddressPlacePicker label="Destination" value={destination} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("destination", place)} />
         <div className={styles.wide}><button type="button" className={styles.secondary} disabled={busy || !origin || !destination} onClick={() => {
           const from = origin; changePlace("origin", destination); changePlace("destination", from);
         }}>⇄ Swap locations</button></div>
         <label>Travel date<input type="date" disabled={busy} min={istDateTime(new Date()).date} value={date} onChange={event => { edited.current = true; setDate(event.target.value); setSearched(false); setRides([]); }} required /></label>
-        <label>Pickup time · IST<input type="time" disabled={busy} value={time} onChange={event => { edited.current = true; setTime(event.target.value); setSearched(false); setRides([]); }} required /></label>
+        <label>{mode === "offer" ? "Driver departure · IST" : "Preferred pickup · IST"}<input type="time" disabled={busy} value={time} onChange={event => { edited.current = true; setTime(event.target.value); setSearched(false); setRides([]); }} required /></label>
         {mode === "offer" && <>
           {!!vehicles.length && <label className={styles.wide}>Vehicle<select value={vehicleId} onChange={event => { setVehicleId(event.target.value); setSeats(1); }} required disabled={busy || !vehicles.length}>
             <option value="">Choose your vehicle</option>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.registration}</option>)}
@@ -308,11 +310,11 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       {mapStatus === "ready" && pickup && dropoff && !searched && <div className={styles.map}><CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} /></div>}
       {mode === "find" && searched && !rides.length && <div className={styles.message} role="status">
         <strong>No matching rides for {when(`${date}T${time}:00+05:30`)} IST.</strong>
-        {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>An offer’s pickup would be outside the 15-minute window around your requested time.</p>}
+        {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>An offer’s pickup falls outside your search window{pickupWindow ? ` (±${pickupWindow} min)` : ""}.</p>}
         {searchReasons.includes("DETOUR_LIMIT_EXCEEDED") && <p>A pickup needed a longer detour than the driver allowed.</p>}
         {searchReasons.some(reason => !["PICKUP_TIME_MISMATCH", "DETOUR_LIMIT_EXCEEDED"].includes(reason)) && <p>Other offers could not reach your stops within their route or walking limits.</p>}
         {!searchReasons.length && <p>No eligible offer was found near that time for this trip.</p>}
-        <p>Adjust the pickup time above or try a nearby meeting point.</p>
+        <p>Check that the driver published for this date, or try a nearby meeting point.</p>
       </div>}
       {mode === "find" && searched && !!rides.length && <div className={styles.resultHeading}>
         <h2>{rides.length} matching {rides.length === 1 ? "ride" : "rides"}</h2>

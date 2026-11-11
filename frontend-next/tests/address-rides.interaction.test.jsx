@@ -63,7 +63,7 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   await waitFor(() => expect(screen.getByRole("button", { name: "Find rides" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
   await screen.findByText(/No matching rides for/);
-  expect(screen.getByText(/outside the 15-minute window/)).toBeVisible();
+  expect(screen.getByText(/outside your search window/)).toBeVisible();
   expect(screen.getByText(/longer detour than the driver allowed/)).toBeVisible();
   const profile = requests.find(([url]) => url === "/api/mobility/address-rides/profile");
   expect(JSON.parse(profile[1].body)).toMatchObject({ home: locations.Indiranagar, campus: locations.Whitefield, role: "rider" });

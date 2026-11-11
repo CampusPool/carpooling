@@ -83,7 +83,10 @@ final class AddressRideFlowTest extends TestCase
         $this->assertDatabaseHas('trips', ['id' => $trip, 'car_id' => $car->id, 'total_seats' => 1]);
         $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['car_id' => $secondCar->id]), ['Idempotency-Key' => 'publish-address'])->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
         $url = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
-        $card = $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonCount(1, 'data')->json('data.0');
+        $this->actingAsApiUser($rider)->putJson($base.'profile', array_replace($this->profile('rider'), ['outbound_time' => '07:44']))->assertOk();
+        $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAsApiUser($rider)->putJson($base.'profile', array_replace($this->profile('rider'), ['outbound_time' => '07:50']))->assertOk();
+        $card = $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonPath('pickup_window_minutes', 45)->assertJsonCount(1, 'data')->json('data.0');
         $this->assertArrayNotHasKey('route_map', $card);
         $this->assertArrayNotHasKey('driver_route_origin_label', $card);
         $this->assertArrayNotHasKey('demo_fixture', $card);

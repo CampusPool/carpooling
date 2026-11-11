@@ -105,9 +105,14 @@ final class AddressRideController
             $profile = $service->profile($request->user());
             $return = $request->input('direction') === 'return';
             $mode = $request->input('vehicle_type') === 'bike' ? 'bike' : 'car';
-            $path = app(PathProvider::class)->path([$profile[$return ? 'campus' : 'home'], $profile[$return ? 'home' : 'campus']], $mode);
             $data = $response->getData(true);
-            $data['route_summary'] = ['distance_meters' => $path['distance_meters'], 'duration_seconds' => $path['duration_seconds']];
+            try {
+                $path = app(PathProvider::class)->path([$profile[$return ? 'campus' : 'home'], $profile[$return ? 'home' : 'campus']], $mode);
+                $data['route_summary'] = ['distance_meters' => $path['distance_meters'], 'duration_seconds' => $path['duration_seconds']];
+            } catch (RoutingException | PickupException $error) {
+                // An optional map summary must never discard a completed search.
+                report($error);
+            }
             return $response->setData($data);
         }, 'rides');
     }
