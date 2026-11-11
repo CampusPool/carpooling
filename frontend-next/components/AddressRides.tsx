@@ -308,7 +308,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       {mapStatus === "ready" && pickup && dropoff && !searched && <div className={styles.map}><CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} /></div>}
       {mode === "find" && searched && !rides.length && <div className={styles.message} role="status">
         <strong>No matching rides for {when(`${date}T${time}:00+05:30`)} IST.</strong>
-        {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>A routed pickup was outside the 15-minute window around your requested time.</p>}
+        {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>An offer’s pickup would be outside the 15-minute window around your requested time.</p>}
         {searchReasons.includes("DETOUR_LIMIT_EXCEEDED") && <p>A pickup needed a longer detour than the driver allowed.</p>}
         {searchReasons.some(reason => !["PICKUP_TIME_MISMATCH", "DETOUR_LIMIT_EXCEEDED"].includes(reason)) && <p>Other offers could not reach your stops within their route or walking limits.</p>}
         {!searchReasons.length && <p>No eligible offer was found near that time for this trip.</p>}
