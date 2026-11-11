@@ -1,0 +1,30 @@
+.panel { width: min(100%, 900px); min-width: 0; margin-inline: auto; color: #14233d; }
+.heading { margin-bottom: 24px; }
+.heading h1 { margin: 12px 0 6px; font-size: clamp(1.65rem, 4vw, 2.25rem); }
+.heading p, .hint { color: #51617a; line-height: 1.55; }
+.back, .alert button { border: 0; padding: 8px 0; color: #1554c5; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.form { display: grid; gap: 24px; min-width: 0; padding: clamp(14px, 4vw, 32px); border: 1px solid #dce6f4; border-radius: 22px; background: #fff; box-shadow: 0 12px 32px #21456a0c; }
+.fields { display: grid; gap: 14px; min-width: 0; }
+.fields label { display: grid; gap: 6px; font-weight: 650; min-width: 0; }
+.fields input[type="search"], .time input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 10px 13px; border: 1px solid #c7d6eb; border-radius: 12px; background: #f8fbff; color: #14233d; font: inherit; }
+.direction { display: grid; gap: 8px; min-width: 0; }
+.fields .toggle, .pause { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: .93rem; }
+.toggle input, .pause input { width: 18px; height: 18px; accent-color: #1554c5; }
+.days { border: 0; min-width: 0; padding: 0; margin: 0; }
+.days legend { padding: 0; margin-bottom: 10px; font-weight: 750; }
+.days div { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.days button { min-height: 44px; min-width: 0; padding: 0; border: 1px solid #cad9ee; border-radius: 10px; color: #283b56; background: #f2f7ff; font: inherit; font-size: clamp(.68rem, 2.7vw, .9rem); cursor: pointer; }
+.days button[aria-pressed="true"] { border-color: #1554c5; background: #1554c5; color: #fff; }
+.pause { padding: 7px 12px; border: 1px solid #dce6f4; border-radius: 12px; background: #f2f7ff; }
+.hint, .alert, .success { margin: 0; }
+.alert, .success { border-radius: 12px; padding: 11px 13px; }
+.alert { background: #fff3ef; color: #832a24; }
+.success { background: #eaf8ef; color: #155737; }
+.primary { min-height: 48px; width: 100%; padding: 11px 18px; border: 0; border-radius: 12px; color: #fff; background: #1554c5; font: inherit; font-weight: 750; cursor: pointer; }
+.primary:disabled, .days button:disabled { opacity: .58; cursor: default; }
+.panel :focus-visible { outline: 3px solid #387ae5; outline-offset: 2px; }
+@media (min-width: 641px) {
+  .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .days div { max-width: 520px; gap: 8px; }
+  .primary { width: auto; justify-self: end; }
+}
