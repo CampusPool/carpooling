@@ -22,7 +22,7 @@ final class DriverReservationPolicy
 
     public static function scheduled(Trip $trip, array $terms): void
     {
-        $start = CarbonImmutable::parse($trip->trip_date, 'Asia/Kolkata')->utc();
+        $start = CarbonImmutable::parse($trip->getRawOriginal('trip_date'), 'Asia/Kolkata')->utc();
         self::check((int) $trip->user_id, (int) $trip->id, $start, self::duration($terms['snapshot']['duration_seconds'] ?? null));
     }
 

@@ -79,7 +79,11 @@ final class AddressRideFlowTest extends TestCase
         $date = now('Asia/Kolkata')->addDay()->toDateString();
         $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $car->id, 'total_seats' => 1];
         $this->actingAsApiUser($rider)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'not-owner'])->assertForbidden();
-        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'publish-address'])->assertOk()->json('data.trip_id');
+        $departureUtc = $date.'T03:00:00.000000Z';
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'publish-address'])
+            ->assertOk()->assertJsonPath('data.departure_at', $departureUtc)->json('data.trip_id');
+        $this->actingAsApiUser($driver)->getJson($base.'offers')
+            ->assertOk()->assertJsonPath('data.0.departure_at', $departureUtc);
         $this->assertDatabaseHas('trips', ['id' => $trip, 'car_id' => $car->id, 'total_seats' => 1]);
         $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['car_id' => $secondCar->id]), ['Idempotency-Key' => 'publish-address'])->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
         $url = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
