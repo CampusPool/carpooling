@@ -165,6 +165,8 @@ final class CollegeEmailAuthRegistrationTest extends TestCase
                 'srn' => 'UNAUTHORIZED-CHANGE', 'email' => 'different@stu.pes.edu',
             ], $auth)->assertOk()->assertJsonPath('name', 'Updated Student')->assertJsonPath('srn', $details['srn'])
                 ->assertJsonPath('email', 'remembered.student@stu.pes.edu');
+            $this->postJson($path.'session', [], $auth + $browserHeader)->assertOk()->assertJsonPath('browser_session', $browser);
+            $this->assertSame(1, DB::table('mobility_student_browser_sessions')->where('user_id', $login->json('user.id'))->count());
             $this->deleteJson($path.'session', [], $browserHeader)->assertOk();
             $this->getJson($path.'session', $browserHeader)->assertUnauthorized();
         } finally {

@@ -7,8 +7,15 @@ use STS\Models\User;
 
 final class StudentBrowserSession
 {
-    public function issue(User $user): string
+    public function issue(User $user, ?string $priorToken = null): string
     {
+        $priorHash = $this->hash($priorToken);
+        if ($priorHash !== null && DB::table('mobility_student_browser_sessions')->where('token_hash', $priorHash)
+            ->where('user_id', $user->id)->where('expires_at', '>', now())->exists()) {
+            DB::table('mobility_student_browser_sessions')->where('token_hash', $priorHash)->where('user_id', $user->id)
+                ->update(['expires_at' => now()->addDays(30)]);
+            return $priorToken;
+        }
         $token = bin2hex(random_bytes(32));
         DB::table('mobility_student_browser_sessions')->where('expires_at', '<=', now())->delete();
         DB::table('mobility_student_browser_sessions')->insert([

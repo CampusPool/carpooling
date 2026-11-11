@@ -15,7 +15,7 @@ return new class extends Migration {
             $table->string('token_hash', 64)->primary();
             $table->unsignedInteger('user_id');
             $table->timestamp('expires_at')->index();
-            $table->foreign('user_id')->references('id')->cascadeOnDelete();
+            $table->foreign('user_id')->references('id')->on('users')->cascadeOnDelete();
         });
     }
 

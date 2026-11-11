@@ -39,7 +39,7 @@ final class CollegeEmailAuthController
     }
     public function rememberBrowser(Request $request, StudentBrowserSession $sessions): JsonResponse
     {
-        return $this->json(['browser_session' => $sessions->issue($request->user('api'))]);
+        return $this->json(['browser_session' => $sessions->issue($request->user('api'), $request->header('X-CampusPool-Browser-Session'))]);
     }
     public function forgetBrowser(Request $request, StudentBrowserSession $sessions): JsonResponse
     {
