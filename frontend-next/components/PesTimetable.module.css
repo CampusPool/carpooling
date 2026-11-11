@@ -1,0 +1,38 @@
+.panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  max-width: 860px;
+}
+
+.description, .empty, .status { margin: 0; color: #40564e; }
+.form, .day { border: 1px solid #dce6df; border-radius: 18px; padding: 18px; }
+.form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.form label { display: grid; gap: 6px; font-weight: 650; }
+.form input, .form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #aab9ad;
+  border-radius: 8px;
+  color: inherit;
+  background: #fcfdfb;
+  font-size: 16px;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { min-height: 44px; }
+.actions button:disabled { opacity: .6; cursor: default; }
+.panel :focus-visible { outline: 3px solid #498471; outline-offset: 2px; }
+.form .actions { grid-column: 1 / -1; }
+.day h3 { margin: 0 0 12px; }
+.day ul { display: grid; gap: 10px; list-style: none; padding: 0; margin: 0; }
+.day li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; background: #f2f6f2; }
+.day li > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.day li span { display: block; color: #40564e; margin-top: 2px; }
+.error { margin: 0; color: #812f22; }
+
+@media (max-width: 500px) {
+  .form { grid-template-columns: minmax(0, 1fr); }
+}
