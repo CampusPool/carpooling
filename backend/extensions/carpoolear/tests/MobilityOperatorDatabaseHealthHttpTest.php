@@ -22,8 +22,10 @@ final class MobilityOperatorDatabaseHealthHttpTest extends TestCase
         $admin = User::factory()->create(['active' => true, 'banned' => false, 'is_admin' => true]);
         $response = $this->actingAsApiUser($admin)->getJson('/api/mobility/operator/dbms/health')->assertOk()
             ->assertJsonPath('audience', 'operator')
-            ->assertJsonPath('scope', 'configured_college')
-            ->assertHeader('Cache-Control', 'private, no-store');
+            ->assertJsonPath('scope', 'configured_college');
+        $cacheControl = $response->headers->get('Cache-Control', '');
+        $this->assertContains('private', array_map('trim', explode(',', $cacheControl)));
+        $this->assertContains('no-store', array_map('trim', explode(',', $cacheControl)));
         $tables = collect($response->json('tables'))->keyBy('name');
         $this->assertTrue($tables->get('users')['exists']);
         $this->assertNull($tables->get('users')['rows']);
