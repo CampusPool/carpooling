@@ -71,5 +71,9 @@ test('remembered student credential is HttpOnly, can restore without tester cook
   const logout = await worker.fetch(new Request(host+auth+'/session',{method:'DELETE',headers:{Cookie:student,Origin:host}}),env);
   assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
   assert.deepEqual(seen,[[auth+'/verify',null],['/',null],[auth+'/session',secret],[auth+'/session',secret]]);
+  globalThis.fetch = async () => { throw new Error('Synthetic outage'); };
+  const failedLogout = await worker.fetch(new Request(host+auth+'/session',{method:'DELETE',headers:{Cookie:student,Origin:host}}),env);
+  assert.equal(failedLogout.status,502);
+  assert.match(failedLogout.headers.get('set-cookie'), /Max-Age=0/);
  } finally {globalThis.fetch=original;}
 });
