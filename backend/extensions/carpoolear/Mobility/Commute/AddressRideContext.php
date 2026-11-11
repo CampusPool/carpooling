@@ -92,6 +92,13 @@ final class AddressRideContext
         return $vehicles;
     }
 
+    public static function walletEnabled(): bool
+    {
+        return app()->environment('testing')
+            && filter_var(getenv('MOBILITY_PUBLIC_STUDENT_ONLY'), FILTER_VALIDATE_BOOLEAN)
+            && filter_var(getenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED'), FILTER_VALIDATE_BOOLEAN);
+    }
+
     public static function publication(int $tripId): bool
     {
         return DB::table('mobility_commute_demo_trips')->where('trip_id', $tripId)

@@ -51,6 +51,47 @@ final class AddressRideController
         });
     }
 
+    public function wallet(Request $request): JsonResponse
+    {
+        return $this->run($request, function () use ($request): JsonResponse {
+            $enabled = AddressRideContext::walletEnabled();
+            return response()->json($enabled
+                ? ['enabled' => true, 'wallet' => app(CommuteService::class)->wallet($request->user())]
+                : ['enabled' => false]);
+        });
+    }
+
+    public function walletAction(Request $request, string $action): JsonResponse
+    {
+        return $this->run($request, function () use ($request, $action): JsonResponse {
+            $this->requireWallet();
+            $controller = app(CommuteController::class);
+            $service = app(CommuteService::class);
+            return $action === 'topup' ? $controller->topup($request, $service) : $controller->release($request, $service);
+        });
+    }
+
+    public function bookingPayment(Request $request, int $booking, string $action): JsonResponse
+    {
+        return $this->run($request, function () use ($request, $booking, $action): JsonResponse {
+            $this->requireWallet();
+            $this->publication((int) Passenger::findOrFail($booking)->trip_id);
+            $controller = app(CommuteController::class);
+            $service = app(CommuteService::class);
+
+            return match ($action) {
+                'pay' => $controller->pay($request, $booking, $service),
+                'arrive' => $controller->arrive($request, $booking, $service),
+                'confirm-payment-received' => $controller->confirmPaymentReceived($request, $booking, $service),
+            };
+        }, 'booking');
+    }
+
+    private function requireWallet(): void
+    {
+        if (!AddressRideContext::walletEnabled()) throw new SegmentException('STUDENT_DEMO_WALLET_DISABLED', 404);
+    }
+
     public function profile(Request $request): JsonResponse
     {
         return $this->run($request, fn () => app(CommuteController::class)->profile($request, app(CommuteService::class)));
@@ -146,7 +187,10 @@ final class AddressRideController
                 $request->attributes->set('commute.canonical_transition', true);
                 $response = app(MobilityController::class)->transition($request, $locked);
                 if ($response->isSuccessful()) {
-                    foreach ($affected as $booking) app(CommuteNotificationService::class)->bookingAction($booking, $locked, 'booking_cancelled', $request->user());
+                    foreach ($affected as $booking) {
+                        app(CommuteService::class)->refundCancelledStudentBooking($booking);
+                        app(CommuteNotificationService::class)->bookingAction($booking, $locked, 'booking_cancelled', $request->user());
+                    }
                 }
                 return $response;
             });

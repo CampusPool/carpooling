@@ -13,6 +13,10 @@ Route::prefix('api/mobility/address-rides')->middleware(['api', 'logged'])->grou
     Route::get('offers', [AddressRideController::class, 'offers']);
     Route::post('offers', [AddressRideController::class, 'publish']);
     Route::post('rides/{trip}/request', [AddressRideController::class, 'request'])->whereNumber('trip');
+    Route::get('wallet', [AddressRideController::class, 'wallet']);
+    Route::post('wallet/{action}', [AddressRideController::class, 'walletAction'])->whereIn('action', ['topup', 'release']);
+    Route::post('bookings/{booking}/{action}', [AddressRideController::class, 'bookingPayment'])
+        ->whereNumber('booking')->whereIn('action', ['pay', 'arrive', 'confirm-payment-received']);
     Route::get('bookings', [AddressRideController::class, 'bookings']);
     Route::post('bookings/{booking}/{action}', [AddressRideController::class, 'action'])->whereNumber('booking')->whereIn('action', ['accept', 'reject', 'cancel']);
     Route::post('notifications/{notification}/read', [AddressRideController::class, 'readNotification'])->whereNumber('notification');

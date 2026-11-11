@@ -55,6 +55,8 @@ async function api(path: string, token: string, method = "GET", data?: Json, key
       COMMUTE_TRIP_CLOSED: "This ride has already departed or closed.",
       SHARED_RIDE_FIXED_STOPS_REQUIRED: "Shared rides use the driver’s published pickup and drop-off. Search with those locations.",
       VEHICLE_SEAT_LIMIT: "Choose a passenger count within your vehicle’s approved capacity.",
+      INSUFFICIENT_DEMO_CREDITS: "Add demo credits under Account, then return to Bookings to pay.",
+      STUDENT_DEMO_WALLET_DISABLED: "Demo payments are unavailable in this environment.",
       NOT_SEAT_AVAILABLE: "That seat has already been taken. Search for another ride.",
     };
     throw new Error(messages[code] || body.message || body.error?.message || (typeof code === "string" ? code.replaceAll("_", " ") : "This action could not be completed. Please try again."));
@@ -336,7 +338,14 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
           <h3>{owner ? booking.rider_name : booking.driver_name}</h3>
           <p>{booking.pickup_label} → {booking.dropoff_label}</p>
           <p className={styles.meta}>{when(booking.departure_at)} · {status}</p>
+          {booking.wallet_state && accepted && <p className={styles.meta}>Demo fare {money(booking.fare_minor)} · {booking.wallet_state === "unpaid" ? "Unpaid" : booking.wallet_state === "held" ? "Credits held" : booking.wallet_state === "released" ? "Credits released" : "Credits refunded"}</p>}
+          {booking.wallet_state === "refunded" && !accepted && <p className={styles.meta}>Demo credits refunded</p>}
+          {booking.release_at && booking.wallet_state === "held" && <p className={styles.meta}>Driver payout eligible after {when(booking.release_at)}</p>}
+          {booking.receipt?.receipt_number && <p className={styles.meta}>Demo receipt {booking.receipt.receipt_number}</p>}
           <div className={styles.actions}>
+            {!owner && accepted && active && planned && booking.wallet_state === "unpaid" && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/pay`, {}, "Demo credits held for this ride.")}>Pay with demo credits</button>}
+            {!owner && accepted && booking.state === "completed" && booking.wallet_state === "held" && !booking.rider_arrived_at && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/arrive`, {}, "Arrival confirmed. Demo credits can be released after three hours.")}>Confirm arrival</button>}
+            {owner && booking.wallet_state === "released" && !booking.receipt && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/confirm-payment-received`, {}, "Demo receipt issued.")}>Issue demo receipt</button>}
             {owner && Number(booking.request_state) === 0 && planned && <>
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/accept`, {}, "Rider accepted.")}>Accept rider</button>
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/reject`, {}, "Request declined.")}>Decline</button>

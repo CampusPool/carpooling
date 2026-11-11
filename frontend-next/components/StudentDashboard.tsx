@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { AddressPlace } from "./AddressPlacePicker";
 import RideConversation from "./RideConversation";
 import { emitUnauthorized } from "../lib/session-events";
@@ -153,12 +153,13 @@ export function DashboardChats({ token, onFind }: { token: string; onFind: () =>
   </section>;
 }
 
-export function DashboardAccount({ name, email, initials, verified, onNavigate, openRide, signOut }: {
-  name: string; email: string; initials: string; verified: boolean; onNavigate: (view: string) => void; openRide: (section: RideSection) => void; signOut: () => void;
+export function DashboardAccount({ token, name, email, initials, verified, onNavigate, openRide, signOut }: {
+  token: string; name: string; email: string; initials: string; verified: boolean; onNavigate: (view: string) => void; openRide: (section: RideSection) => void; signOut: () => void;
 }) {
   return <div className={styles.stack}>
     <section className={styles.profileCard}><span className={styles.avatar}>{initials}</span><div><h2>{name}</h2><p>{email}</p>{verified && <span className={styles.verified}><DashboardIcon name="check" /> Verified PES email</span>}</div></section>
     <section className={styles.panel}><div className={styles.actions}><button className={styles.primary} onClick={() => openRide("find")}>Ride as passenger</button><button className={styles.secondary} onClick={() => openRide("offer")}>Offer as driver</button></div></section>
+    <DashboardWallet token={token} />
     <section className={styles.panel}>{[
       ["Profile & settings", () => onNavigate("settings")], ["My vehicle", () => onNavigate("vehicle")],
       ["My rides", () => openRide("bookings")], ["Planned rides", () => onNavigate("plan")], ["Notifications", () => openRide("updates")],
@@ -166,6 +167,70 @@ export function DashboardAccount({ name, email, initials, verified, onNavigate, 
       <button className={styles.accountRow + " " + styles.danger} onClick={signOut}>Sign out <DashboardIcon name="arrow" /></button>
     </section>
   </div>;
+}
+
+type WalletEntry = { id: number; kind: string; amount_minor: number };
+type DemoWallet = { available_minor: number; held_minor: number; pending_release_minor: number; entries: WalletEntry[] };
+const readWallet = (result: { enabled: boolean; wallet?: DemoWallet }) => result;
+const credits = (minor: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(minor / 100);
+
+function DashboardWallet({ token }: { token: string }) {
+  const { data, error, reload } = useLoad(token, "wallet", readWallet);
+  const [updated, setUpdated] = useState<DemoWallet>();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const actionKey = useRef<{ operation: string; key: string } | undefined>(undefined);
+  const wallet = updated ?? data?.wallet;
+
+  async function mutate(operation: "topup" | "release") {
+    if (busy) return;
+    if (actionKey.current?.operation !== operation) actionKey.current = { operation, key: crypto.randomUUID() };
+    setBusy(true);
+    setProblem("");
+    try {
+      const response = await fetch(`/api/mobility/address-rides/wallet/${operation}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": actionKey.current.key,
+        },
+        body: JSON.stringify(operation === "topup" ? { amount_minor: 10000 } : {}),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) emitUnauthorized(token);
+        throw Error(result.error?.code === "DEMO_WALLET_LIMIT" ? "Your demo wallet has reached its balance limit." : "The wallet update failed. Try again.");
+      }
+      setUpdated(result);
+      actionKey.current = undefined;
+    } catch (failure) {
+      setProblem(failure instanceof Error ? failure.message : "The wallet update failed. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (error && !wallet) return <section className={styles.panel}><h2>Demo wallet</h2><p role="alert">{error}</p><button className={styles.secondary} onClick={reload}>Retry wallet</button></section>;
+  if (!data?.enabled || !wallet) return null;
+
+  return <section className={styles.panel}>
+    <h2>Demo wallet</h2>
+    <p className={styles.muted}>Simulated ride payments use credits with no cash value.</p>
+    <p><strong>{credits(wallet.available_minor)}</strong> available · {credits(wallet.held_minor)} held</p>
+    <p className={styles.muted}>{credits(wallet.pending_release_minor)} in pending driver payouts</p>
+    {problem && <p role="alert" className={styles.danger}>{problem}</p>}
+    <div className={styles.actions}>
+      <button className={styles.primary} disabled={busy} onClick={() => void mutate("topup")}>Add ₹100 demo credits</button>
+      <button className={styles.secondary} disabled={busy || wallet.pending_release_minor === 0} onClick={() => void mutate("release")}>Release eligible payouts</button>
+    </div>
+    {wallet.entries.length > 0 && <details><summary>Transaction history</summary>
+      {wallet.entries.map(entry => <div key={entry.id} className={styles.activity}>
+        <strong>{credits(entry.amount_minor)}</strong><span>{entry.kind.replaceAll("_", " ")}</span>
+      </div>)}
+    </details>}
+  </section>;
 }
 
 const readVehicles = (result: { data: Vehicle[]; demo_vehicle_enabled: boolean }) => result;

@@ -1225,7 +1225,7 @@ export default function Page() {
       {screen === "timetable" && <PesTimetable key={token} token={token} />}
       {screen === "plan" && <PlannedRides token={token} onBack={() => navigate("home")} />}
       {screen === "vehicle" && <DashboardVehicles key={token} token={token} onOffer={() => openRide("offer")} />}
-      {screen === "account" && <DashboardAccount name={name} email={email} initials={initials} verified={Boolean(student)}
+      {screen === "account" && <DashboardAccount key={token} token={token} name={name} email={email} initials={initials} verified={Boolean(student)}
         onNavigate={navigate} openRide={openRide} signOut={() => void signOut()} />}
       {["complete-profile", "settings"].includes(screen) && <StudentProfile token={token} onSaved={updated => {
         setMe(current => ({ ...current, user: { ...current?.user, name: updated.name }, student_profile: updated }));
