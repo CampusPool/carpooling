@@ -77,6 +77,7 @@ Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
     Route::get('mobility/operator/cash-disputes', [\STS\Mobility\OperatorCashQueueController::class, 'index']);
     Route::get('mobility/operator/dashboard', [OperatorDashboardController::class, 'show']);
     Route::get('mobility/operator/analytics', [\STS\Mobility\OperatorAnalyticsController::class, 'show']);
+    Route::get('mobility/operator/dbms/health', [\STS\Mobility\OperatorDatabaseHealthController::class, 'show']);
     Route::get('mobility/operator/trips/{trip}', [MobilityController::class, 'operatorShow'])
         ->whereNumber('trip');
 });
