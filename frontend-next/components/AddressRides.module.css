@@ -1,0 +1,27 @@
+.panel { display: grid; gap: 20px; max-width: 100%; min-width: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs button { padding: 11px 18px; border: 1px solid #d8e2dc; border-radius: 30px; font-weight: 650; color: #355b4d; }
+.tabs button[aria-selected=true] { background: #165b48; color: #fff; border-color: #165b48; }
+.form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; border: 1px solid #e0e7e0; border-radius: 18px; padding: clamp(18px, 3vw, 28px); }
+.form label { display: grid; gap: 8px; font-weight: 650; color: #29463b; }
+.form input, .form select { width: 100%; min-width: 0; border: 1px solid #b9c9bf; border-radius: 11px; padding: 13px; min-height: 48px; color: #183b2c; background: #fff; font-size: 16px; }
+.form :focus-visible, .tabs :focus-visible { outline: 3px solid #6ca88f; outline-offset: 3px; }
+.wide { grid-column: 1 / -1; }
+.place { position: relative; min-width: 0; }
+.suggestions { position: absolute; z-index: 30; left: 0; right: 0; top: 100%; max-height: 280px; overflow: auto; border: 1px solid #c8d8cd; border-radius: 12px; box-shadow: 0 8px 24px #12342418; background: #fff; }
+.suggestions button { display: block; width: 100%; padding: 13px 15px; text-align: left; border-bottom: 1px solid #edf2ed; overflow-wrap: anywhere; line-height: 1.4; }
+.suggestions button[aria-selected=true], .suggestions button:hover, .suggestions button:focus-visible { background: #eef5ef; }
+.place small { display: block; margin-top: 8px; }
+.primary { min-height: 48px; padding: 12px 20px; background: #165b48; border-radius: 11px; color: #fff; font-weight: 700; }
+.primary:disabled { background: #e2eae4; color: #5d7166; cursor: default; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions button { border: 1px solid #bfd0c3; border-radius: 10px; padding: 10px 14px; min-height: 44px; }
+.error { color: #8b3026; }
+.message { margin: 0; padding: 13px 16px; background: #f1f6ef; border-radius: 12px; line-height: 1.5; }
+.results { display: grid; gap: 14px; }
+.card { border: 1px solid #dce5dd; border-radius: 16px; padding: 20px; min-width: 0; }
+.card h3 { margin: 0 0 10px; font-size: 18px; }
+.card p { line-height: 1.5; overflow-wrap: anywhere; }
+.meta { color: #526a5c; font-size: 14px; }
+.map { min-width: 0; }
+@media (max-width: 650px) { .form { grid-template-columns: minmax(0, 1fr); padding: 18px; } }
