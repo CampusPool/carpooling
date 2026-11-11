@@ -145,6 +145,7 @@ final class CommuteMatchingService {
     if(!in_array($e->machineCode,['NO_ROUTE','ROUTE_INVALID','ROUTE_DIRECTION_INCOMPATIBLE','NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS'],true))throw $e;
     $excluded[]=['trip_id'=>$m->trip_id,'reason'=>$e->machineCode];continue;
    }
+   if (($j['code'] ?? null) === 'PICKUP_CHOICE_MISMATCH') continue;
    if(!($j['available']??false)){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>$j['code']??'NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS'];continue;}
    $start=CarbonImmutable::parse($m->trip_date,'Asia/Kolkata');$pickup=$start->addSeconds($j['driver_path']['legs'][0]['duration_seconds']);
    if(abs($pickup->getTimestamp()-$desired->getTimestamp())>900||$pickup->lte(now('Asia/Kolkata')->addMinutes(15))){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>'PICKUP_TIME_MISMATCH'];continue;}
