@@ -732,7 +732,7 @@ export default function Page() {
   }
   async function signOut() {
     const sessionToken = token;
-    clearSession();
+    setBusy(true);
     setError("");
     try {
       const forgetBrowser = studentPreview ? fetch(studentSessionPath, {
@@ -745,6 +745,9 @@ export default function Page() {
       if ((!response.ok && response.status !== 401) || (forgotten && !forgotten.ok)) throw new Error("Session revocation failed");
     } catch (e: any) {
       if (e?.status !== 401) setError("Signed out on this device, but the server could not revoke the session.");
+    } finally {
+      clearSession();
+      setBusy(false);
     }
   }
   async function switchCommuteView() {
@@ -1226,6 +1229,7 @@ export default function Page() {
         }}>Retry account loading</button>}
         <button
           className="signout"
+          disabled={busy}
           onClick={signOut}
         >
           Sign out
