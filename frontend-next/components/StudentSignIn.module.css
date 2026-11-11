@@ -143,3 +143,15 @@
   .intro p { margin-top: 12px; font-size: 15px; }
   .intro, .card { border-radius: 20px; }
 }
+
+.profilePanel {
+  width: min(100%, 36rem);
+  padding: clamp(18px, 4vw, 30px);
+  border: 1px solid #dee3d8;
+  border-radius: 20px;
+}
+
+.profilePanel dl { margin: 0 0 20px; }
+.profilePanel dl > div { padding: 10px 0; border-bottom: 1px solid #eef0ea; }
+.profilePanel dt { color: #40564e; font-size: 13px; }
+.profilePanel dd { margin: 4px 0 0; font-weight: 700; overflow-wrap: anywhere; }

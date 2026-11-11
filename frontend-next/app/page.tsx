@@ -6,6 +6,8 @@ import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
+import StudentProfile from "../components/StudentProfile";
+import PesTimetable from "../components/PesTimetable";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
 import OperatorAnalytics from "../components/OperatorAnalytics";
@@ -14,6 +16,15 @@ import { request } from "../lib/legacy-api";
 import { cash, durationMinutes, instant, list, meters, placeText, pickupChoiceLabel, pickupWindow, predictionText, tomorrowInKolkata, type R } from "../lib/legacy-ui-utils";
 
 const studentPreview = process.env.NEXT_PUBLIC_STUDENT_ONLY === "1";
+const studentSessionPath = "/api/mobility/college-auth/session";
+
+async function restoreStudentBrowser(): Promise<string> {
+  const response = await fetch(studentSessionPath, { headers: { Accept: "application/json" }, cache: "no-store" });
+  if (response.status === 401) return "";
+  if (!response.ok) throw new Error("Could not check this browser’s sign-in.");
+  const result = await response.json();
+  return typeof result.token === "string" ? result.token : "";
+}
 
 export default function Page() {
   const [token, setToken] = useState(""),
@@ -21,6 +32,7 @@ export default function Page() {
     [adminEmail, setAdminEmail] = useState(""),
     [adminPassword, setAdminPassword] = useState(""),
     [sessionSyncNeeded, setSessionSyncNeeded] = useState(false),
+    [studentBooting, setStudentBooting] = useState(studentPreview),
     [me, setMe] = useState<R>(),
     [rides, setRides] = useState<R[]>([]),
     [scanTruncated, setScanTruncated] = useState(false),
@@ -119,6 +131,7 @@ export default function Page() {
   const chatGeneration = useRef(0);
   const trustedShareGeneration = useRef(0);
   function clearSession() {
+    activeTokenRef.current = "";
     sessionStorage.removeItem("mobility-local-session");
     setToken("");
     setSessionSyncNeeded(false);
@@ -198,6 +211,20 @@ export default function Page() {
       try { savedToken = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null")?.token || ""; } catch { /* invalid storage is handled at bootstrap */ }
       const currentToken = savedToken || activeTokenRef.current;
       if (!isCurrentUnauthorized(event, currentToken)) return;
+      if (studentPreview && activeTokenRef.current === currentToken) {
+        void restoreStudentBrowser().then(restored => {
+          if (activeTokenRef.current !== currentToken) return;
+          if (restored) {
+            activeTokenRef.current = restored;
+            sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: restored, role: "rider" }));
+            setToken(restored);
+          } else {
+            clearSession();
+            setError("Your session expired. Please sign in again.");
+          }
+        }).catch(() => setError("Could not renew your sign-in. Reload to try again."));
+        return;
+      }
       clearSession();
       setError("Your session expired. Please sign in again.");
     };
@@ -460,6 +487,40 @@ export default function Page() {
   }
   useEffect(() => {
     let active = true;
+    if (studentPreview) {
+      async function loadStudent() {
+        let saved = "";
+        try {
+          saved = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null")?.token || "";
+        } catch {
+          sessionStorage.removeItem("mobility-local-session");
+        }
+        try {
+          if (!saved) saved = await restoreStudentBrowser();
+          if (!active || !saved) return;
+          try {
+            await sync(saved, "rider");
+          } catch (error) {
+            if ((error as { status?: number }).status !== 401) throw error;
+            sessionStorage.removeItem("mobility-local-session");
+            saved = await restoreStudentBrowser();
+            if (!active || !saved) return;
+            await sync(saved, "rider");
+          }
+          if (!active) return;
+          sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: saved, role: "rider" }));
+          setError("");
+          setToken(saved);
+          setView("profile");
+        } catch {
+          if (active) setError("Could not check this browser’s sign-in. Reload to try again.");
+        } finally {
+          if (active) setStudentBooting(false);
+        }
+      }
+      void loadStudent();
+      return () => { active = false; };
+    }
     try {
       const saved = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null");
       if (saved?.token && ["rider", "driver"].includes(saved.role)) {
@@ -672,10 +733,14 @@ export default function Page() {
     clearSession();
     setError("");
     try {
-      const response = await fetch("/api/mobility/college-auth/logout", {
+      const forgetBrowser = studentPreview ? fetch(studentSessionPath, {
+        method: "DELETE", headers: { Accept: "application/json" }, cache: "no-store",
+      }) : Promise.resolve(null);
+      const logout = fetch("/api/mobility/college-auth/logout", {
         method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${sessionToken}` }, cache: "no-store",
       });
-      if (!response.ok && response.status !== 401) throw new Error("Session revocation failed");
+      const [response, forgotten] = await Promise.all([logout, forgetBrowser]);
+      if ((!response.ok && response.status !== 401) || (forgotten && !forgotten.ok)) throw new Error("Session revocation failed");
     } catch (e: any) {
       if (e?.status !== 401) setError("Signed out on this device, but the server could not revoke the session.");
     }
@@ -1075,6 +1140,7 @@ export default function Page() {
     if (b.state === "in_progress") return `Trip in progress${wallet ? ` · ${wallet}` : ""}`;
     return `${requestLabel(b)}${wallet ? ` · ${wallet}` : ""}`;
   };
+  if (studentBooting) return <main className="landing"><p role="status">Checking your CampusPool sign-in…</p></main>;
   if (!token) return (
     <LocalAccountLanding
       request={request}
@@ -1092,11 +1158,13 @@ export default function Page() {
           const identity = await sync(accountToken, accountRole);
           setToken(accountToken);
           setSessionSyncNeeded(false);
-          if (studentPreview || identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+          if (studentPreview) setView("profile");
+          else if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
         } catch (e: any) {
           if (e?.status !== 401) {
             setSessionSyncNeeded(true);
             setToken(accountToken);
+            if (studentPreview) setView("profile");
             setError("Signed in, but account details could not be loaded. Retry to continue.");
           }
         }
@@ -1112,9 +1180,9 @@ export default function Page() {
   ).slice(0, 5);
   // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
   const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
-  const activeView = (studentPreview || localAccount) && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
+  const activeView = studentPreview && view === "home" ? "profile" : localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
   const navItems: [string, string][] = studentPreview
-    ? [["pool", "Campus rides"], ["driver-onboarding", "Driver onboarding"]]
+    ? [["profile", "Profile"], ["pool", "Campus rides"], ["timetable", "My timetable"], ["settings", "Settings"], ["driver-onboarding", "Driver onboarding"]]
     : me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
     ? [["operator", "Operations"]]
     : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
@@ -1168,18 +1236,22 @@ export default function Page() {
             <button
               key={v}
               className={`nav ${activeView === v ? "active" : ""}`}
-              onClick={() => setView(v)}
+              aria-current={activeView === v ? "page" : undefined}
+              onClick={() => { setView(v); setNotice(""); }}
             >
               {l}
             </button>
           ))}
         </aside>
         <section className={`content${activeView === "operator" ? " operator-content" : ""}`}>
-          <p className="eyebrow">
+          {!studentPreview && <p className="eyebrow">
             {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
-          </p>
+          </p>}
           <h2>
-            {activeView === "home"
+            {activeView === "profile" ? "Your profile"
+              : activeView === "settings" ? "Settings"
+              : activeView === "timetable" ? "My timetable"
+              : activeView === "home"
               ? "Choose your route."
               : activeView === "rides"
                 ? "Available rides."
@@ -1396,6 +1468,10 @@ export default function Page() {
               </div>
             </>
           )}
+          {studentPreview && ["profile", "settings"].includes(activeView) && <StudentProfile token={token} settings={activeView === "settings"}
+            onSettings={() => { setNotice(""); setView("settings"); }}
+            onSaved={() => { setNotice("Profile saved."); setView("profile"); }} />}
+          {studentPreview && activeView === "timetable" && <PesTimetable key={token} token={token} />}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
           {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}

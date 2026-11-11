@@ -1,5 +1,14 @@
 // Tester-only HTTPS ingress. The origin remains an InstaBox private port.
 const COOKIE = '__Host-campuspool_tester';
+const STUDENT_COOKIE = '__Host-campuspool_student';
+const STUDENT_MAX_AGE = 30 * 86400;
+const STUDENT_SESSION_PATH = '/api/mobility/college-auth/session';
+const STUDENT_VERIFY_PATH = '/api/mobility/college-auth/verify';
+const STUDENT_HEADER = 'X-CampusPool-Browser-Session';
+
+function studentCookie(value, maxAge) {
+  return `${STUDENT_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+}
 const encoder = new TextEncoder();
 const hex = bytes => [...new Uint8Array(bytes)].map(x => x.toString(16).padStart(2, '0')).join('');
 async function key(secret) {
@@ -20,6 +29,12 @@ export async function validSession(cookie, secret, now=Date.now()) {
   const match = cookie.match(/(?:^|;\s*)__Host-campuspool_tester=(\d+)\.([0-9a-f]{64})(?:;|$)/);
   if (!match || Number(match[1]) <= now || Number(match[1]) > now+8*3600000) return false;
   return equal(match[2], await signature(match[1], secret));
+}
+async function studentSession(cookie, secret, now = Date.now()) {
+  const match = cookie.match(/(?:^|;\s*)__Host-campuspool_student=(\d+)\.([a-f0-9]{64})\.([a-f0-9]{64})(?:;|$)/);
+  if (!match || Number(match[1]) <= now || Number(match[1]) > now + STUDENT_MAX_AGE * 1000) return null;
+  const [, expiry, token, mac] = match;
+  return await equal(mac, await signature(`student:${expiry}:${token}`, secret)) ? token : null;
 }
 function accessPage(invalidKey = false) {
   return `<!doctype html>
@@ -143,7 +158,15 @@ export default {
       const expiry = String(Date.now()+8*3600000);
       return reply(null,303,{'Location':'/','Set-Cookie':`${COOKIE}=${expiry}.${await signature(expiry,env.SESSION_SECRET)}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800`});
     }
-    if (!await validSession(request.headers.get('Cookie')||'',env.SESSION_SECRET)) {
+    const cookies = request.headers.get('Cookie') || '';
+    const isSession = url.pathname === STUDENT_SESSION_PATH;
+    const student = await studentSession(cookies, env.SESSION_SECRET);
+    if (isSession) {
+      if (!['GET', 'DELETE'].includes(request.method)) return reply(null, 405);
+      if (request.method === 'DELETE' && request.headers.get('Origin') !== url.origin) return reply(null, 403);
+      if (!student) return reply(null, request.method === 'GET' ? 401 : 204);
+    }
+    if (!student && !await validSession(cookies, env.SESSION_SECRET)) {
       if (url.pathname.startsWith('/api/')) return reply('{"error":"tester_access_required"}',401,{'Content-Type':'application/json'});
       return reply(null,303,{'Location':'/_tester'});
     }
@@ -154,6 +177,8 @@ export default {
     // Never forward the tester credential to the application or trust client proxy headers.
     headers.set('Cookie', `__Host-instabox_port_auth=${env.ORIGIN_TOKEN}`);
     headers.delete('Host'); headers.delete('Forwarded'); headers.delete('X-Forwarded-For');
+    headers.delete(STUDENT_HEADER);
+    if (isSession && student) headers.set(STUDENT_HEADER, student);
     headers.set('X-Forwarded-Host',url.host); headers.set('X-Forwarded-Proto','https');
     let upstream;
     try { upstream = await fetch(origin, {method:request.method, headers, body:['GET','HEAD'].includes(request.method)?undefined:request.body, redirect:'manual'}); }
@@ -161,12 +186,30 @@ export default {
     const responseHeaders=new Headers(upstream.headers);
     responseHeaders.set('Cache-Control','no-store');
     responseHeaders.set('X-Content-Type-Options','nosniff');
-    responseHeaders.set('Referrer-Policy','no-referrer');
+    responseHeaders.set('Referrer-Policy','strict-origin-when-cross-origin');
     responseHeaders.set('Strict-Transport-Security','max-age=31536000');
     const location=responseHeaders.get('Location');
     if(location) {
       const target=new URL(location,origin);
       if(target.origin===origin.origin) { target.host=url.host; responseHeaders.set('Location',target.toString()); }
+    }
+    if (isSession && (request.method === 'DELETE' || upstream.status === 401)) {
+      responseHeaders.append('Set-Cookie', studentCookie('', 0));
+    }
+    if (url.pathname === STUDENT_VERIFY_PATH && request.method === 'POST' && upstream.ok) {
+      let result;
+      try { result = await upstream.json(); }
+      catch { return reply('Sign-in response unavailable', 502); }
+      if (result && /^[a-f0-9]{64}$/.test(result.browser_session)) {
+        const token = result.browser_session;
+        const expiry = String(Date.now() + STUDENT_MAX_AGE * 1000);
+        const mac = await signature(`student:${expiry}:${token}`, env.SESSION_SECRET);
+        responseHeaders.append('Set-Cookie', studentCookie(`${expiry}.${token}.${mac}`, STUDENT_MAX_AGE));
+      }
+      if (result && typeof result === 'object') delete result.browser_session;
+      responseHeaders.delete('Content-Length');
+      responseHeaders.delete('Content-Encoding');
+      return new Response(JSON.stringify(result), {status: upstream.status, headers: responseHeaders});
     }
     return new Response(upstream.body,{status:upstream.status,headers:responseHeaders});
   }

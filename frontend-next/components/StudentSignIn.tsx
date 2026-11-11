@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatOtpCountdown, normalizeStudentEmail } from "../lib/student-email";
 
 import styles from "./StudentSignIn.module.css";
+import { genderOptions } from "./StudentProfile";
 
 type Request = (path: string, token: string, method?: string, json?: Record<string, unknown>) => Promise<any>;
 
@@ -14,6 +15,8 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
   const [name, setName] = useState("");
   const [srn, setSrn] = useState("");
   const [campus, setCampus] = useState("");
+  const [gender, setGender] = useState("");
+  const [phone, setPhone] = useState("");
   const [newStudent, setNewStudent] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -88,7 +91,7 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     try {
       const result = await request("college-auth/verify", "", "POST", {
         challenge_id: challenge, code,
-        ...(newStudent ? { name: name.trim(), srn: srn.trim(), campus_code: campus } : {}),
+        ...(newStudent ? { name: name.trim(), srn: srn.trim(), campus_code: campuses.length === 1 ? campuses[0] : campus, gender_identity: gender, phone } : {}),
       });
       if (typeof result.token !== "string" || !result.token) throw new Error("Sign-in did not return a session.");
       await onSignedIn(result.token);
@@ -96,7 +99,7 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     } catch (e: any) {
       if (e?.code === "STUDENT_NAME_INVALID") {
         setNewStudent(true);
-        setError("Enter your name, registration number, and campus to finish setting up your account.");
+        setError("");
       } else {
         setError(e?.message || "Could not verify the code.");
       }
@@ -110,6 +113,8 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     setName("");
     setSrn("");
     setCampus("");
+    setGender("");
+    setPhone("");
     setError("");
     requestAnimationFrame(() => emailInput.current?.focus());
   }
@@ -134,9 +139,13 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
         <input ref={codeInput} className={styles.code} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required />
       </label>
       {newStudent && <>
-        <label>Name<input ref={nameInput} value={name} onChange={e => setName(e.target.value)} autoComplete="name" required /></label>
-        <label>SRN<input value={srn} onChange={e => setSrn(e.target.value)} required /></label>
-        <label>Campus<select value={campus} onChange={e => setCampus(e.target.value)} required><option value="">Select campus</option>{campuses.map(item => <option key={item} value={item}>{item === "CAMPUS-BLR" ? "Bengaluru" : item}</option>)}</select></label>
+        <label>Full name<input ref={nameInput} value={name} onChange={e => setName(e.target.value)} autoComplete="name" minLength={2} maxLength={120} required /></label>
+        <label>SRN<input value={srn} onChange={e => setSrn(e.target.value)} autoCapitalize="characters" spellCheck={false} maxLength={32} required /></label>
+        <label>Gender<select value={gender} onChange={e => setGender(e.target.value)} required>
+          <option value="">Select gender</option>{genderOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select></label>
+        <label>Phone number<input value={phone} onChange={e => setPhone(e.target.value)} type="tel" autoComplete="tel" placeholder="+91" maxLength={30} required /></label>
+        {campuses.length > 1 && <label>Campus<select value={campus} onChange={e => setCampus(e.target.value)} required><option value="">Select campus</option>{campuses.map(item => <option key={item} value={item}>{item === "CAMPUS-BLR" ? "Bengaluru" : item}</option>)}</select></label>}
         {campuses.length === 0 && <p className={styles.note}>Campus options are unavailable. Please try again later.</p>}
       </>}
       <button type="submit" className={styles.submit} disabled={busy || pending || secondsLeft <= 0}>{pending ? "Please wait…" : "Verify and sign in"}</button>

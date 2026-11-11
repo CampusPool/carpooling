@@ -187,6 +187,7 @@ final class CollegeEmailAuth
                 $name = is_string($registration['name'] ?? null) ? trim($registration['name']) : '';
                 $srnInput = is_string($registration['srn'] ?? null) ? trim($registration['srn']) : '';
                 $campus = is_string($registration['campus_code'] ?? null) ? strtoupper(trim($registration['campus_code'])) : '';
+                if ($campus === '' && count($this->campuses()) === 1) $campus = $this->campuses()[0];
                 $srn = strtoupper($srnInput);
                 if (mb_strlen($name) < 2 || mb_strlen($name) > 120 || preg_match('/[<>\x00-\x1F]/u', $name)) {
                     throw new CollegeEmailAuthException('STUDENT_NAME_INVALID', 422);
@@ -197,8 +198,9 @@ final class CollegeEmailAuth
                 if (! in_array($campus, $this->campuses(), true)) {
                     throw new CollegeEmailAuthException('STUDENT_CAMPUS_INVALID', 422);
                 }
+                $details = StudentProfile::details($registration, StudentIdentityBoundary::publicMode());
                 try {
-                    DB::table('mobility_student_profiles')->insert(['user_id' => $user->id, 'srn_normalized' => $srn, 'campus_code' => $campus, 'created_at' => now(), 'updated_at' => now()]);
+                    DB::table('mobility_student_profiles')->insert($details + ['user_id' => $user->id, 'srn_normalized' => $srn, 'campus_code' => $campus, 'created_at' => now(), 'updated_at' => now()]);
                     if ($user->name !== $name) {
                         $user->name = $name;
                         $user->save();
@@ -235,7 +237,8 @@ final class CollegeEmailAuth
                 DB::table('mobility_membership_audits')->insert(['membership_id' => $membership->id, 'user_id' => $user->id, 'actor_id' => $user->id, 'previous_status' => 'pending', 'new_status' => 'approved', 'version' => (int) $membership->version + 1, 'reason' => 'college_email_otp_verification', 'created_at' => now(), 'updated_at' => now()]);
             }
             DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->update(['consumed_at' => now(), 'updated_at' => now()]);
-            return ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
+            $browser = StudentIdentityBoundary::publicMode() ? ['browser_session' => app(StudentBrowserSession::class)->issue($user)] : [];
+            return $browser + ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
         });
         if (($result['error'] ?? null) === 'COLLEGE_OTP_INVALID') throw new CollegeEmailAuthException('COLLEGE_OTP_INVALID', 422);
         return $result;
