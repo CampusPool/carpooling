@@ -14,13 +14,12 @@ const fixtures = {
   '/api/mobility/operator/dbms/health': { audience: 'operator', tables: [{ name: 'mobility_memberships', exists: true, rows: 1, purpose: 'College reviews' }], objects: [{ name: 'mobility_operator_ride_facts', kind: 'VIEW', installed: true }] },
 };
 function signIn() {
-  fireEvent.change(screen.getByLabelText('Administrator email'), { target: { value: 'operator@example.invalid' } });
-  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'not-a-real-password' } });
+  fireEvent.change(screen.getByLabelText('Administrator password'), { target: { value: 'not-a-real-password' } });
   fireEvent.click(screen.getByRole('button', { name: /Enter control center/ }));
 }
 const fetcher = (handler) => vi.fn(async (path, opts = {}) => {
-  if (path === '/api/login') return json({ token: 'fake-token' });
-  if (path === '/api/mobility/commute/me') return json({ operator: true });
+  if (path === '/api/mobility/operator/login') return json({ token: 'fake-token' });
+  if (path === '/api/mobility/operator/logout') return json({ logged_out: true });
   if (handler) { const handled = await handler(path, opts); if (handled) return handled; }
   if (Object.prototype.hasOwnProperty.call(fixtures, path)) return json(fixtures[path]);
   throw new Error(`Unexpected request ${opts.method ?? 'GET'} ${path}`);
@@ -30,13 +29,13 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('CampusPool dedicated admin control center', () => {
   it('rejects non-operators before loading any operational data', async () => {
     const fetch = vi.fn(async (path) => {
-      if (path === '/api/login') return json({ token: 'rider-token' });
-      if (path === '/api/mobility/commute/me') return json({ operator: false });
+      if (path === '/api/mobility/operator/login') return json({ token: 'rider-token' });
+      if (path === '/api/mobility/operator/dashboard') return json({ error: { code: 'OPERATOR_FORBIDDEN' } }, 403);
       throw new Error(`Unauthorized request ${path}`);
     });
     vi.stubGlobal('fetch', fetch);
     render(<AdminConsole />); signIn();
-    expect(await screen.findByRole('alert')).toHaveTextContent('does not have administrator access');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Request failed');
     expect(screen.queryByRole('navigation', { name: 'Admin sections' })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(2);
   });

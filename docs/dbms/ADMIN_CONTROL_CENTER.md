@@ -4,7 +4,7 @@
 
 ## What is connected
 
-- Authenticates through the pre-existing `/api/login`, verifies the bearer token with `mobility/commute/me`, and requires a successful role-guarded `mobility/operator/dashboard` response. The frontend stores the token in memory only; no demo password, token or database connection string is embedded.
+- Authenticates with a password-only `POST /api/mobility/operator/login` against the server-side `MOBILITY_OPERATOR_PASSWORD_HASH` and configured privileged `MOBILITY_OPERATOR_USER_ID`; also requires a successful role-guarded `mobility/operator/dashboard` response. The frontend stores the token in memory only; no demo password, token or database connection string is embedded.
 - Operations overview: `/api/mobility/operator/dashboard`, `/api/mobility/operator/analytics?days=7|14|31`; the real MySQL view/procedure/function/trigger reports and optional MongoDB projection provide data.
 - Membership review: `operator/memberships` and its version-checked decision endpoint. A written review reason is compulsory.
 - Driver/vehicle review: `operator/driver-onboarding` and its version-checked review endpoint. The Laravel checklist and vehicle validation remain authoritative.
@@ -20,6 +20,6 @@ The Laravel API enforces authorization on every request; hiding the UI is **not*
 
 ## Limitations
 
-No production deployment, administrator account creation, real vehicle verification, live settlement, database query console, or institution-authorized timetable import is claimed. The dashboard shows a bounded first page of each list, with a warning if more records exist. Data-source failures do not silently display fabricated zeros. It is a teacher-demo and administration UI; its backend depends on the normal pinned Laravel host and optional MongoDB projection being configured and running.
+Administrator access must be provisioned per deployment with a strong unique password hash and active privileged account; no general administrator account creation, real vehicle verification, live settlement, database query console, or institution-authorized timetable import is claimed. The dashboard shows a bounded first page of each list, with a warning if more records exist. Data-source failures do not silently display fabricated zeros. It is a teacher-demo and administration UI; its backend depends on the normal pinned Laravel host and optional MongoDB projection being configured and running.
 
 To test: `cd frontend-next && npm ci && npm run typecheck && npm test && npm run build`. Backend requires reconstruction and the separate disposable integration test environment described in the repository runbooks. Do not run migrations or destructive tests against preserved pilot databases.

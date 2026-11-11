@@ -52,7 +52,6 @@ function Chart({ rows }: { rows: Row[] }) {
 }
 
 export default function AdminConsole() {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
   const [actor, setActor] = useState<Row | null>(null);
@@ -78,21 +77,24 @@ export default function AdminConsole() {
     setToken(''); setActor(null); setDataset({}); setFailed({});
     setReview(null); setTicket(null); setRide(null); setPassword(''); setError(''); setNotice('');
   }
+  async function signOut() {
+    const bearer = token;
+    exit();
+    if (bearer) { try { await request('operator/logout', bearer, 'POST', {}); } catch { /* The UI session is already cleared. */ } }
+  }
   async function login(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setSigningIn(true); setError(''); setNotice('');
     const sequence = ++generation.current;
     try {
-      const response = await fetch('/api/login', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }), cache: 'no-store' });
+      const response = await fetch('/api/mobility/operator/login', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ password }), cache: 'no-store' });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw Error('Administrator credentials were rejected.');
       const candidate = body.token ?? body.data?.token;
       if (typeof candidate !== 'string' || !candidate) throw Error('The authentication service did not return a valid session.');
-      const identity = await request('commute/me', candidate);
-      if (identity?.operator !== true) throw Error('This account does not have administrator access.');
       const scope = await request('operator/dashboard', candidate);
       if (scope?.audience !== 'operator') throw Error('The operator authorization check failed.');
       if (generation.current !== sequence) return;
-      setActor(identity); setToken(candidate); setPassword(''); setTab('overview');
+      setActor({ operator: true }); setToken(candidate); setPassword(''); setTab('overview');
     } catch (e) { if (generation.current === sequence) setError(e instanceof Error ? e.message : 'Could not sign in.'); }
     finally { if (generation.current === sequence) setSigningIn(false); }
   }
@@ -182,12 +184,12 @@ export default function AdminConsole() {
 
   if (!token) return <div className={styles.loginShell}>
     <div className={styles.loginSide}><a href="/" className={styles.homeLink}>← CampusPool website</a><div className={styles.logoLarge}>C<span>·</span></div><p className={styles.overline}>OPERATIONS & DATABASE MANAGEMENT</p><h1>One control center.<br/><em>Full visibility.</em></h1><p>Review campus access, driver applications, ride operations, support cases and the live SQL/MongoDB reporting layer.</p><div className={styles.loginFoot}>Role-protected · Auditable changes · Classroom demonstration</div></div>
-    <div className={styles.loginFormWrap}><form className={styles.loginForm} onSubmit={login}><div className={styles.shield}>▣</div><p className={styles.overline}>RESTRICTED ACCESS</p><h2>Administrator sign in</h2><p>Use an existing administrator account. Student and driver accounts cannot open operational data.</p><label>Administrator email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" placeholder="admin@college.edu" /></label><label>Password<input required type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" /></label><button className={styles.primary} disabled={signingIn} type="submit">{signingIn ? 'Verifying administrator…' : 'Enter control center →'}</button>{error && <div className={styles.error} role="alert">{error}</div>}<p className={styles.small}>No demo credentials or authentication tokens are embedded in this interface.</p></form></div>
+    <div className={styles.loginFormWrap}><form className={styles.loginForm} onSubmit={login}><div className={styles.shield}>▣</div><p className={styles.overline}>RESTRICTED ACCESS</p><h2>Administrator sign in</h2><p>Enter the administrator password to unlock this private operations workspace.</p><label>Administrator password<input required type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="••••••••" /></label><button className={styles.primary} disabled={signingIn} type="submit">{signingIn ? 'Verifying administrator…' : 'Enter control center →'}</button>{error && <div className={styles.error} role="alert">{error}</div>}<p className={styles.small}>No demo credentials or authentication tokens are embedded in this interface.</p></form></div>
   </div>;
 
   return <div className={styles.shell}>
-    <aside className={styles.sidebar}><a className={styles.brand} href="/"><span className={styles.brandIcon}>C</span><span>CampusPool<small>CONTROL CENTER</small></span></a><div className={styles.navLabel}>WORKSPACE</div><nav aria-label="Admin sections">{navigation.map(item => <button type="button" key={item.id} className={`${styles.navItem} ${tab===item.id?styles.navActive:''}`} onClick={()=>{setTab(item.id);setReview(null);setRide(null);setTicket(null);setError('');}}><span className={styles.navIcon}>{item.icon}</span><span>{item.label}</span>{(item.id==='support' && n(usage.reports_open)>0) && <b className={styles.navCount}>{usage.reports_open}</b>}</button>)}</nav><div className={styles.sideBottom}><div className={styles.statusPip}>● <span>Protected operator workspace</span></div><p>MySQL is the booking authority. MongoDB is an optional reporting projection.</p><button className={styles.signout} type="button" onClick={exit}>Sign out ↗</button></div></aside>
-    <div className={styles.workspace}><header className={styles.topbar}><div><span className={styles.overline}>CAMPUSPOOL / ADMINISTRATION</span><span className={styles.mobileBrand}>CampusPool Admin</span></div><div className={styles.topActions}><span className={styles.userChip}>● Operator{actor?.name ? ` · ${label(actor.name)}` : ''}</span><button type="button" className={styles.refresh} onClick={()=>setRevision(v=>v+1)} disabled={loading}>{loading?'Refreshing…':'↻ Refresh'}</button><button type="button" className={styles.mobileSignout} onClick={exit}>Sign out</button></div></header>
+    <aside className={styles.sidebar}><a className={styles.brand} href="/"><span className={styles.brandIcon}>C</span><span>CampusPool<small>CONTROL CENTER</small></span></a><div className={styles.navLabel}>WORKSPACE</div><nav aria-label="Admin sections">{navigation.map(item => <button type="button" key={item.id} className={`${styles.navItem} ${tab===item.id?styles.navActive:''}`} onClick={()=>{setTab(item.id);setReview(null);setRide(null);setTicket(null);setError('');}}><span className={styles.navIcon}>{item.icon}</span><span>{item.label}</span>{(item.id==='support' && n(usage.reports_open)>0) && <b className={styles.navCount}>{usage.reports_open}</b>}</button>)}</nav><div className={styles.sideBottom}><div className={styles.statusPip}>● <span>Protected operator workspace</span></div><p>MySQL is the booking authority. MongoDB is an optional reporting projection.</p><button className={styles.signout} type="button" onClick={signOut}>Sign out ↗</button></div></aside>
+    <div className={styles.workspace}><header className={styles.topbar}><div><span className={styles.overline}>CAMPUSPOOL / ADMINISTRATION</span><span className={styles.mobileBrand}>CampusPool Admin</span></div><div className={styles.topActions}><span className={styles.userChip}>● Operator{actor?.name ? ` · ${label(actor.name)}` : ''}</span><button type="button" className={styles.refresh} onClick={()=>setRevision(v=>v+1)} disabled={loading}>{loading?'Refreshing…':'↻ Refresh'}</button><button type="button" className={styles.mobileSignout} onClick={signOut}>Sign out</button></div></header>
       <main className={styles.main}><div className={styles.pageHead}><div><p className={styles.overline}>ADMINISTRATOR WORKSPACE</p><h1>{navigation.find(x=>x.id===tab)?.label}</h1><p>{navigation.find(x=>x.id===tab)?.subtitle} · Live backend data, not generated records</p></div><div className={styles.headControls}><label>Reporting window<select value={period} onChange={e=>setPeriod(Number(e.target.value))}>{[7,14,31].map(i=><option value={i} key={i}>{i} days</option>)}</select></label></div></div>
       {loading && <div className={styles.loading} role="status">Reading authorized database reports…</div>}
       {notice && <div className={styles.success} role="status">{notice}</div>}{error && <div className={styles.error} role="alert">{error}</div>}

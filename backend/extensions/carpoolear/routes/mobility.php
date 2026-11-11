@@ -12,6 +12,11 @@ use STS\Mobility\Routing\OfferController;
 use STS\Mobility\Routing\RouteQuoteController;
 use STS\Mobility\Trust\CohortController;
 
+Route::prefix('api/mobility/operator')->middleware('api')->group(function (): void {
+    Route::post('login', [\STS\Mobility\OperatorPasswordController::class, 'login']);
+    Route::post('logout', [\STS\Mobility\OperatorPasswordController::class, 'logout'])->middleware('auth:api');
+});
+
 Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
     Route::post('mobility/pickup-plans', [\STS\Mobility\Pickup\PickupController::class, 'planStore']);
     Route::put('mobility/pickup-plans/{id}', [\STS\Mobility\Pickup\PickupController::class, 'planUpdate'])->whereUuid('id');
