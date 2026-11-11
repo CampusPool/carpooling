@@ -36,3 +36,18 @@
 @media (max-width: 500px) {
   .form { grid-template-columns: minmax(0, 1fr); }
 }
+
+.importPanel { padding: 18px; border: 1px solid #dce6df; border-radius: 18px; background: #fff; min-width: 0; }
+.importPanel h3 { margin-top: 0; }
+.importPanel p { color: #40564e; }
+.importPanel .form { padding: 0; border: 0; margin: 16px 0; }
+.note { font-size: .875rem; }
+.option { display: grid; gap: 8px; margin-block: 14px; }
+.option select { min-height: 44px; max-width: 100%; padding: 8px; border: 1px solid #aab9ad; border-radius: 8px; background: white; color: inherit; font: inherit; }
+.gridScroll { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid #dce6df; border-radius: 12px; margin-block: 12px; }
+.week { border-collapse: collapse; width: 100%; min-width: 720px; font-size: .875rem; }
+.week caption { text-align: left; padding: 12px; font-weight: 650; }
+.week th, .week td { border: 1px solid #e4ebe5; padding: 10px; text-align: left; vertical-align: top; }
+.week thead th { background: #f2f6f2; }
+.week tbody th { white-space: nowrap; }
+.classCell { display: block; min-width: 72px; overflow-wrap: anywhere; }

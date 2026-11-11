@@ -53,3 +53,27 @@ it("keeps editing disabled if the saved schedule could not be loaded", async () 
   expect(screen.queryByRole("button", { name: "Add class" })).not.toBeInTheDocument();
   await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
 });
+
+it("reviews Academy options before replacing saved classes and clears the password immediately", async () => {
+  let saved = [{ day: 1, title: "Existing class", start: "10:00", end: "11:00", slot: 1, option: 1 }];
+  const request = vi.fn(async (path, options) => {
+    if (path === "/api/pes-timetable") return respond({ data: { entries: [
+      { day: 2, slot: 1, option: 1, title: "Subject A", start: "08:00", end: "09:00" },
+      { day: 2, slot: 1, option: 2, title: "Subject B", start: "08:00", end: "09:00" },
+    ] } });
+    if (options.method === "PUT") saved = JSON.parse(options.body).entries;
+    return respond({ data: saved });
+  });
+  vi.stubGlobal("fetch", request); render(<PesTimetable token="student-session" />);
+  expect(await screen.findByRole("button", { name: "Edit Existing class" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Academy SRN"), { target: { value: "synthetic-srn" } });
+  fireEvent.change(screen.getByLabelText("Academy password"), { target: { value: "synthetic-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Import from PES Academy" }));
+  expect(screen.getByLabelText("Academy password")).toHaveValue("");
+  const replace = await screen.findByRole("button", { name: "Replace saved timetable" });
+  expect(replace).toBeDisabled(); expect(saved[0].title).toBe("Existing class");
+  fireEvent.change(screen.getByLabelText(/Tuesday 08:00/), { target: { value: "2" } });
+  expect(replace).toBeEnabled(); fireEvent.click(replace);
+  expect(await screen.findByText("Imported timetable saved.")).toBeInTheDocument();
+  expect(saved).toEqual([{ day: 2, dayName: "Tuesday", slot: 1, option: 1, title: "Subject B", start: "08:00", end: "09:00" }]);
+});
