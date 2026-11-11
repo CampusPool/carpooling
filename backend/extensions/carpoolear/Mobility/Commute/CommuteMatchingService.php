@@ -146,7 +146,7 @@ final class CommuteMatchingService {
     $excluded[]=['trip_id'=>$m->trip_id,'reason'=>$e->machineCode];continue;
    }
    if (($j['code'] ?? null) === 'PICKUP_CHOICE_MISMATCH') continue;
-   if(!($j['available']??false)){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>$j['code']??'NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS'];continue;}
+   if(!($j['available']??false)){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>AddressRideContext::active() && ($j['detour_limit_exceeded'] ?? false) ? 'DETOUR_LIMIT_EXCEEDED' : ($j['code'] ?? 'NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS')];continue;}
    $start=CarbonImmutable::parse($m->trip_date,'Asia/Kolkata');$pickup=$start->addSeconds($j['driver_path']['legs'][0]['duration_seconds']);
    if(abs($pickup->getTimestamp()-$desired->getTimestamp())>900||$pickup->lte(now('Asia/Kolkata')->addMinutes(15))){$excluded[]=['trip_id'=>$m->trip_id,'reason'=>'PICKUP_TIME_MISMATCH'];continue;}
    $j['driver_origin']=$source['driver_origin'];$j['driver_destination']=$source['driver_destination'];$j['driver_departure_at']=$start->toISOString();$profileHash=$this->profileHash($p);$price=$j['pricing'];
@@ -198,7 +198,8 @@ final class CommuteMatchingService {
    $baseline['legs'] = [['distance_meters' => $agreed['distance_meters'], 'duration_seconds' => $agreed['duration_seconds']]];
    $baseline['points'] = [$publication['driver_origin'], $publication['driver_destination']];
   }
-  $choice = $shared ? 'ON_ROUTE_MEETING_POINT' : $publication['choice'];
+  $onRouteOnly = !empty($publication['student_address']) && ((int) $publication['max_detour_meters'] === 0 || (int) $publication['max_detour_seconds'] === 0);
+  $choice = $shared || $onRouteOnly ? 'ON_ROUTE_MEETING_POINT' : $publication['choice'];
   $maxWalk = min($walk, (int) $publication['max_walk_meters']);
   $planner = app(JourneyPlanner::class);
   $journey = ['available' => false, 'code' => 'PICKUP_CHOICE_MISMATCH'];
@@ -207,7 +208,7 @@ final class CommuteMatchingService {
   }
   // Before anyone accepts, a direct pickup can establish a shared detour.
   // All later riders use meeting points on that agreed route.
-  if ($shared && !$agreed && !$journey['available'] && $publication['choice'] === 'DIRECT_RIDER_PICKUP'
+  if ($shared && !$onRouteOnly && !$agreed && !$journey['available'] && $publication['choice'] === 'DIRECT_RIDER_PICKUP'
    && in_array($requestedChoice, ['both', 'DIRECT_RIDER_PICKUP'], true)) {
    return $planner->plan($baseline, $from, $to, $mode, 'DIRECT_RIDER_PICKUP', $maxWalk, (int) $publication['max_detour_meters'], (int) $publication['max_detour_seconds']);
   }

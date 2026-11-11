@@ -103,6 +103,9 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
   const details = selectedDetails && detailsRide ? { kind: selectedDetails.kind, ride: detailsRide } : undefined;
   const [searchSummary, setSearchSummary] = useState<{ distance_meters: number; duration_seconds: number }>();
   const [searched, setSearched] = useState(false);
+  const [searchReasons, setSearchReasons] = useState<string[]>([]);
+  const [detourKm, setDetourKm] = useState("3");
+  const [detourMinutes, setDetourMinutes] = useState("10");
   const attempts = useRef(new Map<string, string>());
   const edited = useRef(Boolean(rideDefaults));
   const latestRefresh = useRef(0);
@@ -186,6 +189,11 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
     if (!isFutureCommute(date, time)) { setError("Choose a pickup time at least 15 minutes from now. Times are in IST."); return; }
     const vehicle = selectedVehicle;
     if (mode === "offer" && (!vehicleLoaded || vehicleError || !vehicle || seats > vehicle.passenger_seats)) { setError("Choose an approved vehicle to offer a ride."); return; }
+    const meters = Math.round(Number(detourKm) * 1000);
+    const seconds = Number(detourMinutes) * 60;
+    if (mode === "offer" && (!detourKm || !detourMinutes || !Number.isInteger(meters) || meters < 0 || meters > 10000 || !Number.isInteger(seconds) || seconds < 0 || seconds > 1800)) {
+      setError("Choose detour limits between 0 and 10 km and between 0 and 30 minutes."); return;
+    }
     actionPending.current = true;
     setBusy(true);
     try {
@@ -195,12 +203,14 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       });
       if (mode === "offer") {
         await mutate("offers", { date, direction: "outbound", vehicle_type: vehicle!.vehicle_type, car_id: vehicle!.id, total_seats: seats,
-          choice: "DIRECT_RIDER_PICKUP", max_detour_meters: 3000, max_detour_seconds: 600 });
+          choice: "DIRECT_RIDER_PICKUP", max_detour_meters: meters, max_detour_seconds: seconds });
         setNotice("Your ride is published. Riders can now request a seat.");
         await refresh();
       } else {
         const result = await api(`mobility/address-rides/rides?direction=outbound&date=${encodeURIComponent(date)}&vehicle_type=both&pickup_choice=both`, token);
-        setRides(rows(result)); setSearchSummary(result.route_summary); setSearched(true);
+        setRides(rows(result)); setSearchSummary(result.route_summary);
+        setSearchReasons(Array.isArray(result.excluded) ? result.excluded.map((item: Json) => item.reason) : []);
+        setSearched(true);
       }
     } catch (error) { setError(error instanceof Error ? error.message : "Your ride could not be updated."); }
     finally { actionPending.current = false; setBusy(false); }
@@ -245,6 +255,8 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       <button className={styles.secondary} type="button" onClick={() => setDetails(undefined)}>← Back to {details.kind === "booking" ? "bookings" : "rides"}</button>
       <h2>{details.kind === "offer" ? "Your published ride" : details.ride.driver_name || "Ride details"}</h2>
       <p className={styles.meta}>{when(details.ride.departure_at)} · {vehicleLabel(details.ride)}</p>
+      {details.kind === "offer" && isDistance(details.ride.max_detour_meters) && Number.isInteger(details.ride.max_detour_seconds) &&
+        <p className={styles.meta}>Detour limit: {distance(details.ride.max_detour_meters)} · {details.ride.max_detour_seconds / 60} min</p>}
       {details.ride.driver_verified_pes === true && <p className={styles.verified}>✓ Verified PES email</p>}
       <RouteLabels ride={details.ride} />
       <RideMetrics ride={details.ride} />
@@ -280,6 +292,11 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
               {Array.from({ length: selectedVehicle.passenger_seats }, (_, index) => <option value={index + 1} key={index + 1}>{index + 1}</option>)}
             </select>
           </label>}
+          {selectedVehicle && <>
+            <label>Maximum detour (km)<input type="number" min="0" max="10" step="0.1" value={detourKm} onChange={event => setDetourKm(event.target.value)} disabled={busy} required /></label>
+            <label>Maximum extra drive (minutes)<input type="number" min="0" max="30" step="1" value={detourMinutes} onChange={event => setDetourMinutes(event.target.value)} disabled={busy} required /></label>
+            <p className={`${styles.meta} ${styles.wide}`}>Both limits apply to this offer. Enter zero to keep the published route.</p>
+          </>}
           {selectedVehicle?.demo_verified && <p className={`${styles.meta} ${styles.wide}`}>Demo verified — simulated vehicle lookup, not RTO verified.</p>}
           {seats > 1 && <p className={`${styles.meta} ${styles.wide}`}>Shared rides use meeting points along the agreed route.</p>}
         </>}
@@ -289,7 +306,14 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       </form>
       {mapStatus === "unavailable" && <p className={styles.message}>Address search is temporarily unavailable. <button type="button" onClick={() => { setMapStatus("loading"); setMapRetry(value => value + 1); }}>Retry Maps</button></p>}
       {mapStatus === "ready" && pickup && dropoff && !searched && <div className={styles.map}><CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} /></div>}
-      {mode === "find" && searched && !rides.length && <p className={styles.message}>No matching rides yet. Try another pickup time or a nearby address.</p>}
+      {mode === "find" && searched && !rides.length && <div className={styles.message} role="status">
+        <strong>No matching rides for {when(`${date}T${time}:00+05:30`)} IST.</strong>
+        {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>A routed pickup was outside the 15-minute window around your requested time.</p>}
+        {searchReasons.includes("DETOUR_LIMIT_EXCEEDED") && <p>A pickup needed a longer detour than the driver allowed.</p>}
+        {searchReasons.some(reason => !["PICKUP_TIME_MISMATCH", "DETOUR_LIMIT_EXCEEDED"].includes(reason)) && <p>Other offers could not reach your stops within their route or walking limits.</p>}
+        {!searchReasons.length && <p>No eligible offer was found near that time for this trip.</p>}
+        <p>Adjust the pickup time above or try a nearby meeting point.</p>
+      </div>}
       {mode === "find" && searched && !!rides.length && <div className={styles.resultHeading}>
         <h2>{rides.length} matching {rides.length === 1 ? "ride" : "rides"}</h2>
         {searchSummary && isDistance(searchSummary.distance_meters) && <span>{distance(searchSummary.distance_meters)} between your locations</span>}

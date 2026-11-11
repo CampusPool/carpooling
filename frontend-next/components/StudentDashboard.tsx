@@ -103,15 +103,17 @@ export function DashboardHome({ token, name, openRide, openPlan }: { token: stri
   const timetable = useLoad(token, "/api/mobility/commute/pes-timetable", readTimetable);
   const updates = useLoad(token, "notifications", readUpdates, 20000);
   const [offset, setOffset] = useState(0);
+  const [pickupOverrides, setPickupOverrides] = useState<Record<string, string>>({});
   const date = istDateTime(new Date(Date.now() + offset * 86400000)).date;
+  const dateLabel = new Intl.DateTimeFormat("en-IN", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" }).format(new Date(`${date}T12:00:00Z`));
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
   const planned = plan.data;
   const classes = timetable.data?.filter(entry => entry.day === weekday) ?? [];
   const classStart = classes.map(entry => entry.start).sort()[0];
   const classEnd = classes.map(entry => entry.end).sort().at(-1);
   const plannedRows = planned && !planned.paused && planned.weekdays.includes(weekday) ? [
-    ...(planned.outbound_enabled ? [{ direction: "Home → College", origin: planned.home, destination: planned.campus, date, time: classStart ?? planned.outbound_time }] : []),
-    ...(planned.return_enabled ? [{ direction: "College → Home", origin: planned.campus, destination: planned.home, date, time: classEnd ?? planned.return_time }] : []),
+    ...(planned.outbound_enabled ? [{ direction: "Home → College", origin: planned.home, destination: planned.campus, date, time: classStart ?? planned.outbound_time, source: classStart ? "First class starts" : "Saved manual time" }] : []),
+    ...(planned.return_enabled ? [{ direction: "College → Home", origin: planned.campus, destination: planned.home, date, time: classEnd ?? planned.return_time, source: classEnd ? "Last class ends" : "Saved manual time" }] : []),
   ] : [];
   const upcoming = bookings.data?.filter(booking => [0, 1].includes(booking.request_state) && !["cancelled", "completed"].includes(booking.state)) ?? [];
   return <>
@@ -126,11 +128,22 @@ export function DashboardHome({ token, name, openRide, openPlan }: { token: stri
           <div className={styles.sectionHead}><h2>Planned rides</h2><button className={styles.link} onClick={openPlan}>{planned ? "Edit schedule" : "Set up schedule"}</button></div>
           <div className={styles.dates}>{[0, 1, 2, 3].map(day => <button type="button" key={day} aria-pressed={offset === day} onClick={() => setOffset(day)}>{day === 0 ? "Today" : day === 1 ? "Tomorrow" : new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric" }).format(Date.now() + day * 86400000)}</button>)}</div>
           {timetable.error && <p role="alert">Could not load class times. Showing saved ride times. <button className={styles.link} onClick={timetable.reload}>Retry</button></p>}
-          {classes.length > 0 && plannedRows.length > 0 && <p className={styles.muted}>Pickup times from your saved timetable.</p>}
-          {plan.error ? <p role="alert">{plan.error} <button className={styles.link} onClick={plan.reload}>Retry</button></p> : plannedRows.length ? plannedRows.map(ride => <article key={ride.direction} className={styles.routeCard}>
-            <strong>{ride.direction} · {ride.time} IST</strong><div><span>{ride.origin.label}</span><span>{ride.destination.label}</span></div>
-            <button className={styles.primary} disabled={!isFutureCommute(date, ride.time)} onClick={() => openRide("find", ride)}>Find rides <DashboardIcon name="arrow" /></button>
-          </article>) : <p className={styles.muted}>{planned?.paused ? "Your schedule is paused." : plan.data === undefined ? "Loading your schedule…" : "No planned trips for this day."}</p>}
+          <p className={styles.muted}>{dateLabel} · India Standard Time</p>
+          {plan.error ? <p role="alert">{plan.error} <button className={styles.link} onClick={plan.reload}>Retry</button></p> : plannedRows.length ? plannedRows.map(ride => {
+            const key = `${date}:${ride.direction}`;
+            const time = pickupOverrides[key] ?? ride.time;
+            return <article key={key} className={styles.routeCard}>
+              <strong>{ride.direction}</strong>
+              <div><span>{ride.origin.label}</span><span>{ride.destination.label}</span></div>
+              <small>{ride.source} · {ride.time} IST</small>
+              <label className={styles.pickupTime}>Pickup time for this search
+                <input type="time" value={time} onChange={event => setPickupOverrides(current => ({ ...current, [key]: event.target.value }))} />
+              </label>
+              {time !== ride.time && <button type="button" className={styles.link} onClick={() => setPickupOverrides(current => ({ ...current, [key]: ride.time }))}>Reset pickup time</button>}
+              <button type="button" className={styles.primary} disabled={(!timetable.data && !timetable.error) || !isFutureCommute(date, time)} onClick={() => openRide("find", { ...ride, time })}>Find rides <DashboardIcon name="arrow" /></button>
+              {time && !isFutureCommute(date, time) && <small>Choose a pickup time more than 15 minutes from now.</small>}
+            </article>;
+          }) : <p className={styles.muted}>{planned?.paused ? "Your schedule is paused." : plan.data === undefined ? "Loading your schedule…" : "No planned trips for this day."}</p>}
         </section>
         <section className={styles.panel}>
           <div className={styles.sectionHead}><h2>Upcoming bookings</h2><button className={styles.link} onClick={() => openRide("bookings")}>View bookings</button></div>

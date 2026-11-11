@@ -50,7 +50,9 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   const requests = [];
   vi.stubGlobal("fetch", vi.fn(async (url, options) => {
     requests.push([url, options]);
-    const body = String(url).endsWith("/membership/me") ? { host_applications: [] } : { data: [] };
+    const body = String(url).includes("/address-rides/rides?") ? {
+      data: [], excluded: [{ reason: "PICKUP_TIME_MISMATCH" }, { reason: "DETOUR_LIMIT_EXCEEDED" }],
+    } : { data: [] };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }));
   render(<AddressRides token="synthetic-session" />);
@@ -60,7 +62,9 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   fireEvent.click(await screen.findByRole("option", { name: locations.Whitefield.label }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Find rides" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
-  await screen.findByText("No matching rides yet. Try another pickup time or a nearby address.");
+  await screen.findByText(/No matching rides for/);
+  expect(screen.getByText(/outside the 15-minute window/)).toBeVisible();
+  expect(screen.getByText(/longer detour than the driver allowed/)).toBeVisible();
   const profile = requests.find(([url]) => url === "/api/mobility/address-rides/profile");
   expect(JSON.parse(profile[1].body)).toMatchObject({ home: locations.Indiranagar, campus: locations.Whitefield, role: "rider" });
   expect(requests.some(([url]) => url.includes("/address-rides/rides?"))).toBe(true);
