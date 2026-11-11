@@ -45,13 +45,29 @@ it("persists additions, edits, and removal within the signed-in account", async 
   expect(saved).toEqual([]);
 });
 
-it("keeps editing disabled if the saved schedule could not be loaded", async () => {
-  const request = vi.fn(async () => respond({ error: "Unavailable" }, 503));
+it("keeps the draft usable after a failed load and recovers saved classes before writing", async () => {
+  const saved = [{ day: 2, title: "Existing class", start: "10:00", end: "11:00", slot: 1, option: 1 }];
+  let unavailable = true;
+  const request = vi.fn(async (_path, options) => {
+    if (unavailable) return respond({ error: "Unavailable" }, 503);
+    if (options.method === "PUT") saved.splice(0, saved.length, ...JSON.parse(options.body).entries);
+    return respond({ data: saved });
+  });
   vi.stubGlobal("fetch", request);
   render(<PesTimetable token="student-session" />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not load your timetable");
-  expect(screen.queryByRole("button", { name: "Add class" })).not.toBeInTheDocument();
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("button", { name: "Retry timetable" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Class name"), { target: { value: "Draft class" } });
+  fireEvent.change(screen.getByLabelText("Start time"), { target: { value: "08:30" } });
+  fireEvent.change(screen.getByLabelText("End time"), { target: { value: "09:30" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add class" }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  expect(screen.getByLabelText("Class name")).toHaveValue("Draft class");
+  expect(request.mock.calls.every(([, options]) => options.method === "GET")).toBe(true);
+  unavailable = false;
+  fireEvent.click(screen.getByRole("button", { name: "Add class" }));
+  expect(await screen.findByText("Class added.")).toBeInTheDocument();
+  expect(saved.map(entry => entry.title)).toEqual(["Existing class", "Draft class"]);
 });
 
 it("reviews Academy options before replacing saved classes and clears the password immediately", async () => {
@@ -66,6 +82,7 @@ it("reviews Academy options before replacing saved classes and clears the passwo
   });
   vi.stubGlobal("fetch", request); render(<PesTimetable token="student-session" />);
   expect(await screen.findByRole("button", { name: "Edit Existing class" })).toBeInTheDocument();
+  document.querySelector("details").open = true;
   fireEvent.change(screen.getByLabelText("Academy SRN"), { target: { value: "synthetic-srn" } });
   fireEvent.change(screen.getByLabelText("Academy password"), { target: { value: "synthetic-password" } });
   fireEvent.click(screen.getByRole("button", { name: "Import from PES Academy" }));
