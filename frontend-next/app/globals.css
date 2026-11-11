@@ -35,3 +35,14 @@
     padding: 10px 12px;
   }
 }
+
+.profile-onboarding {
+  display: block;
+  max-width: 640px;
+}
+.profile-onboarding .content {
+  padding: 40px 24px;
+}
+.profile-onboarding h2 {
+  margin-top: 0;
+}

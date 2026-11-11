@@ -7,6 +7,7 @@ import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
 import StudentProfile from "../components/StudentProfile";
+import AccountMenu from "../components/AccountMenu";
 import PesTimetable from "../components/PesTimetable";
 import CanonicalPool from "../components/CanonicalPool";
 import LiveCarpool from "../components/LiveCarpool";
@@ -437,9 +438,13 @@ export default function Page() {
   ]);
   async function sync(t: string, sessionRole = role) {
     if (studentPreview) {
-      const identity = await request("commute/me", t);
-      setMe(identity);
-      return identity;
+      const [identity, account] = await Promise.all([
+        request("commute/me", t),
+        request("college-auth/profile", t),
+      ]);
+      const student = { ...identity, student_profile: account };
+      setMe(student);
+      return student;
     }
     const [meResult, bookingsResult, waitlistResult, walletResult, offersResult, notificationsResult] = await Promise.allSettled([
       request("commute/me", t),
@@ -515,7 +520,7 @@ export default function Page() {
           sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: saved, role: "rider" }));
           setError(remembered ? "" : "You’re signed in. This browser could not be remembered. Reload to try again.");
           setToken(saved);
-          setView("profile");
+          setView("pool");
         } catch {
           if (active) setError("Could not check this browser’s sign-in. Reload to try again.");
         } finally {
@@ -1165,13 +1170,13 @@ export default function Page() {
           const identity = await sync(accountToken, accountRole);
           setToken(accountToken);
           setSessionSyncNeeded(false);
-          if (studentPreview) setView("profile");
+          if (studentPreview) setView("pool");
           else if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
         } catch (e: any) {
           if (e?.status !== 401) {
             setSessionSyncNeeded(true);
             setToken(accountToken);
-            if (studentPreview) setView("profile");
+            if (studentPreview) setView("pool");
             setError("Signed in, but account details could not be loaded. Retry to continue.");
           }
         }
@@ -1187,9 +1192,13 @@ export default function Page() {
   ).slice(0, 5);
   // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
   const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
-  const activeView = studentPreview && view === "home" ? "profile" : localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
+  const activeView = studentPreview && me?.student_profile?.complete === false
+    ? "complete-profile"
+    : studentPreview && ["home", "profile"].includes(view)
+      ? "pool"
+      : localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
   const navItems: [string, string][] = studentPreview
-    ? [["profile", "Profile"], ["pool", "Campus rides"], ["timetable", "My timetable"], ["settings", "Settings"], ["driver-onboarding", "Driver onboarding"]]
+    ? [["pool", "Rides"], ["timetable", "Timetable"], ["driver-onboarding", "Driver onboarding"]]
     : me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
     ? [["operator", "Operations"]]
     : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
@@ -1229,16 +1238,23 @@ export default function Page() {
           catch (e: any) { if (e?.status !== 401) setError("Account details are still unavailable. Please retry."); }
           finally { setBusy(false); }
         }}>Retry account loading</button>}
-        <button
+        {!studentPreview && <button
           className="signout"
           disabled={busy}
           onClick={signOut}
         >
           Sign out
-        </button>
+        </button>}
+        {studentPreview && <AccountMenu
+          name={me?.student_profile?.name || me?.user?.name || "Your account"}
+          email={me?.user?.email || ""}
+          busy={busy}
+          onSettings={() => { setNotice(""); setView("settings"); }}
+          onSignOut={() => void signOut()}
+        />}
       </header>
-      <div className="layout">
-        <aside>
+      <div className={activeView === "complete-profile" ? "layout profile-onboarding" : "layout"}>
+        {activeView !== "complete-profile" && <aside>
           <p className="muted">COMMUTE</p>
           {navItems.map(([v, l]) => (
             <button
@@ -1250,14 +1266,14 @@ export default function Page() {
               {l}
             </button>
           ))}
-        </aside>
+        </aside>}
         <section className={`content${activeView === "operator" ? " operator-content" : ""}`}>
           {!studentPreview && <p className="eyebrow">
             {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
           </p>}
           <h2>
-            {activeView === "profile" ? "Your profile"
-              : activeView === "settings" ? "Settings"
+            {activeView === "complete-profile" ? "Complete your profile"
+              : activeView === "settings" ? "Profile & settings"
               : activeView === "timetable" ? "My timetable"
               : activeView === "home"
               ? "Choose your route."
@@ -1476,9 +1492,12 @@ export default function Page() {
               </div>
             </>
           )}
-          {studentPreview && ["profile", "settings"].includes(activeView) && <StudentProfile token={token} settings={activeView === "settings"}
-            onSettings={() => { setNotice(""); setView("settings"); }}
-            onSaved={() => { setNotice("Profile saved."); setView("profile"); }} />}
+          {studentPreview && ["complete-profile", "settings"].includes(activeView) && <StudentProfile token={token}
+            onSaved={updated => {
+              setMe(current => ({ ...current, user: { ...current?.user, name: updated.name }, student_profile: updated }));
+              setNotice("");
+              setView("pool");
+            }} />}
           {studentPreview && activeView === "timetable" && <PesTimetable key={token} token={token} />}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
           {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
