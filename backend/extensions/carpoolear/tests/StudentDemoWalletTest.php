@@ -63,32 +63,32 @@ final class StudentDemoWalletTest extends TestCase
         $driver = $this->student('wallet.driver@stu.pes.edu');
         $rider = $this->student('wallet.rider@stu.pes.edu');
         $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('enabled', false);
-        $this->post($rider, 'wallet/topup', ['amount_minor' => 10000], 'disabled')->assertNotFound();
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'disabled')->assertNotFound();
 
         putenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED=true');
-        $this->post($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk()->assertJsonPath('available_minor', 10000);
-        $this->post($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk()->assertJsonPath('available_minor', 10000);
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk()->assertJsonPath('available_minor', 10000);
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk()->assertJsonPath('available_minor', 10000);
         [$trip, $booking, $fare] = $this->book($driver, $rider, 1);
         $this->assertGreaterThan(0, $fare);
 
-        $this->post($driver, 'bookings/'.$booking.'/payment/pay', [], 'driver-cannot-pay')->assertForbidden();
-        $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'held');
-        $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'held');
+        $this->walletPost($driver, 'bookings/'.$booking.'/payment/pay', [], 'driver-cannot-pay')->assertForbidden();
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'held');
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'held');
         $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()
             ->assertJsonPath('wallet.available_minor', 10000 - $fare)->assertJsonPath('wallet.held_minor', $fare);
 
         foreach (['start', 'board', 'alight', 'complete'] as $action) {
             $body = ['action' => $action] + (in_array($action, ['board', 'alight'], true) ? ['passenger_id' => $rider->id] : []);
-            $this->post($driver, 'trips/'.$trip.'/transition', $body, $action)->assertOk();
+            $this->walletPost($driver, 'trips/'.$trip.'/transition', $body, $action)->assertOk();
         }
-        $this->post($rider, 'bookings/'.$booking.'/payment/arrive', [], 'arrive')->assertOk();
-        $this->post($driver, 'wallet/release', [], 'not-due')->assertOk()->assertJsonPath('available_minor', 0);
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/arrive', [], 'arrive')->assertOk();
+        $this->walletPost($driver, 'wallet/release', [], 'not-due')->assertOk()->assertJsonPath('available_minor', 0);
         $this->travel(3)->hours();
-        $this->post($driver, 'wallet/release', [], 'due')->assertOk()->assertJsonPath('available_minor', $fare);
-        $this->post($driver, 'wallet/release', [], 'due-retry')->assertOk()->assertJsonPath('available_minor', $fare);
-        $receipt = $this->post($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt')->assertOk()
+        $this->walletPost($driver, 'wallet/release', [], 'due')->assertOk()->assertJsonPath('available_minor', $fare);
+        $this->walletPost($driver, 'wallet/release', [], 'due-retry')->assertOk()->assertJsonPath('available_minor', $fare);
+        $receipt = $this->walletPost($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt')->assertOk()
             ->assertJsonPath('receipt.non_redeemable', true)->json('receipt.receipt_number');
-        $this->post($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt-retry')->assertOk()
+        $this->walletPost($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt-retry')->assertOk()
             ->assertJsonPath('receipt.receipt_number', $receipt);
         $this->assertDatabaseCount('mobility_commute_demo_holds', 1);
         $this->assertDatabaseCount('mobility_commute_demo_receipts', 1);
@@ -99,15 +99,15 @@ final class StudentDemoWalletTest extends TestCase
         putenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED=true');
         $driver = $this->student('refund.driver@stu.pes.edu');
         $rider = $this->student('refund.rider@stu.pes.edu');
-        $this->post($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk();
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk();
         foreach ([1, 2] as $offset) {
             [$trip, $booking] = $this->book($driver, $rider, $offset);
-            $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'hold-'.$offset)->assertOk();
+            $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'hold-'.$offset)->assertOk();
             if ($offset === 1) {
-                $this->post($rider, 'bookings/'.$booking.'/cancel', [], 'cancel-booking')->assertOk();
+                $this->walletPost($rider, 'bookings/'.$booking.'/cancel', [], 'cancel-booking')->assertOk();
             } else {
-                $this->post($driver, 'trips/'.$trip.'/transition', ['action' => 'cancel'], 'cancel-trip')->assertOk();
-                $this->post($driver, 'trips/'.$trip.'/transition', ['action' => 'cancel'], 'cancel-trip')->assertOk();
+                $this->walletPost($driver, 'trips/'.$trip.'/transition', ['action' => 'cancel'], 'cancel-trip')->assertOk();
+                $this->walletPost($driver, 'trips/'.$trip.'/transition', ['action' => 'cancel'], 'cancel-trip')->assertOk();
             }
             $this->assertDatabaseHas('mobility_commute_demo_holds', ['booking_id' => $booking, 'state' => 'refunded']);
             $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()
@@ -120,18 +120,18 @@ final class StudentDemoWalletTest extends TestCase
     {
         $this->actingAsApiUser($driver)->putJson(self::API.'profile', $this->profile('driver'))->assertOk();
         $this->actingAsApiUser($rider)->putJson(self::API.'profile', $this->profile('rider'))->assertOk();
-        $car = $this->post($driver, 'vehicles', ['registration' => 'KA00DE0007'], 'car')->assertOk()->json('data.id');
+        $car = $this->walletPost($driver, 'vehicles', ['registration' => 'KA00DE0007'], 'car')->assertOk()->json('data.id');
         $date = now('Asia/Kolkata')->addDays($offset)->toDateString();
         $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $car, 'total_seats' => 1];
-        $trip = $this->post($driver, 'offers', $offer, 'offer-'.$offset)->assertOk()->json('data.trip_id');
+        $trip = $this->walletPost($driver, 'offers', $offer, 'offer-'.$offset)->assertOk()->json('data.trip_id');
         $card = $this->actingAsApiUser($rider)->getJson(self::API.'rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
-        $booking = $this->post($rider, 'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], 'book-'.$offset)->assertOk()->json('data.booking_id');
-        $fare = $this->post($driver, 'bookings/'.$booking.'/accept', [], 'accept-'.$offset)->assertOk()->json('data.fare_minor');
+        $booking = $this->walletPost($rider, 'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], 'book-'.$offset)->assertOk()->json('data.booking_id');
+        $fare = $this->walletPost($driver, 'bookings/'.$booking.'/accept', [], 'accept-'.$offset)->assertOk()->json('data.fare_minor');
 
         return [$trip, $booking, $fare];
     }
 
-    private function post(User $actor, string $path, array $data, string $key): \Illuminate\Testing\TestResponse
+    private function walletPost(User $actor, string $path, array $data, string $key): \Illuminate\Testing\TestResponse
     {
         return $this->actingAsApiUser($actor)->postJson(self::API.$path, $data, ['Idempotency-Key' => $key]);
     }
