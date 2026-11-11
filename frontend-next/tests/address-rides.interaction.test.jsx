@@ -100,3 +100,23 @@ it("does not offer cancellation after the ride starts", async () => {
   await screen.findByText("Driver");
   expect(screen.queryByRole("button", { name: "Cancel booking" })).not.toBeInTheDocument();
 });
+
+it("publishes the selected capacity from a server-approved demo car", async () => {
+  const requests = [];
+  vi.stubGlobal("fetch", vi.fn(async (url, options) => {
+    requests.push([String(url), options]);
+    const body = String(url).endsWith("/vehicles") ? {
+      demo_vehicle_enabled: true,
+      data: [{ id: 8, registration: "KA00DE0007", name: "Maruti Suzuki Swift", vehicle_type: "car", passenger_seats: 4, demo_verified: true }],
+    } : { data: [] };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }));
+  render(<AddressRides token="synthetic-session" initialMode="offer" rideDefaults={{ origin: locations.Indiranagar, destination: locations.Whitefield }} />);
+  const capacity = await screen.findByRole("combobox", { name: "Passenger seats" });
+  expect(capacity.querySelectorAll("option")).toHaveLength(4);
+  fireEvent.change(capacity, { target: { value: "4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Publish ride" }));
+  await screen.findByText("Your ride is published. Riders can now request a seat.");
+  const [, request] = requests.find(([url, options]) => url.endsWith("/offers") && options.method === "POST");
+  expect(JSON.parse(request.body)).toMatchObject({ car_id: 8, total_seats: 4, vehicle_type: "car" });
+});

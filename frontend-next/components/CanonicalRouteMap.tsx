@@ -10,10 +10,12 @@ function position(point: Point | undefined) {
     ? { lat: point.lat, lng: point.lng } : undefined;
 }
 
-export default function CanonicalRouteMap({ pickup, dropoff, points }: {
+export default function CanonicalRouteMap({ pickup, dropoff, points, geometry, previewLabel = "Driving preview" }: {
   pickup?: Point;
   dropoff?: Point;
   points: Point[];
+  geometry?: unknown;
+  previewLabel?: string;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
@@ -23,7 +25,10 @@ export default function CanonicalRouteMap({ pickup, dropoff, points }: {
   useEffect(() => {
     let active = true;
     const google = (window as any).google;
-    google.maps.importLibrary("maps").then(({ Map }: any) => {
+    Promise.resolve().then(() => google?.maps?.importLibrary("maps")).then(library => {
+      if (!library) throw Error("Map unavailable");
+      return library;
+    }).then(({ Map }: any) => {
       if (!active || !element.current) return;
       map.current = new Map(element.current, {
         center: { lat: 12.934, lng: 77.535 },
@@ -59,7 +64,18 @@ export default function CanonicalRouteMap({ pickup, dropoff, points }: {
 
     let line: any;
     setStatus("");
-    if (from && to && pickup?.id !== dropoff?.id) {
+    const savedPath = Array.isArray(geometry) ? geometry.flatMap(point =>
+      Array.isArray(point) && point.length === 2 && point.every(Number.isFinite)
+        ? [{ lng: point[0], lat: point[1] }] : []
+    ) : [];
+    if (savedPath.length > 1) {
+      line = new google.maps.Polyline({ map: map.current, path: savedPath, strokeColor: "#1857dc", strokeWeight: 5 });
+      const bounds = new google.maps.LatLngBounds();
+      savedPath.forEach(location => bounds.extend(location));
+      markers.forEach(marker => bounds.extend(marker.getPosition()));
+      map.current.fitBounds(bounds, 50);
+      setStatus("Published route");
+    } else if (from && to && pickup?.id !== dropoff?.id) {
       setStatus("Loading driving preview…");
       void google.maps.importLibrary("routes").then(async ({ Route }: any) => {
         const result = await Route.computeRoutes({
@@ -71,11 +87,11 @@ export default function CanonicalRouteMap({ pickup, dropoff, points }: {
         if (!active) return;
         const route = result.routes?.[0];
         if (!route?.path?.length) throw new Error("Route unavailable");
-        line = new google.maps.Polyline({ map: map.current, path: route.path, strokeColor: "#165b48", strokeWeight: 5 });
+        line = new google.maps.Polyline({ map: map.current, path: route.path, strokeColor: "#1857dc", strokeWeight: 5 });
         const bounds = new google.maps.LatLngBounds();
         route.path.forEach((location: any) => bounds.extend(location));
         map.current.fitBounds(bounds, 50);
-        setStatus(`Driving preview · ${(route.distanceMeters / 1000).toFixed(1)} km · about ${Math.max(1, Math.round(route.durationMillis / 60000))} min`);
+        setStatus(`${previewLabel} · ${(route.distanceMeters / 1000).toFixed(1)} km · about ${Math.max(1, Math.round(route.durationMillis / 60000))} min`);
       }).catch(() => {
         if (active) setStatus("Driving preview is unavailable. You can still search for rides.");
       });
@@ -85,10 +101,10 @@ export default function CanonicalRouteMap({ pickup, dropoff, points }: {
       markers.forEach((marker) => marker.setMap(null));
       line?.setMap(null);
     };
-  }, [ready, pickup, dropoff, points]);
+  }, [ready, pickup, dropoff, points, geometry, previewLabel]);
 
   return <div style={{ marginBlock: 16 }}>
-    <div ref={element} aria-label="Google map of campus pickup points" style={{ width: "100%", height: 280, borderRadius: 12 }} />
+    <div ref={element} aria-label="Google map of the ride route" style={{ width: "100%", height: 280, borderRadius: 12 }} />
     {status && <p className="fine" role="status">{status}</p>}
   </div>;
 }
