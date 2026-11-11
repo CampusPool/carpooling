@@ -42,9 +42,9 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
           const labelText = text(prediction?.text) || text(prediction?.description);
           return prediction?.toPlace && labelText ? [{ prediction, label: labelText, key: prediction.placeId || labelText }] : [];
         }).slice(0, 5));
-        if (!places?.AutocompleteSuggestion) setMessage("Google Places is unavailable. Search by the configured pickup point name below.");
+        if (!places?.AutocompleteSuggestion) setMessage("Address suggestions are unavailable. Choose a pickup point below.");
       } catch {
-        if (current === generation.current) { setSuggestions([]); setMessage("Address search is unavailable. Choose a configured pickup point below."); }
+        if (current === generation.current) { setSuggestions([]); setMessage("Address suggestions are unavailable. Choose a pickup point below."); }
       } finally { if (current === generation.current) setBusy(false); }
     }, 250);
     return () => { generation.current++; clearTimeout(timer); };
@@ -52,7 +52,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
 
   async function choose(suggestion: Suggestion) {
     const current = ++generation.current;
-    setSuggestions([]); setNearby([]); setMessage("Finding configured stops near this address…");
+    setSuggestions([]); setNearby([]); setMessage("Finding nearby pickup points…");
     try {
       const place = suggestion.prediction.toPlace();
       await place.fetchFields({ fields: ["formattedAddress", "location"] });
@@ -65,16 +65,16 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
         : []).sort((a, b) => a.km - b.km).slice(0, 5);
       setQuery(place.formattedAddress || suggestion.label);
       setNearby(nearest);
-      setMessage(nearest.length ? "Choose the actual configured stop you want to meet at. The address itself is not used as a ride stop." : "No configured stops include map coordinates. Choose a pickup point by name below.");
+      setMessage(nearest.length ? "Choose a nearby pickup point." : "Choose a pickup point below.");
     } catch {
-      if (current === generation.current) setMessage("Google could not load this address. Choose a configured pickup point by name.");
+      if (current === generation.current) setMessage("This address could not load. Choose a pickup point below.");
     }
   }
 
   function selectPoint(point: Point) {
     generation.current++;
     setSelected(point); onSelect?.(point); setQuery(point.name); setNearby([]); setSuggestions([]);
-    setMessage("Ride stop selected from the approved pickup catalog.");
+    setMessage("Pickup point selected.");
   }
 
   return <div className="canonical-place-picker">
@@ -84,7 +84,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
     {suggestions.length > 0 && <div className="canonical-place-suggestions" role="listbox" aria-label={`${label} address suggestions`}>
       {suggestions.map((item) => <button key={item.key} type="button" disabled={disabled} onClick={() => void choose(item)}>{item.label}</button>)}
     </div>}
-    {nearby.length > 0 && <div className="canonical-place-suggestions" aria-label="Nearby configured pickup points">
+    {nearby.length > 0 && <div className="canonical-place-suggestions" aria-label="Nearby pickup points">
       {nearby.map(({ point, km }) => <button key={point.id} type="button" disabled={disabled} onClick={() => selectPoint(point)}>{point.name} <small>· {km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} from address</small></button>)}
     </div>}
     {points.length > 0 && <label className="canonical-point-fallback">{label}<select value={selected?.id ?? ""} disabled={disabled} onChange={(event) => { const point = points.find((candidate) => candidate.id === Number(event.target.value)); if (point) selectPoint(point); else { setSelected(undefined); onSelect?.(undefined); setQuery(""); } }}>
