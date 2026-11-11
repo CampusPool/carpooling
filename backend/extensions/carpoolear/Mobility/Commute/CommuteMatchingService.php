@@ -114,10 +114,6 @@ final class CommuteMatchingService {
  public function offers(User$driver):array {
   $this->service()->requireDemo($driver);
   $this->service()->requireRole($driver,'driver');
-  $studentSearch = AddressRideContext::active();
-  $pickupCutoff = $desired->addMinutes(15);
-  // Check a bounded set of later offers for an explanation. The booking window stays at 15 minutes.
-  $candidateCutoff = $studentSearch ? $desired->addHour() : $pickupCutoff;
   $rows=DB::table('mobility_commute_demo_trips as m')->join('trips as t','t.id','=','m.trip_id')->join('mobility_trip_lifecycles as l','l.trip_id','=','t.id')->where('m.is_publication',true)->when(AddressRideContext::active(),fn($q)=>$q->where('m.journey->student_address',true))->where('t.user_id',$driver->id)->where('l.state','planned')->where('t.trip_date','>',now('Asia/Kolkata'))->orderBy('t.trip_date')->limit(20)->select('m.*')->get();
   return['data'=>$rows->map(fn($m)=>$this->offerDto($m))->all()];
  }
@@ -128,6 +124,10 @@ final class CommuteMatchingService {
  public function rides(User$rider,string$direction,string$date,string$vehicle,string$pickupChoice='both'):array {
   $this->service()->requireDemo($rider);$p=$this->service()->profile($rider);if(!$p)throw new SegmentException('COMMUTE_PROFILE_REQUIRED',422);
   $back=$direction==='return';$from=$p[$back?'campus':'home'];$to=$p[$back?'home':'campus'];$desired=$this->departure($date,$p[$back?'return_time':'outbound_time']);
+  $studentSearch = AddressRideContext::active();
+  $pickupCutoff = $desired->addMinutes(15);
+  // Check a bounded set of later offers for an explanation. The booking window stays at 15 minutes.
+  $candidateCutoff = $studentSearch ? $desired->addHour() : $pickupCutoff;
   $rows=DB::table('mobility_commute_demo_trips as m')->join('trips as t','t.id','=','m.trip_id')->join('mobility_trip_lifecycles as l','l.trip_id','=','t.id')->where('m.is_publication',true)->when(AddressRideContext::active(),fn($q)=>$q->where('m.journey->student_address',true))->where('t.user_id','<>',$rider->id)->where('m.direction',$direction)->where('l.state','planned')->where('t.trip_date','>',now('Asia/Kolkata'))->whereNull('t.deleted_at')->where('t.state',Trip::STATE_READY)->whereBetween('t.trip_date',[$desired->subHours(2)->format('Y-m-d H:i:s'),$candidateCutoff->format('Y-m-d H:i:s')])->when($vehicle!=='both',fn($q)=>$q->where('m.vehicle_type',$vehicle))->orderBy('t.trip_date')->orderBy('t.id')->limit(self::CANDIDATE_SCAN_LIMIT + 1)->select('m.*','t.user_id as driver_id','t.car_id','t.trip_date','t.total_seats')->get();
   $scanTruncated=$rows->count()>self::CANDIDATE_SCAN_LIMIT;$rows=$rows->take(self::CANDIDATE_SCAN_LIMIT);
   $cards=[];$excluded=[];
