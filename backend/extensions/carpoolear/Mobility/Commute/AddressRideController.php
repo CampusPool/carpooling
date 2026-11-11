@@ -10,7 +10,6 @@ use STS\Mobility\Pickup\PathProvider;
 use STS\Mobility\Pickup\PickupException;
 use STS\Mobility\Routing\RoutingException;
 use STS\Mobility\Segments\SegmentException;
-use STS\Mobility\Trust\CohortPolicy;
 use STS\Models\Passenger;
 use STS\Models\Trip;
 
@@ -21,9 +20,34 @@ final class AddressRideController
         return $this->run($request, function () use ($request): JsonResponse {
             $response = app(CommuteController::class)->me($request, app(CommuteService::class));
             $data = $response->getData(true);
-            $data['driver_approved'] = CohortPolicy::hostApproved((int) $request->user()->id);
-            $data['seats_per_offer'] = 1;
+            $vehicles = AddressRideContext::vehicles($request->user());
+            $data['driver_approved'] = $vehicles !== [];
+            $data['seats_per_offer'] = max([1, ...array_column($vehicles, 'passenger_seats')]);
             return $response->setData($data);
+        });
+    }
+
+    public function vehicles(Request $request): JsonResponse
+    {
+        return $this->run($request, fn () => response()->json([
+            'data' => AddressRideContext::vehicles($request->user()),
+            'demo_vehicle_enabled' => DemoVehicle::enabled(),
+        ]));
+    }
+
+    public function lookupVehicle(Request $request): JsonResponse
+    {
+        return $this->run($request, function () use ($request): JsonResponse {
+            $values = $request->validate(['registration' => 'required|string|max:32']);
+            return response()->json(['data' => DemoVehicle::lookup($values['registration'])]);
+        });
+    }
+
+    public function saveVehicle(Request $request): JsonResponse
+    {
+        return $this->run($request, function () use ($request): JsonResponse {
+            $values = $request->validate(['registration' => 'required|string|max:32']);
+            return response()->json(['data' => DemoVehicle::save($request->user(), $values['registration'])]);
         });
     }
 
@@ -58,7 +82,7 @@ final class AddressRideController
             $validated = $request->validate([
                 'date' => 'required|date_format:Y-m-d', 'direction' => 'required|in:outbound,return',
                 'vehicle_type' => 'required|in:car,bike', 'car_id' => 'required|integer|min:1',
-                'total_seats' => 'required|integer|in:1',
+                'total_seats' => 'required|integer|between:1,4',
                 'choice' => 'required|in:DIRECT_RIDER_PICKUP,ON_ROUTE_MEETING_POINT',
                 'max_detour_meters' => 'sometimes|integer|between:0,10000',
                 'max_detour_seconds' => 'sometimes|integer|between:0,1800',
@@ -117,7 +141,7 @@ final class AddressRideController
                 $locked = Trip::whereKey($trip)->lockForUpdate()->firstOrFail();
                 if ((int) $locked->user_id !== (int) $request->user()->id) throw new SegmentException('TRIP_OWNER_REQUIRED', 403);
                 $meta = DB::table('mobility_commute_demo_trips')->where('trip_id', $trip)->first();
-                if ($request->input('action') !== 'cancel') AddressRideContext::approvedVehicle($request->user(), (int) $locked->car_id, $meta->vehicle_type);
+                if ($request->input('action') !== 'cancel') AddressRideContext::approvedVehicle($request->user(), (int) $locked->car_id, $meta->vehicle_type, (int) $locked->total_seats);
                 $affected = $request->input('action') === 'cancel' ? Passenger::where('trip_id', $trip)->whereIn('request_state', [Passenger::STATE_PENDING, Passenger::STATE_ACCEPTED])->get() : collect();
                 $request->attributes->set('commute.canonical_transition', true);
                 $response = app(MobilityController::class)->transition($request, $locked);

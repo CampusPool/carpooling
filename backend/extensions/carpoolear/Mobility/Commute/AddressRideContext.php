@@ -4,6 +4,7 @@ namespace STS\Mobility\Commute;
 
 use Illuminate\Support\Facades\DB;
 use STS\Mobility\Pickup\PickupPolicy;
+use STS\Mobility\Pickup\PickupException;
 use STS\Mobility\Segments\SegmentException;
 use STS\Mobility\Trust\CohortPolicy;
 use STS\Mobility\Trust\DriverOnboardingPolicy;
@@ -43,15 +44,52 @@ final class AddressRideContext
         }
     }
 
-    public static function approvedVehicle(User $driver, int $carId, string $mode): Car
+    public static function approvedVehicle(User $driver, int $carId, string $mode, int $seats = 1): Car
     {
         if (!self::eligible($driver)) throw new SegmentException('HOST_APPROVAL_REQUIRED', 403);
+        $car = Car::where('user_id', $driver->id)->find($carId);
+        if (!$car) throw new SegmentException('HOST_APPROVAL_REQUIRED', 403);
+        $demo = DemoVehicle::details($car);
+        if ($demo) {
+            if ($demo['vehicle_type'] !== $mode) throw new SegmentException('HOST_APPROVAL_REQUIRED', 403);
+            if ($seats > $demo['passenger_seats']) throw new SegmentException('VEHICLE_SEAT_LIMIT', 422);
+            return $car;
+        }
+        if ($seats !== 1) throw new SegmentException('VEHICLE_SEAT_LIMIT', 422);
         $car = PickupPolicy::host($driver, $carId, $mode);
         $application = DB::table('mobility_host_applications')->where('user_id', $driver->id)
             ->where('car_id', $carId)->where('status', 'approved')->first();
         $capacity = $application ? DriverOnboardingPolicy::approvedPassengerCapacity((int) $application->id) : null;
         if ($capacity === null || $capacity < 1) throw new SegmentException('HOST_APPROVAL_REQUIRED', 403);
         return $car;
+    }
+
+    public static function vehicles(User $driver): array
+    {
+        $approvedTypes = DB::table('mobility_host_applications')->where('user_id', $driver->id)
+            ->where('status', 'approved')->pluck('vehicle_type', 'car_id');
+        $vehicles = [];
+        foreach (Car::where('user_id', $driver->id)->with(['brand', 'carModel'])->orderBy('id')->get() as $car) {
+            $demo = DemoVehicle::details($car);
+            if ($demo) {
+                $vehicles[] = $demo;
+                continue;
+            }
+            $mode = $approvedTypes[$car->id] ?? null;
+            if (!$mode) continue;
+            try {
+                self::approvedVehicle($driver, (int) $car->id, $mode);
+            } catch (PickupException|SegmentException) {
+                continue;
+            }
+            $vehicles[] = [
+                'id' => (int) $car->id, 'registration' => $car->patente,
+                'name' => trim($car->brand_name.' '.$car->model_name),
+                'vehicle_type' => $mode, 'passenger_seats' => 1, 'demo_verified' => false,
+            ];
+        }
+
+        return $vehicles;
     }
 
     public static function publication(int $tripId): bool
