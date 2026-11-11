@@ -14,8 +14,9 @@ function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 }
 
 /** A Google address is only a starting point: rides use operator-approved catalog stops. */
-export default function CanonicalPlacePicker({ label, name, points, disabled }: {
-  label: string; name: string; points: Point[]; disabled?: boolean;
+export default function CanonicalPlacePicker({ label, name, points, disabled, mapsReady = true, onSelect }: {
+  label: string; name: string; points: Point[]; disabled?: boolean; mapsReady?: boolean;
+  onSelect?: (point: Point | undefined) => void;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Point>();
@@ -27,7 +28,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled }: 
 
   useEffect(() => {
     const term = query.trim();
-    if (term.length < 3 || selected) { setSuggestions([]); return; }
+    if (term.length < 3 || selected || !mapsReady) { setSuggestions([]); return; }
     const current = ++generation.current;
     const timer = setTimeout(async () => {
       setBusy(true); setMessage("");
@@ -47,7 +48,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled }: 
       } finally { if (current === generation.current) setBusy(false); }
     }, 250);
     return () => { generation.current++; clearTimeout(timer); };
-  }, [query, selected]);
+  }, [query, selected, mapsReady]);
 
   async function choose(suggestion: Suggestion) {
     const current = ++generation.current;
@@ -72,12 +73,12 @@ export default function CanonicalPlacePicker({ label, name, points, disabled }: 
 
   function selectPoint(point: Point) {
     generation.current++;
-    setSelected(point); setQuery(point.name); setNearby([]); setSuggestions([]);
+    setSelected(point); onSelect?.(point); setQuery(point.name); setNearby([]); setSuggestions([]);
     setMessage("Ride stop selected from the approved pickup catalog.");
   }
 
   return <div className="canonical-place-picker">
-    <label>Search {label.toLowerCase()} by address<input type="search" value={query} disabled={disabled} autoComplete="off" placeholder="Type an address" onChange={(event) => { setQuery(event.target.value); setSelected(undefined); setNearby([]); setMessage(""); }} /></label>
+    <label>Search {label.toLowerCase()} by address<input type="search" value={query} disabled={disabled} autoComplete="off" placeholder="Type an address" onChange={(event) => { setQuery(event.target.value); setSelected(undefined); onSelect?.(undefined); setNearby([]); setMessage(""); }} /></label>
     <input type="hidden" name={name} value={selected?.id ?? ""} />
     {busy && <small className="fine">Searching Google Places…</small>}
     {suggestions.length > 0 && <div className="canonical-place-suggestions" role="listbox" aria-label={`${label} address suggestions`}>
@@ -86,7 +87,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled }: 
     {nearby.length > 0 && <div className="canonical-place-suggestions" aria-label="Nearby configured pickup points">
       {nearby.map(({ point, km }) => <button key={point.id} type="button" disabled={disabled} onClick={() => selectPoint(point)}>{point.name} <small>· {km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} from address</small></button>)}
     </div>}
-    {points.length > 0 && <label className="canonical-point-fallback">{label}<select value={selected?.id ?? ""} disabled={disabled} onChange={(event) => { const point = points.find((candidate) => candidate.id === Number(event.target.value)); if (point) selectPoint(point); else { setSelected(undefined); setQuery(""); } }}>
+    {points.length > 0 && <label className="canonical-point-fallback">{label}<select value={selected?.id ?? ""} disabled={disabled} onChange={(event) => { const point = points.find((candidate) => candidate.id === Number(event.target.value)); if (point) selectPoint(point); else { setSelected(undefined); onSelect?.(undefined); setQuery(""); } }}>
       <option value="">Choose pickup point</option>{points.map((point) => <option value={point.id} key={point.id}>{point.name}</option>)}
     </select></label>}
     {message && <small className="fine" role="status">{message}</small>}

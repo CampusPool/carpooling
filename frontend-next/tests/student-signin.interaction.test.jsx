@@ -25,13 +25,14 @@ it("requests a code and submits student registration before starting a session",
   fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "123456" } });
   fireEvent.click(screen.getByText("Verify and sign in"));
   await screen.findByRole("heading", { name: "Complete your profile" });
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Student Name" } });
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Student Name" } });
   fireEvent.change(screen.getByLabelText("SRN"), { target: { value: "PES1UG24AM000" } });
-  await screen.findByRole("option", { name: "Bengaluru" });
-  fireEvent.change(screen.getByLabelText("Campus"), { target: { value: "CAMPUS-BLR" } });
+  expect(screen.queryByLabelText("Campus")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Gender"), { target: { value: "prefer_not_to_say" } });
+  fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "9876543210" } });
   fireEvent.click(screen.getByText("Verify and sign in"));
   await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("session"));
-  expect(request).toHaveBeenCalledWith("college-auth/verify", "", "POST", { challenge_id: "challenge", code: "123456", name: "Student Name", srn: "PES1UG24AM000", campus_code: "CAMPUS-BLR" });
+  expect(request).toHaveBeenCalledWith("college-auth/verify", "", "POST", { challenge_id: "challenge", code: "123456", name: "Student Name", srn: "PES1UG24AM000", campus_code: "CAMPUS-BLR", gender_identity: "prefer_not_to_say", phone: "9876543210" });
 });
 
 it("does not create a session when verification fails", async () => {

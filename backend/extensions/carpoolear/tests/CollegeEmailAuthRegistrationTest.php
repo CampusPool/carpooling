@@ -137,6 +137,41 @@ final class CollegeEmailAuthRegistrationTest extends TestCase
         $this->withHeaders($headers)->getJson('/api/mobility/commute/me')->assertUnauthorized();
     }
 
+    public function test_public_student_profile_and_browser_session_are_private_and_revocable(): void
+    {
+        putenv('MOBILITY_PUBLIC_STUDENT_ONLY=true');
+        try {
+            $path = '/api/mobility/college-auth/';
+            $this->getJson($path.'profile')->assertUnauthorized();
+            $this->getJson($path.'session')->assertUnauthorized();
+            $challenge = $this->challenge('remembered.student@stu.pes.edu');
+            $details = [
+                'challenge_id' => $challenge, 'code' => '123456', 'name' => 'Remembered Student',
+                'srn' => 'PES1UG24AM890', 'campus_code' => 'CAMPUS-BLR',
+            ];
+            $this->postJson($path.'verify', $details)->assertUnprocessable()->assertJsonPath('error.code', 'STUDENT_GENDER_INVALID');
+            $login = $this->postJson($path.'verify', $details + ['gender_identity' => 'prefer_not_to_say', 'phone' => '98765 43210'])->assertOk();
+            $browser = $login->json('browser_session');
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $browser);
+            $this->assertDatabaseHas('mobility_student_browser_sessions', ['token_hash' => hash('sha256', $browser)]);
+            $this->assertDatabaseMissing('mobility_student_browser_sessions', ['token_hash' => $browser]);
+
+            $browserHeader = ['X-CampusPool-Browser-Session' => $browser];
+            $restored = $this->getJson($path.'session', $browserHeader)->assertOk()->json('token');
+            $auth = ['Authorization' => 'Bearer '.$restored];
+            $this->getJson($path.'profile', $auth)->assertOk()->assertJsonPath('phone', '+919876543210')->assertJsonPath('complete', true);
+            $this->putJson($path.'profile', [
+                'name' => 'Updated Student', 'phone' => '+91 99999 88888', 'gender_identity' => 'non_binary',
+                'srn' => 'UNAUTHORIZED-CHANGE', 'email' => 'different@stu.pes.edu',
+            ], $auth)->assertOk()->assertJsonPath('name', 'Updated Student')->assertJsonPath('srn', $details['srn'])
+                ->assertJsonPath('email', 'remembered.student@stu.pes.edu');
+            $this->deleteJson($path.'session', [], $browserHeader)->assertOk();
+            $this->getJson($path.'session', $browserHeader)->assertUnauthorized();
+        } finally {
+            putenv('MOBILITY_PUBLIC_STUDENT_ONLY');
+        }
+    }
+
     private function challenge(string $email): string
     {
         $id = (string) Str::uuid();

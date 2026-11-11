@@ -114,6 +114,7 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       MOBILITY_API_ORIGIN: http://127.0.0.1:18083
+      MOBILITY_GOOGLE_MAPS_BROWSER_KEY: "${MOBILITY_GOOGLE_MAPS_BROWSER_KEY:-}"
     volumes: ["../../frontend-next:/srv/frontend:ro"]
     command: ["npm", "run", "start", "--", "--hostname", "127.0.0.1", "--port", "3013"]
     healthcheck:

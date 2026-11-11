@@ -42,3 +42,34 @@ test('authenticated proxy preserves app bearer and replaces tester cookie with p
  };
  try {assert.equal((await worker.fetch(new Request('https://preview.workers.dev/api/mobility/commute/me',{headers:{Cookie:login.headers.get('set-cookie'),Authorization:'Bearer synthetic-app-session','X-Forwarded-For':'spoofed'}}),env)).status,200);} finally{globalThis.fetch=original;}
 });
+
+test('remembered student credential is HttpOnly, can restore without tester cookie, and is forwarded only to the session route', async () => {
+ const host = 'https://preview.workers.dev';
+ const auth = '/api/mobility/college-auth';
+ const secret = 'a'.repeat(64);
+ const login = await worker.fetch(new Request(host+'/_tester',{method:'POST',headers:{Origin:host},body:new URLSearchParams({password:env.TESTER_PASSWORD})}),env);
+ const tester = login.headers.get('set-cookie').split(';')[0];
+ const original = globalThis.fetch;
+ const seen = [];
+ globalThis.fetch = async (url, init) => {
+  seen.push([url.pathname, init.headers.get('X-CampusPool-Browser-Session')]);
+  if (url.pathname === auth+'/verify') return Response.json({token:'synthetic-jwt',browser_session:secret});
+  if (url.pathname === auth+'/session' && init.method === 'DELETE') return Response.json({logged_out:true});
+  return Response.json({token:'restored-jwt'});
+ };
+ try {
+  const verified = await worker.fetch(new Request(host+auth+'/verify',{method:'POST',headers:{Cookie:tester,'X-CampusPool-Browser-Session':'spoofed'},body:'{}'}),env);
+  assert.deepEqual(await verified.json(),{token:'synthetic-jwt'});
+  const cookie = verified.headers.get('set-cookie');
+  assert.match(cookie, /__Host-campuspool_student=.*Secure; HttpOnly; SameSite=Strict; Max-Age=2592000/);
+  const student = cookie.split(';')[0];
+  assert.equal((await worker.fetch(new Request(host+'/',{headers:{Cookie:student}}),env)).status,200);
+  const restored = await worker.fetch(new Request(host+auth+'/session',{headers:{Cookie:student}}),env);
+  assert.equal((await restored.json()).token,'restored-jwt');
+  assert.equal((await worker.fetch(new Request(host+auth+'/session',{headers:{Cookie:student+'x'}}),env)).status,401);
+  assert.equal((await worker.fetch(new Request(host+auth+'/session',{method:'DELETE',headers:{Cookie:student,Origin:'https://other.example'}}),env)).status,403);
+  const logout = await worker.fetch(new Request(host+auth+'/session',{method:'DELETE',headers:{Cookie:student,Origin:host}}),env);
+  assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
+  assert.deepEqual(seen,[[auth+'/verify',null],['/',null],[auth+'/session',secret],[auth+'/session',secret]]);
+ } finally {globalThis.fetch=original;}
+});

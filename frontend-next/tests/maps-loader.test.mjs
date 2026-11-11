@@ -63,4 +63,21 @@ const response = (value) => ({ ok: true, json: async () => value });
   assert.equal(ready, 1, "SDK loaded while config was fetching must be detected");
   assert.equal(doc.scripts.size, 0);
 }
+{
+  const doc = fakeDocument();
+  const urls = [];
+  loadMapsSdk({
+    fetchImpl: async (url) => {
+      urls.push(url);
+      return urls.length === 1 ? { ok: false, status: 404 } : response({ browser_key: "demo" });
+    },
+    documentRef: doc,
+    google: {},
+    onReady() {},
+    onUnavailable() {},
+  });
+  await tick();
+  assert.deepEqual(urls, ["/api/maps/config", "/mobility-pilot/maps-config"]);
+  assert.match(doc.scripts.get("mobility-google-maps-sdk").src, /key=demo/);
+}
 console.log("maps loader failure and cleanup assertions passed");
