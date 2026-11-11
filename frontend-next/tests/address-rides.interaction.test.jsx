@@ -70,3 +70,33 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   await screen.findByText("Complete driver onboarding and vehicle approval to offer a ride.");
   expect(screen.queryByRole("button", { name: "Offer this ride" })).not.toBeInTheDocument();
 });
+
+
+it("shows private booking updates and marks them read", async () => {
+  let read = false;
+  const requests = [];
+  vi.stubGlobal("fetch", vi.fn(async (url, options) => {
+    requests.push([url, options]);
+    if (String(url).endsWith("/notifications/7/read")) read = true;
+    const data = String(url).endsWith("/notifications") ? { data: [{ id: 7, title: "New booking request", body: "A rider requested a seat on your ride.", read_at: read ? "2026-11-11" : null }] }
+      : String(url).endsWith("/membership/me") ? { host_applications: [] } : { data: [] };
+    return new Response(JSON.stringify(data), { status: 200 });
+  }));
+  render(<AddressRides token="synthetic-session" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Updates (1)" }));
+  expect(await screen.findByText("A rider requested a seat on your ride.")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Mark read" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Mark read" })).not.toBeInTheDocument());
+  expect(requests.some(([url, options]) => url.endsWith("/notifications/7/read") && options.method === "POST")).toBe(true);
+});
+
+it("does not offer cancellation after the ride starts", async () => {
+  vi.stubGlobal("fetch", vi.fn(async url => new Response(JSON.stringify(
+    String(url).endsWith("/bookings") ? { data: [{ booking_id: 1, trip_id: 2, request_state: 1, state: "in_progress", departure_at: "2026-11-12T08:30:00+05:30", driver_name: "Driver", pickup_label: "Pickup", dropoff_label: "Destination" }] }
+    : String(url).endsWith("/membership/me") ? { host_applications: [] } : { data: [] }
+  ), { status: 200 })));
+  render(<AddressRides token="synthetic-session" />);
+  fireEvent.click(screen.getByRole("tab", { name: "Bookings" }));
+  await screen.findByText("Driver");
+  expect(screen.queryByRole("button", { name: "Cancel booking" })).not.toBeInTheDocument();
+});

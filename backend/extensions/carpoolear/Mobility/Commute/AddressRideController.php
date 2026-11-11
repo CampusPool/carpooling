@@ -98,6 +98,16 @@ final class AddressRideController
         return $this->run($request, fn () => app(CommuteController::class)->notifications($request, app(CommuteService::class)), 'notifications');
     }
 
+    public function readNotification(Request $request, int $notification): JsonResponse
+    {
+        return $this->run($request, function () use ($request, $notification): JsonResponse {
+            $row = DB::table('mobility_commute_booking_notifications')->where('id', $notification)->where('user_id', $request->user()->id)->first();
+            if (!$row) abort(404);
+            $this->publication((int) $row->trip_id);
+            return response()->json(app(CommuteNotificationService::class)->read($request->user(), $notification));
+        }, 'notification');
+    }
+
     public function transition(Request $request, int $trip): JsonResponse
     {
         return $this->run($request, function () use ($request, $trip): JsonResponse {

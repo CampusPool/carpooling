@@ -21,6 +21,8 @@ final class AddressRidePresenter
             $payload['data'] = array_map(self::booking(...), $payload['data'] ?? []);
         } elseif ($kind === 'booking' && isset($payload['data'])) {
             $payload['data'] = self::booking($payload['data']);
+        } elseif ($kind === 'notification' && isset($payload['data'])) {
+            $payload['data'] = self::notification($payload['data']);
         } elseif ($kind === 'notifications') {
             $payload['data'] = array_map(self::notification(...), $payload['data'] ?? []);
         }

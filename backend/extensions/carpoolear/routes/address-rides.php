@@ -12,6 +12,7 @@ Route::prefix('api/mobility/address-rides')->middleware(['api', 'logged'])->grou
     Route::post('rides/{trip}/request', [AddressRideController::class, 'request'])->whereNumber('trip');
     Route::get('bookings', [AddressRideController::class, 'bookings']);
     Route::post('bookings/{booking}/{action}', [AddressRideController::class, 'action'])->whereNumber('booking')->whereIn('action', ['accept', 'reject', 'cancel']);
+    Route::post('notifications/{notification}/read', [AddressRideController::class, 'readNotification'])->whereNumber('notification');
     Route::get('notifications', [AddressRideController::class, 'notifications']);
     Route::post('trips/{trip}/transition', [AddressRideController::class, 'transition'])->whereNumber('trip');
 });

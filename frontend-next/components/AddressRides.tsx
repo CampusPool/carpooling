@@ -43,7 +43,7 @@ async function api(path: string, token: string, method = "GET", data?: Json, key
 
 export default function AddressRides({ token, onDriverOnboarding }: { token: string; onDriverOnboarding?: () => void }) {
   const initial = useMemo(() => initialCommuteSchedule("08:30"), []);
-  const [mode, setMode] = useState<"find" | "offer" | "bookings">("find");
+  const [mode, setMode] = useState<"find" | "offer" | "bookings" | "updates">("find");
   const [origin, setOrigin] = useState<AddressPlace>();
   const [destination, setDestination] = useState<AddressPlace>();
   const [date, setDate] = useState(initial.date);
@@ -61,6 +61,8 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
   const [rides, setRides] = useState<Json[]>([]);
   const [offers, setOffers] = useState<Json[]>([]);
   const [bookings, setBookings] = useState<Json[]>([]);
+  const [notifications, setNotifications] = useState<Json[]>([]);
+  const unread = notifications.filter(item => !item.read_at).length;
   const [searched, setSearched] = useState(false);
   const attempts = useRef(new Map<string, string>());
   const edited = useRef(false);
@@ -72,12 +74,13 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
   }), [mapRetry]);
 
   const refresh = useCallback(async () => {
-    const [bookingResult, offerResult] = await Promise.allSettled([
-      api("mobility/address-rides/bookings", token), api("mobility/address-rides/offers", token),
+    const [bookingResult, offerResult, notificationResult] = await Promise.allSettled([
+      api("mobility/address-rides/bookings", token), api("mobility/address-rides/offers", token), api("mobility/address-rides/notifications", token),
     ]);
-    setLoadError(bookingResult.status === "rejected" || offerResult.status === "rejected" ? "Ride updates could not load. Refresh to try again." : "");
+    setLoadError(bookingResult.status === "rejected" || offerResult.status === "rejected" || notificationResult.status === "rejected" ? "Ride updates could not load. Refresh to try again." : "");
     if (bookingResult.status === "fulfilled") setBookings(rows(bookingResult.value));
     if (offerResult.status === "fulfilled") setOffers(rows(offerResult.value));
+    if (notificationResult.status === "fulfilled") setNotifications(rows(notificationResult.value));
   }, [token]);
 
   useEffect(() => {
@@ -179,10 +182,11 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
       <button type="button" role="tab" aria-selected={mode === "find"} onClick={() => changeMode("find")}>Find a ride</button>
       <button type="button" role="tab" aria-selected={mode === "offer"} onClick={() => changeMode("offer")}>Offer a ride</button>
       <button type="button" role="tab" aria-selected={mode === "bookings"} onClick={() => changeMode("bookings")}>Bookings</button>
+      <button type="button" role="tab" aria-selected={mode === "updates"} onClick={() => changeMode("updates")}>Updates{unread ? ` (${unread})` : ""}</button>
     </div>
     {error && <p className={styles.error} role="alert">{error}</p>}
     {notice && <p className={styles.message} role="status">{notice}</p>}
-    {mode !== "bookings" && <>
+    {["find", "offer"].includes(mode) && <>
       <form className={styles.form} onSubmit={submit}>
         <AddressPlacePicker label="Pickup" value={origin} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("origin", place)} />
         <AddressPlacePicker label="Destination" value={destination} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("destination", place)} />
@@ -214,6 +218,17 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
         {mode === "find" && <button type="button" className={styles.primary} disabled={busy || Number(ride.seats_available) < 1 || requested} onClick={() => void action(`rides/${ride.trip_id}/request`, { quote_token: ride.quote_token }, "Seat requested. Your driver will respond in Bookings.").then(saved => { if (saved) setMode("bookings"); })}>{requested ? "Requested" : "Request a seat"}</button>}
       </article>; })}</div>
     </>}
+    {mode === "updates" && <section aria-label="Ride updates">
+      <div className={styles.actions}><button type="button" disabled={busy} onClick={() => void refresh()}>Refresh updates</button></div>
+      {loadError && <p className={styles.error} role="alert">{loadError}</p>}
+      {!notifications.length && !loadError && <p className={styles.message}>Booking requests and driver responses will appear here.</p>}
+      <div className={styles.results}>{notifications.map(item => <article className={styles.card} key={item.id}>
+        <h3>{item.title}{!item.read_at ? " · New" : ""}</h3><p>{item.body}</p>
+        <div className={styles.actions}><button type="button" onClick={() => changeMode("bookings")}>View bookings</button>
+          {!item.read_at && <button type="button" disabled={busy} onClick={() => void action(`notifications/${item.id}/read`, {}, "Update marked as read.")}>Mark read</button>}
+        </div>
+      </article>)}</div>
+    </section>}
     {mode === "bookings" && <>
       <div className={styles.actions}><button type="button" disabled={busy} onClick={() => void refresh()}>Refresh bookings</button></div>
       {loadError && <p className={styles.error} role="alert">{loadError}</p>}
@@ -233,7 +248,7 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/accept`, {}, "Rider accepted.")}>Accept rider</button>
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/reject`, {}, "Request declined.")}>Decline</button>
             </>}
-            {active && [0, 1].includes(Number(booking.request_state)) && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/cancel`, {}, "Booking cancelled.")}>Cancel booking</button>}
+            {active && planned && [0, 1].includes(Number(booking.request_state)) && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/cancel`, {}, "Booking cancelled.")}>Cancel booking</button>}
             {owner && accepted && active && <button type="button" disabled={busy} onClick={() => {
               const next = planned ? "start" : booking.participant_state === "alighted" ? "complete" : booking.participant_state === "boarded" ? "alight" : "board";
               void action(`trips/${booking.trip_id}/transition`, { action: next, ...(["board", "alight"].includes(next) ? { passenger_id: Number(booking.rider_id) } : {}) }, "Ride updated.");
