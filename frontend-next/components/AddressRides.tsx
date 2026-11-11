@@ -53,7 +53,7 @@ async function api(path: string, token: string, method = "GET", data?: Json, key
       ROUTE_PROVIDER_UNAVAILABLE: "Road routing is temporarily unavailable. Please try again.",
       COMMUTE_QUOTE_CHANGED: "This ride changed. Search again before requesting a seat.",
       COMMUTE_TRIP_CLOSED: "This ride has already departed or closed.",
-      SHARED_RIDE_FIXED_STOPS_REQUIRED: "Shared rides use the driver’s published pickup and drop-off. Search with those locations.",
+      SHARED_RIDE_FIXED_STOPS_REQUIRED: "Search again for meeting points along the driver’s route.",
       VEHICLE_SEAT_LIMIT: "Choose a passenger count within your vehicle’s approved capacity.",
       INSUFFICIENT_DEMO_CREDITS: "Add demo credits under Account, then return to Bookings to pay.",
       STUDENT_DEMO_WALLET_DISABLED: "Demo payments are unavailable in this environment.",
@@ -281,7 +281,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
             </select>
           </label>}
           {selectedVehicle?.demo_verified && <p className={`${styles.meta} ${styles.wide}`}>Demo verified — simulated vehicle lookup, not RTO verified.</p>}
-          {seats > 1 && <p className={`${styles.meta} ${styles.wide}`}>Shared seats use the published pickup and drop-off.</p>}
+          {seats > 1 && <p className={`${styles.meta} ${styles.wide}`}>Shared rides use meeting points along the agreed route.</p>}
         </>}
         {(mode !== "offer" || !!vehicles.length) && <button type="submit" className={`${styles.primary} ${styles.wide}`} disabled={busy || !origin || !destination || (mode === "offer" && (!vehicleLoaded || Boolean(vehicleError) || !selectedVehicle))}>
           {busy ? "Please wait…" : mode === "offer" ? "Publish ride" : "Find rides"}
