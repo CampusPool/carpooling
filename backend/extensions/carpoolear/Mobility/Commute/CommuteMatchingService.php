@@ -82,7 +82,6 @@ final class CommuteMatchingService {
   if(!AddressRideContext::active()&&!$this->service()->driverApproved($driver))throw new SegmentException('HOST_APPROVAL_REQUIRED',403);
   if(AddressRideContext::active()){
    AddressRideContext::approvedVehicle($driver,(int)($v['car_id']??0),$v['vehicle_type'],(int)$v['total_seats']);
-   if((int)$v['total_seats']>1&&$v['choice']!=='DIRECT_RIDER_PICKUP')throw new SegmentException('SHARED_RIDE_FIXED_STOPS_REQUIRED',422);
   }
   $p=$this->service()->profile($driver);if(!$p)throw new SegmentException('COMMUTE_PROFILE_REQUIRED',422);
   $back=$v['direction']==='return';$from=$p[$back?'campus':'home'];$to=$p[$back?'home':'campus'];$at=$this->departure($v['date'],$p[$back?'return_time':'outbound_time']);
@@ -99,7 +98,7 @@ final class CommuteMatchingService {
     DB::table('mobility_driver_onboardings')->where('user_id',$driver->id)->where('car_id',(int)$v['car_id'])->lockForUpdate()->get();
     $studentCar=AddressRideContext::approvedVehicle($current,(int)$v['car_id'],$v['vehicle_type'],(int)$v['total_seats']);
    }
-   // Multiple seats share the same fixed pickup and drop-off. Single-seat offers can allow detours.
+   // Shared rides use meeting points along the published route.
    $attributes=['user_id'=>$driver->id,'trip_date'=>$at->format('Y-m-d H:i:s'),'total_seats'=>$studentCar?(int)$v['total_seats']:1,'state'=>Trip::STATE_READY,'from_town'=>$from['label'],'to_town'=>$to['label'],'description'=>'Driver-published local demo commute; nonredeemable credits only','distance'=>$path['distance_meters']/1000,'estimated_time'=>gmdate('H:i:s',$path['duration_seconds'])];
    if($studentCar){
     $attributes=array_replace($attributes,['car_id'=>$studentCar->id,'is_passenger'=>false,'friendship_type_id'=>Trip::PRIVACY_PUBLIC,'description'=>'CampusPool address ride','co2'=>0,'mail_send'=>false,'rear_max_two_passengers'=>false]);
@@ -137,9 +136,9 @@ final class CommuteMatchingService {
    if(AddressRideContext::active()){
     try{$this->studentVehicle($driver,(int)$m->car_id,$m->vehicle_type,$source,(int)$m->total_seats);}catch(\STS\Mobility\Pickup\PickupException|SegmentException){continue;}
    }
-   if ((int) $m->total_seats > 1 && !$this->sameSharedStops($source, $from, $to)) continue;
-   if($pickupChoice!=='both'&&$source['choice']!==$pickupChoice)continue;
-   try{$j=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$m->vehicle_type,$source['choice'],min((int)($p['max_walk_meters']??999),$source['max_walk_meters']),$source['max_detour_meters'],$source['max_detour_seconds']);}catch(RoutingException|PickupException$e){
+   $choice = $this->matchChoice($source, (int) $m->total_seats);
+   if ($pickupChoice !== 'both' && $choice !== $pickupChoice) continue;
+   try{$j=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$m->vehicle_type,$choice,min((int)($p['max_walk_meters']??999),$source['max_walk_meters']),$source['max_detour_meters'],$source['max_detour_seconds']);}catch(RoutingException|PickupException$e){
     // An off-road map pin can fail an individual OSRM candidate. Do not
     // turn one unsuitable published ride into a 500 for the entire search.
     // Graph mismatches, deadlines and provider outages must still surface.
@@ -185,11 +184,14 @@ final class CommuteMatchingService {
   if(!$m||!hash_equals($m->profile_hash,$this->profileHash($this->service()->profile($rider)??[])))throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);
   if((int)$trip->user_id===$rider->id)throw new SegmentException('RIDER_CANNOT_BE_DRIVER',403);
   $this->eligibility($trip,$rider);if(!$this->genderCompatible($rider,User::findOrFail($trip->user_id)))throw new SegmentException('SAME_GENDER_PREFERENCE_CHANGED',409);if(DB::table('mobility_trip_lifecycles')->where('trip_id',$trip->id)->value('state')!=='planned'||CarbonImmutable::parse($trip->trip_date,'Asia/Kolkata')->lte(now('Asia/Kolkata')))throw new SegmentException('COMMUTE_TRIP_CLOSED',409);
-  $meta=DB::table('mobility_commute_demo_trips')->where('trip_id',$trip->id)->where('is_publication',true)->first();$p=$this->service()->profile($rider)??[];if(!$meta||!$p)throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$source=json_decode($meta->journey,true,512,JSON_THROW_ON_ERROR);$back=$meta->direction==='return';$from=$p[$back?'campus':'home'];$to=$p[$back?'home':'campus'];$vehicle=$meta->vehicle_type;$fresh=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$vehicle,$source['choice'],min((int)($p['max_walk_meters']??999),(int)($source['max_walk_meters']??999)),(int)$source['max_detour_meters'],(int)$source['max_detour_seconds']);if(!($fresh['available']??false))throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$fresh['driver_origin']=$source['driver_origin'];$fresh['driver_destination']=$source['driver_destination'];$price=$fresh['pricing'];$pickup=CarbonImmutable::parse($trip->trip_date,'Asia/Kolkata')->addSeconds($fresh['driver_path']['legs'][0]['duration_seconds']);$desired=CarbonImmutable::parse($trip->trip_date,'Asia/Kolkata')->setTimeFromTimeString($p[$back?'return_time':'outbound_time']);if(abs($pickup->getTimestamp()-$desired->getTimestamp())>900)throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$new=hash_hmac('sha256',json_encode([$trip->id,$rider->id,$this->profileHash($p),$fresh,intdiv(now('UTC')->timestamp,300)],JSON_THROW_ON_ERROR),(string)config('app.key'));
+  $meta=DB::table('mobility_commute_demo_trips')->where('trip_id',$trip->id)->where('is_publication',true)->first();$p=$this->service()->profile($rider)??[];if(!$meta||!$p)throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$source=json_decode($meta->journey,true,512,JSON_THROW_ON_ERROR);$back=$meta->direction==='return';$from=$p[$back?'campus':'home'];$to=$p[$back?'home':'campus'];$vehicle=$meta->vehicle_type;$fresh=app(JourneyPlanner::class)->plan($source['driver_path'],$from,$to,$vehicle,$this->matchChoice($source,(int)$trip->total_seats),min((int)($p['max_walk_meters']??999),(int)($source['max_walk_meters']??999)),(int)$source['max_detour_meters'],(int)$source['max_detour_seconds']);if(!($fresh['available']??false))throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$fresh['driver_origin']=$source['driver_origin'];$fresh['driver_destination']=$source['driver_destination'];$price=$fresh['pricing'];$pickup=CarbonImmutable::parse($trip->trip_date,'Asia/Kolkata')->addSeconds($fresh['driver_path']['legs'][0]['duration_seconds']);$desired=CarbonImmutable::parse($trip->trip_date,'Asia/Kolkata')->setTimeFromTimeString($p[$back?'return_time':'outbound_time']);if(abs($pickup->getTimestamp()-$desired->getTimestamp())>900)throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);$new=hash_hmac('sha256',json_encode([$trip->id,$rider->id,$this->profileHash($p),$fresh,intdiv(now('UTC')->timestamp,300)],JSON_THROW_ON_ERROR),(string)config('app.key'));
   DB::table('mobility_commute_matches')->insertOrIgnore(['match_key'=>$new,'trip_id'=>$trip->id,'rider_id'=>$rider->id,'profile_hash'=>$this->profileHash($p),'journey'=>json_encode($fresh,JSON_THROW_ON_ERROR),'fare_minor'=>$price['total_fare_minor'],'base_fare_minor'=>$price['base_fare_minor'],'surcharge_minor'=>$price['direct_pickup_surcharge_minor'],'pickup_at'=>$pickup->format('Y-m-d H:i:s'),'expires_at'=>now('UTC')->addMinutes(5),'created_at'=>now(),'updated_at'=>now()]);
   return DB::table('mobility_commute_matches')->where('match_key',$new)->first();
  }
- /** Multi-seat rides use the published endpoints for every passenger. */
+ private function matchChoice(array $publication, int $seats): string {
+  return !empty($publication['student_address']) && $seats > 1 ? 'ON_ROUTE_MEETING_POINT' : $publication['choice'];
+ }
+ /** Honor pending shared-stop quotes issued before on-route matching shipped. */
  private function sameSharedStops(array $source, array $from, array $to): bool {
   foreach ([[$source['driver_origin'], $from], [$source['driver_destination'], $to]] as [$published, $requested]) {
    foreach (['lat', 'lng'] as $axis) {
@@ -221,7 +223,9 @@ final class CommuteMatchingService {
   if ((int) $t->total_seats > 1) {
    $publication = DB::table('mobility_commute_demo_trips')->where('trip_id', $t->id)->value('journey');
    $source = json_decode($publication, true, 512, JSON_THROW_ON_ERROR);
-   if (!$this->sameSharedStops($source, $j['rider_origin'], $j['rider_destination'])) {
+   $sameRoute = ($j['driver_route_unchanged'] ?? false)
+    && ($j['driver_path']['geometry'] ?? null) === $source['driver_path']['geometry'];
+   if (!$sameRoute && !$this->sameSharedStops($source, $j['rider_origin'], $j['rider_destination'])) {
     throw new SegmentException('SHARED_RIDE_FIXED_STOPS_REQUIRED', 409);
    }
   }

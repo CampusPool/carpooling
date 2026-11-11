@@ -211,9 +211,10 @@ final class AddressRideFlowTest extends TestCase
         $search = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
         $profile = $this->profile('rider');
         $profile['home']['lat'] += 0.001;
-        $this->actingAsApiUser($third)->putJson($base.'profile', $profile)->assertOk();
-        $this->actingAsApiUser($third)->getJson($search)->assertOk()->assertJsonCount(0, 'data');
-        $this->actingAsApiUser($third)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
+        $this->actingAsApiUser($rider)->getJson($search)->assertOk()
+            ->assertJsonPath('data.0.choice', 'ON_ROUTE_MEETING_POINT')
+            ->assertJsonPath('data.0.detour_meters', 0);
 
         $bookings = [];
         foreach ([$rider, $other, $third] as $index => $passenger) {
