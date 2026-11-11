@@ -117,7 +117,7 @@ export default function PlannedRides({ token, onBack, onSaved }: {
     <div className={styles.heading}>
       <button type="button" className={styles.back} onClick={onBack}>← Back</button>
       <h1>Planned rides</h1>
-      <p>Save your regular campus commute. You can use this schedule to start a ride search or create an offer.</p>
+      <p>Set your campus route and travel days. Saved classes supply the first and last pickup times for that day. The times below apply on days without saved classes.</p>
     </div>
     {loadError && <div className={styles.alert} role="alert">{loadError} <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>Retry</button></div>}
     {saved === undefined && !loadError && <p role="status">Loading your schedule…</p>}

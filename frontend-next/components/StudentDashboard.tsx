@@ -10,11 +10,12 @@ import styles from "./StudentDashboard.module.css";
 export type RideDefaults = { origin: AddressPlace; destination: AddressPlace; date: string; time: string };
 export type RideSection = "find" | "offer" | "bookings" | "updates";
 type Plan = { home: AddressPlace; campus: AddressPlace; outbound_time: string; return_time: string; weekdays: number[]; paused: boolean; outbound_enabled: boolean; return_enabled: boolean };
+type TimetableClass = { day: number; start: string; end: string };
 type Booking = { booking_id: number; trip_id: number; request_state: number; state: string; departure_at: string; driver_name?: string; rider_name?: string; owner?: boolean; can_drive?: boolean; pickup_label?: string; dropoff_label?: string };
 type Vehicle = { id?: number; registration: string; name: string; vehicle_type: "car" | "bike"; passenger_seats: number; demo_verified: boolean; description?: string };
 
 async function api(token: string, path: string, body?: object) {
-  const response = await fetch(`/api/mobility/address-rides/${path}`, {
+  const response = await fetch(path.startsWith("/") ? path : `/api/mobility/address-rides/${path}`, {
     method: body ? "POST" : "GET",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -91,6 +92,7 @@ function useLoad<T>(token: string, path: string, read: (response: any) => T, ref
 }
 
 const readBookings = (result: { data: Booking[] }) => result.data;
+const readTimetable = (result: { data: TimetableClass[] }) => result.data;
 const readPlan = (result: { data: Plan | null }) => result.data;
 const readUpdates = (result: { data: { id: number; title: string; body: string }[] }) => result.data;
 const formatTime = (value: string) => new Date(value).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", hour: "numeric", minute: "2-digit" });
@@ -98,14 +100,18 @@ const formatTime = (value: string) => new Date(value).toLocaleString("en-IN", { 
 export function DashboardHome({ token, name, openRide, openPlan }: { token: string; name: string; openRide: (section: RideSection, defaults?: RideDefaults) => void; openPlan: () => void }) {
   const bookings = useLoad(token, "bookings", readBookings, 20000);
   const plan = useLoad(token, "plan", readPlan);
+  const timetable = useLoad(token, "/api/mobility/commute/pes-timetable", readTimetable);
   const updates = useLoad(token, "notifications", readUpdates, 20000);
   const [offset, setOffset] = useState(0);
   const date = istDateTime(new Date(Date.now() + offset * 86400000)).date;
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
   const planned = plan.data;
+  const classes = timetable.data?.filter(entry => entry.day === weekday) ?? [];
+  const classStart = classes.map(entry => entry.start).sort()[0];
+  const classEnd = classes.map(entry => entry.end).sort().at(-1);
   const plannedRows = planned && !planned.paused && planned.weekdays.includes(weekday) ? [
-    ...(planned.outbound_enabled ? [{ origin: planned.home, destination: planned.campus, date, time: planned.outbound_time }] : []),
-    ...(planned.return_enabled ? [{ origin: planned.campus, destination: planned.home, date, time: planned.return_time }] : []),
+    ...(planned.outbound_enabled ? [{ direction: "Home → College", origin: planned.home, destination: planned.campus, date, time: classStart ?? planned.outbound_time }] : []),
+    ...(planned.return_enabled ? [{ direction: "College → Home", origin: planned.campus, destination: planned.home, date, time: classEnd ?? planned.return_time }] : []),
   ] : [];
   const upcoming = bookings.data?.filter(booking => [0, 1].includes(booking.request_state) && !["cancelled", "completed"].includes(booking.state)) ?? [];
   return <>
@@ -119,8 +125,10 @@ export function DashboardHome({ token, name, openRide, openPlan }: { token: stri
         <section className={styles.panel}>
           <div className={styles.sectionHead}><h2>Planned rides</h2><button className={styles.link} onClick={openPlan}>{planned ? "Edit schedule" : "Set up schedule"}</button></div>
           <div className={styles.dates}>{[0, 1, 2, 3].map(day => <button type="button" key={day} aria-pressed={offset === day} onClick={() => setOffset(day)}>{day === 0 ? "Today" : day === 1 ? "Tomorrow" : new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric" }).format(Date.now() + day * 86400000)}</button>)}</div>
-          {plan.error ? <p role="alert">{plan.error} <button className={styles.link} onClick={plan.reload}>Retry</button></p> : plannedRows.length ? plannedRows.map(ride => <article key={ride.origin.label + ride.time} className={styles.routeCard}>
-            <strong>{ride.time} IST</strong><div><span>{ride.origin.label}</span><span>{ride.destination.label}</span></div>
+          {timetable.error && <p role="alert">Could not load class times. Showing saved ride times. <button className={styles.link} onClick={timetable.reload}>Retry</button></p>}
+          {classes.length > 0 && plannedRows.length > 0 && <p className={styles.muted}>Pickup times from your saved timetable.</p>}
+          {plan.error ? <p role="alert">{plan.error} <button className={styles.link} onClick={plan.reload}>Retry</button></p> : plannedRows.length ? plannedRows.map(ride => <article key={ride.direction} className={styles.routeCard}>
+            <strong>{ride.direction} · {ride.time} IST</strong><div><span>{ride.origin.label}</span><span>{ride.destination.label}</span></div>
             <button className={styles.primary} disabled={!isFutureCommute(date, ride.time)} onClick={() => openRide("find", ride)}>Find rides <DashboardIcon name="arrow" /></button>
           </article>) : <p className={styles.muted}>{planned?.paused ? "Your schedule is paused." : plan.data === undefined ? "Loading your schedule…" : "No planned trips for this day."}</p>}
         </section>
