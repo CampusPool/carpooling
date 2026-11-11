@@ -508,8 +508,10 @@ export default function Page() {
             await sync(saved, "rider");
           }
           if (!active) return;
+          const remembered = await fetch(studentSessionPath, { method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${saved}` }, cache: "no-store" });
+          if (!active) return;
           sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: saved, role: "rider" }));
-          setError("");
+          setError(remembered.ok ? "" : "You’re signed in. This browser could not be remembered. Reload to try again.");
           setToken(saved);
           setView("profile");
         } catch {

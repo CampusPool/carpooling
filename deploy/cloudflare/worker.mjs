@@ -162,9 +162,9 @@ export default {
     const isSession = url.pathname === STUDENT_SESSION_PATH;
     const student = await studentSession(cookies, env.SESSION_SECRET);
     if (isSession) {
-      if (!['GET', 'DELETE'].includes(request.method)) return reply(null, 405);
-      if (request.method === 'DELETE' && request.headers.get('Origin') !== url.origin) return reply(null, 403);
-      if (!student) return reply(null, request.method === 'GET' ? 401 : 204);
+      if (!['GET', 'POST', 'DELETE'].includes(request.method)) return reply(null, 405);
+      if (['POST', 'DELETE'].includes(request.method) && request.headers.get('Origin') !== url.origin) return reply(null, 403);
+      if (!student && request.method !== 'POST') return reply(null, request.method === 'GET' ? 401 : 204);
     }
     if (!student && !await validSession(cookies, env.SESSION_SECRET)) {
       if (url.pathname.startsWith('/api/')) return reply('{"error":"tester_access_required"}',401,{'Content-Type':'application/json'});
@@ -182,7 +182,7 @@ export default {
     headers.set('X-Forwarded-Host',url.host); headers.set('X-Forwarded-Proto','https');
     let upstream;
     try { upstream = await fetch(origin, {method:request.method, headers, body:['GET','HEAD'].includes(request.method)?undefined:request.body, redirect:'manual'}); }
-    catch { return reply('CampusPool origin unavailable',502); }
+    catch { return reply('CampusPool origin unavailable',502, isSession && request.method === 'DELETE' ? {'Set-Cookie': studentCookie('', 0)} : {}); }
     const responseHeaders=new Headers(upstream.headers);
     responseHeaders.set('Cache-Control','no-store');
     responseHeaders.set('X-Content-Type-Options','nosniff');
@@ -196,7 +196,7 @@ export default {
     if (isSession && (request.method === 'DELETE' || upstream.status === 401)) {
       responseHeaders.append('Set-Cookie', studentCookie('', 0));
     }
-    if (url.pathname === STUDENT_VERIFY_PATH && request.method === 'POST' && upstream.ok) {
+    if ([STUDENT_VERIFY_PATH, STUDENT_SESSION_PATH].includes(url.pathname) && request.method === 'POST' && upstream.ok) {
       let result;
       try { result = await upstream.json(); }
       catch { return reply('Sign-in response unavailable', 502); }

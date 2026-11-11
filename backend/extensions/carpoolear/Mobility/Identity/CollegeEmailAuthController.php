@@ -37,6 +37,10 @@ final class CollegeEmailAuthController
         try { return $this->json(['token' => $sessions->restore($request->header('X-CampusPool-Browser-Session'))]); }
         catch (CollegeEmailAuthException $e) { return $this->error($e->machineCode, $e->httpStatus); }
     }
+    public function rememberBrowser(Request $request, StudentBrowserSession $sessions): JsonResponse
+    {
+        return $this->json(['browser_session' => $sessions->issue($request->user('api'))]);
+    }
     public function forgetBrowser(Request $request, StudentBrowserSession $sessions): JsonResponse
     {
         $sessions->revoke($request->header('X-CampusPool-Browser-Session'));
