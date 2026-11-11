@@ -11,7 +11,7 @@ const fixtures = {
   '/api/mobility/operator/host-applications?page_size=100': { data: [] },
   '/api/mobility/operator/driver-onboarding?status=all&limit=50': { data: [] },
   '/api/mobility/operator/cash-disputes?page_size=100': { audience: 'operator', data: [] },
-  '/api/mobility/operator/dbms/health': { audience: 'operator', tables: [{ name: 'mobility_memberships', exists: true, rows: 1, purpose: 'College reviews' }], objects: [{ name: 'mobility_operator_ride_facts', kind: 'VIEW', installed: true }] },
+  '/api/mobility/operator/dbms/health': { audience: 'operator', tables: [{ name: 'mobility_memberships', exists: true, rows: 1, purpose: 'College reviews' }, { name: 'trips', exists: true, rows: 4 }], recent_trips: [{ id: 91, departure_at: '2026-11-12T03:00:00Z', total_seats: 2 }], objects: [{ name: 'mobility_operator_ride_facts', kind: 'VIEW', installed: true }] },
 };
 function signIn() {
   fireEvent.change(screen.getByLabelText('Administrator password'), { target: { value: 'not-a-real-password' } });
@@ -58,7 +58,10 @@ describe('CampusPool dedicated admin control center', () => {
     });
     vi.stubGlobal('fetch', fetch);
     render(<AdminConsole />); signIn();
-    await waitFor(() => expect(screen.getByText('Published rides').parentElement).toHaveTextContent('3'));
+    await waitFor(() => expect(screen.getByText('Published rides in report').parentElement).toHaveTextContent('3'));
+    expect(screen.getByText('Stored rides').parentElement).toHaveTextContent('4');
+    fireEvent.click(screen.getByRole('button', { name: /Rides & bookings/ }));
+    expect(screen.getByText('#91')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Memberships/ }));
     await screen.findByText('Student A');
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
@@ -76,21 +79,21 @@ describe('CampusPool dedicated admin control center', () => {
   it('clears privileged data on sign out and does not reuse the token', async () => {
     const fetch = fetcher(); vi.stubGlobal('fetch', fetch);
     render(<AdminConsole />); signIn();
-    await screen.findByText('Published rides');
+    await screen.findByText('Published rides in report');
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(screen.getByText('Administrator sign in')).toBeInTheDocument();
-    expect(screen.queryByText('Published rides')).not.toBeInTheDocument();
+    expect(screen.queryByText('Published rides in report')).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Admin sections' })).not.toBeInTheDocument();
   });
 
   it('shows live SQL metadata and degrades gracefully if MongoDB is unavailable', async () => {
     vi.stubGlobal('fetch', fetcher());
     render(<AdminConsole />); signIn();
-    await screen.findByText('Published rides');
+    await screen.findByText('Published rides in report');
     fireEvent.click(screen.getByRole('button', { name: /Database lab/ }));
     expect(screen.getByText('mobility_operator_ride_facts')).toBeInTheDocument();
     expect(screen.getByText('mobility_memberships')).toBeInTheDocument();
     expect(screen.getByText('MongoDB activity reporting')).toBeInTheDocument();
-    expect(screen.getByText('No accessible projection results (may be disabled, stale or missing).')).toBeInTheDocument();
+    expect(screen.getByText('No projection results are available for this window.')).toBeInTheDocument();
   });
 });

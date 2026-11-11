@@ -9,14 +9,14 @@
 - Membership review: `operator/memberships` and its version-checked decision endpoint. A written review reason is compulsory.
 - Driver/vehicle review: `operator/driver-onboarding` and its version-checked review endpoint. The Laravel checklist and vehicle validation remain authoritative.
 - Host registry: `operator/host-applications`. Modern approvals are managed through driver onboarding; a legacy host decision is not exposed in this UI because it can be blocked by the current onboarding model.
-- Ride capacity and booking decision audit: `operator/analytics`, with authorized `operator/trips/{id}` detail requests.
+- Ride capacity and booking decision audit: `operator/analytics`, with authorized `operator/trips/{id}` detail requests. The published-ride report covers local driver publications in the selected window. The stored rides list shows up to 25 college-hosted MySQL trips across all dates, with departure and offered seats.
 - Support reports: `operator/dashboard`, with authorized ticket details, assign-me and resolve endpoints.
 - Cash exceptions: the existing **read-only** `operator/cash-disputes` endpoint; no settlement/payment action is offered.
 - DBMS lab: new read-only `operator/dbms/health` endpoint reports an allow-listed set of SQL tables and installed SQL objects. Counts for platform-wide tables are intentionally hidden, and college-scoped counts are filtered by the configured college. It cannot run SQL supplied by a browser.
 
 ## Security boundaries
 
-The Laravel API enforces authorization on every request; hiding the UI is **not** an access control. The new metadata API rejects non-admin, inactive and banned users and requires a configured college. Direct student requests return 403. It never returns table rows, secrets, arbitrary SQL, personal data, or internal configuration. All state-changing operations remain inside the original backend transaction/audit/version controls.
+The Laravel API enforces authorization on every request; hiding the UI is **not** an access control. The database API rejects non-admin, inactive and banned users and requires a configured college. Direct student requests return 403. It returns allow-listed metadata, scoped counts, and a bounded trip summary with only the ride ID, departure time, and offered seats. All state-changing operations remain inside the original backend transaction/audit/version controls.
 
 ## Limitations
 

@@ -2,6 +2,7 @@
 
 namespace STS\Mobility;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,13 +20,12 @@ final class OperatorDatabaseHealthController
         }
 
         // The user never supplies table names, SQL or a database identifier.
-        // Host tables are reported as installed/not installed only: their row
-        // counts could include people from other colleges.
+        // Counts use explicit college ownership. Other tables report presence only.
         $allowList = [
             'users' => 'Account identities (platform-wide)',
             'cars' => 'Vehicle records (platform-wide)',
-            'trips' => 'Published trips (platform-wide)',
-            'trip_passengers' => 'Seat request history (platform-wide)',
+            'trips' => 'Trips hosted by members of the configured college',
+            'trip_passengers' => 'Seat request history for college-hosted trips',
             'mobility_memberships' => 'College membership decisions',
             'mobility_host_applications' => 'College host permission requests',
             'mobility_driver_onboardings' => 'College driver/vehicle reviews',
@@ -60,6 +60,15 @@ final class OperatorDatabaseHealthController
                 ->whereIn('TRIGGER_NAME', ['mobility_booking_decision_insert', 'mobility_booking_decision_update'])
                 ->pluck('TRIGGER_NAME')->all();
 
+            $collegeTrips = null;
+            if (isset($tablesPresent['trips'], $tablesPresent['mobility_memberships'])) {
+                $collegeTrips = DB::table('trips as trip')
+                    ->whereExists(fn ($query) => $query->selectRaw('1')
+                        ->from('mobility_memberships as membership')
+                        ->whereColumn('membership.user_id', 'trip.user_id')
+                        ->where('membership.college_code', $college));
+            }
+
             $tables = [];
             foreach ($allowList as $table => $purpose) {
                 $exists = isset($tablesPresent[$table]) && $tablesPresent[$table] === 'BASE TABLE';
@@ -73,7 +82,25 @@ final class OperatorDatabaseHealthController
                         ->join('mobility_memberships as memberships', 'memberships.user_id', '=', 'items.user_id')
                         ->where('memberships.college_code', $college)->count();
                 }
+                if ($exists && $collegeTrips !== null) {
+                    if ($table === 'trips') {
+                        $count = (clone $collegeTrips)->count();
+                    } elseif (in_array($table, ['trip_passengers', 'mobility_commute_demo_trips', 'mobility_trip_lifecycles'], true)) {
+                        $count = DB::table($table)->whereIn('trip_id', (clone $collegeTrips)->select('trip.id'))->count();
+                    }
+                }
                 $tables[] = ['name' => $table, 'purpose' => $purpose, 'exists' => $exists, 'rows' => $count];
+            }
+            $recentTrips = null;
+            if ($collegeTrips !== null) {
+                $recentTrips = $collegeTrips->orderByDesc('trip.trip_date')->orderByDesc('trip.id')->limit(25)
+                    ->get(['trip.id', 'trip.trip_date', 'trip.total_seats'])
+                    ->map(fn ($trip) => [
+                        'id' => (int) $trip->id,
+                        'departure_at' => $trip->trip_date === null ? null
+                            : CarbonImmutable::parse($trip->trip_date, 'Asia/Kolkata')->toIso8601String(),
+                        'total_seats' => (int) $trip->total_seats,
+                    ])->all();
             }
             foreach ($objects as &$object) {
                 $object['installed'] = match ($object['kind']) {
@@ -90,7 +117,7 @@ final class OperatorDatabaseHealthController
 
         return response()->json([
             'audience' => 'operator', 'scope' => 'configured_college',
-            'tables' => $tables, 'objects' => $objects,
+            'tables' => $tables, 'objects' => $objects, 'recent_trips' => $recentTrips,
             'note' => 'Only college-scoped counts are supplied. Other table counts are intentionally withheld.',
         ], 200, ['Cache-Control' => 'private, no-store']);
     }
