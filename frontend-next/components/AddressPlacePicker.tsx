@@ -69,7 +69,7 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
         setError("Choose a location in Bengaluru.");
         return;
       }
-      const selected = { label: place.formattedAddress || place.displayName || suggestion.label, lat, lng };
+      const selected = { label: (place.formattedAddress || place.displayName || suggestion.label).slice(0, 160), lat, lng };
       setQuery(selected.label);
       onChange(selected);
     } catch {
