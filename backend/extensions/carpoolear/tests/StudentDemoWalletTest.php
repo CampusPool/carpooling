@@ -71,9 +71,9 @@ final class StudentDemoWalletTest extends TestCase
         [$trip, $booking, $fare] = $this->book($driver, $rider, 1);
         $this->assertGreaterThan(0, $fare);
 
-        $this->post($driver, 'bookings/'.$booking.'/pay', [], 'driver-cannot-pay')->assertForbidden();
-        $this->post($rider, 'bookings/'.$booking.'/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'held');
-        $this->post($rider, 'bookings/'.$booking.'/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'held');
+        $this->post($driver, 'bookings/'.$booking.'/payment/pay', [], 'driver-cannot-pay')->assertForbidden();
+        $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'held');
+        $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'held');
         $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()
             ->assertJsonPath('wallet.available_minor', 10000 - $fare)->assertJsonPath('wallet.held_minor', $fare);
 
@@ -81,14 +81,14 @@ final class StudentDemoWalletTest extends TestCase
             $body = ['action' => $action] + (in_array($action, ['board', 'alight'], true) ? ['passenger_id' => $rider->id] : []);
             $this->post($driver, 'trips/'.$trip.'/transition', $body, $action)->assertOk();
         }
-        $this->post($rider, 'bookings/'.$booking.'/arrive', [], 'arrive')->assertOk();
+        $this->post($rider, 'bookings/'.$booking.'/payment/arrive', [], 'arrive')->assertOk();
         $this->post($driver, 'wallet/release', [], 'not-due')->assertOk()->assertJsonPath('available_minor', 0);
         $this->travel(3)->hours();
         $this->post($driver, 'wallet/release', [], 'due')->assertOk()->assertJsonPath('available_minor', $fare);
         $this->post($driver, 'wallet/release', [], 'due-retry')->assertOk()->assertJsonPath('available_minor', $fare);
-        $receipt = $this->post($driver, 'bookings/'.$booking.'/confirm-payment-received', [], 'receipt')->assertOk()
+        $receipt = $this->post($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt')->assertOk()
             ->assertJsonPath('receipt.non_redeemable', true)->json('receipt.receipt_number');
-        $this->post($driver, 'bookings/'.$booking.'/confirm-payment-received', [], 'receipt-retry')->assertOk()
+        $this->post($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt-retry')->assertOk()
             ->assertJsonPath('receipt.receipt_number', $receipt);
         $this->assertDatabaseCount('mobility_commute_demo_holds', 1);
         $this->assertDatabaseCount('mobility_commute_demo_receipts', 1);
@@ -102,7 +102,7 @@ final class StudentDemoWalletTest extends TestCase
         $this->post($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk();
         foreach ([1, 2] as $offset) {
             [$trip, $booking] = $this->book($driver, $rider, $offset);
-            $this->post($rider, 'bookings/'.$booking.'/pay', [], 'hold-'.$offset)->assertOk();
+            $this->post($rider, 'bookings/'.$booking.'/payment/pay', [], 'hold-'.$offset)->assertOk();
             if ($offset === 1) {
                 $this->post($rider, 'bookings/'.$booking.'/cancel', [], 'cancel-booking')->assertOk();
             } else {
