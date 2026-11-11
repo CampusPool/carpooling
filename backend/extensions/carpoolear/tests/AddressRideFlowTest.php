@@ -27,10 +27,12 @@ final class AddressRideFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['MOBILITY_PUBLIC_STUDENT_ONLY' => 'true', 'MOBILITY_PILOT_UI_ENABLED' => 'false', 'MOBILITY_COLLEGE_CODE' => 'CAMPUS-BLR'] as $key => $value) {
+        foreach (['MOBILITY_PUBLIC_STUDENT_ONLY' => 'true', 'MOBILITY_PILOT_UI_ENABLED' => 'false', 'MOBILITY_COLLEGE_CODE' => 'CAMPUS-BLR', 'MOBILITY_COHORT_REQUIRED' => 'true'] as $key => $value) {
             $this->environment[$key] = getenv($key);
             putenv($key.'='.$value);
         }
+        // Opt in only on a disposable configured host; keep normal CI deterministic.
+        if (filter_var(getenv('ADDRESS_TEST_REAL_ROUTING'), FILTER_VALIDATE_BOOLEAN)) return;
         foreach (['car', 'bike', 'foot'] as $mode) {
             config(['mobility_routing.'.$mode.'_expected_data_version' => $mode.'|crop_sha256='.str_repeat('a', 64).'|profile_sha256='.str_repeat('b', 64)]);
         }
@@ -90,14 +92,38 @@ final class AddressRideFlowTest extends TestCase
         $this->assertArrayNotHasKey('wallet_state', $booking);
         $otherCard = $this->actingAsApiUser($other)->getJson($url)->assertOk()->json('data.0');
         $otherBooking = $this->actingAsApiUser($other)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $otherCard['quote_token']], ['Idempotency-Key' => 'request-other'])->assertOk()->json('data.booking_id');
+        $tripBase = '/api/mobility/trips/'.$trip.'/';
+        $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertForbidden();
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertForbidden();
+        $notification = $this->actingAsApiUser($driver)->getJson($base.'notifications')->assertOk()->json('data.0.id');
+        $this->actingAsApiUser($other)->postJson($base.'notifications/'.$notification.'/read')->assertNotFound();
+        $this->actingAsApiUser($driver)->postJson($base.'notifications/'.$notification.'/read')->assertOk();
+        $this->assertNotNull(DB::table('mobility_commute_booking_notifications')->where('id', $notification)->value('read_at'));
         $accepted = $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$booking['booking_id'].'/accept', [], ['Idempotency-Key' => 'accept-address'])->assertOk()->assertJsonPath('data.request_state', 1)->json('data');
         $this->assertArrayHasKey('route_map', $accepted);
         $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$otherBooking.'/accept', [], ['Idempotency-Key' => 'accept-full'])->assertStatus(422)->assertJsonPath('error.code', 'NOT_SEAT_AVAILABLE');
+        $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$otherBooking.'/reject', [], ['Idempotency-Key' => 'reject-pending'])->assertOk()->assertJsonPath('data.request_state', 2);
+        $this->actingAsApiUser($other)->getJson($tripBase.'messages')->assertForbidden();
+        $message = $this->actingAsApiUser($driver)->postJson($tripBase.'messages', ['text' => 'Synthetic pickup confirmation'], ['Idempotency-Key' => 'address-chat'])->assertOk()->json('data.id');
+        $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertOk()->assertJsonPath('data.messages.0.id', $message)->assertJsonPath('data.can_send', true);
+        $this->actingAsApiUser($rider)->postJson($tripBase.'messages/read', ['through_id' => $message])->assertOk();
+        $this->actingAsApiUser($rider)->postJson($tripBase.'messages', ['text' => 'Synthetic rider acknowledgement'], ['Idempotency-Key' => 'address-rider-chat'])->assertOk();
+        $this->actingAsApiUser($rider)->postJson($tripBase.'tracking/session', ['consent' => true], ['Idempotency-Key' => 'rider-cannot-track'])->assertForbidden();
+        $session = $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/session', ['consent' => true], ['Idempotency-Key' => 'address-tracking'])->assertOk()->json('data.session_id');
+        $sample = ['session_id' => $session, 'sequence' => 1, 'lat' => 12.9716, 'lng' => 77.5946, 'accuracy_meters' => 10, 'recorded_at' => now('UTC')->format('Y-m-d\TH:i:s.v\Z')];
+        $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/locations', $sample, ['Idempotency-Key' => 'address-location'])->assertOk();
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertOk()->assertJsonPath('data.location.lat', 12.9716)->assertJsonPath('data.stale', false);
+        $this->actingAsApiUser($other)->getJson($tripBase.'tracking')->assertForbidden();
+        $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/stop', ['session_id' => $session], ['Idempotency-Key' => 'address-stop'])->assertOk();
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertOk()->assertJsonPath('data.location', null);
         foreach (['start', 'board', 'alight', 'complete'] as $action) {
             $body = ['action' => $action] + (in_array($action, ['board', 'alight']) ? ['passenger_id' => $rider->id] : []);
             $this->actingAsApiUser($driver)->postJson($base.'trips/'.$trip.'/transition', $body, ['Idempotency-Key' => 'address-'.$action])->assertOk();
         }
         $this->assertDatabaseHas('mobility_trip_lifecycles', ['trip_id' => $trip, 'state' => 'completed']);
+        $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertOk()->assertJsonPath('data.can_send', false);
+        $this->actingAsApiUser($rider)->postJson($tripBase.'messages', ['text' => 'Cannot send after completion'], ['Idempotency-Key' => 'closed-chat'])->assertStatus(409);
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertStatus(410);
         $this->assertDatabaseCount('mobility_commute_demo_holds', 0);
         $this->assertDatabaseCount('mobility_commute_demo_wallets', 0);
         $this->assertDatabaseCount('mobility_pickup_points', 0);
@@ -108,6 +134,36 @@ final class AddressRideFlowTest extends TestCase
         } catch (SegmentException $error) {
             $this->assertSame('DEMO_SESSION_REQUIRED', $error->machineCode);
         }
+    }
+
+    public function test_cancelling_an_accepted_booking_restores_capacity_and_revokes_chat_access(): void
+    {
+        $driver = $this->student('cancel.driver@stu.pes.edu');
+        $rider = $this->student('cancel.rider@stu.pes.edu');
+        $car = $this->approvedCar($driver);
+        $base = '/api/mobility/address-rides/';
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $this->actingAsApiUser($driver)->putJson($base.'profile', $this->profile('driver'))->assertOk();
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $car->id, 'total_seats' => 1], ['Idempotency-Key' => 'cancel-offer'])->assertOk()->json('data.trip_id');
+        $card = $this->actingAsApiUser($rider)->getJson($base.'rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
+        $booking = $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], ['Idempotency-Key' => 'cancel-request'])->assertOk()->json('data.booking_id');
+        $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$booking.'/accept', [], ['Idempotency-Key' => 'cancel-accept'])->assertOk();
+        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/messages')->assertOk();
+        $this->actingAsApiUser($rider)->postJson($base.'bookings/'.$booking.'/cancel', [], ['Idempotency-Key' => 'cancel-booking'])->assertOk()->assertJsonPath('data.request_state', 3);
+        $this->actingAsApiUser($driver)->getJson($base.'offers')->assertOk()->assertJsonPath('data.0.seats_available', 1);
+        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/messages')->assertForbidden();
+        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/tracking')->assertForbidden();
+        $this->assertDatabaseCount('mobility_commute_demo_holds', 0);
+        $card = $this->actingAsApiUser($rider)->getJson($base.'rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
+        $pending = $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], ['Idempotency-Key' => 'cancel-new-request'])->assertOk()->json('data.booking_id');
+        $this->actingAsApiUser($rider)->postJson($base.'trips/'.$trip.'/transition', ['action' => 'cancel'], ['Idempotency-Key' => 'nonowner-cancel'])->assertForbidden();
+        DB::table('mobility_host_applications')->where('user_id', $driver->id)->update(['status' => 'revoked']);
+        $this->actingAsApiUser($driver)->postJson($base.'trips/'.$trip.'/transition', ['action' => 'cancel'], ['Idempotency-Key' => 'owner-cancel-offer'])->assertOk();
+        $this->assertDatabaseHas('mobility_trip_lifecycles', ['trip_id' => $trip, 'state' => 'cancelled']);
+        $notice = $this->actingAsApiUser($rider)->getJson($base.'notifications')->assertOk()->json('data.0');
+        $this->assertSame('booking_cancelled', $notice['kind']);
+        $this->assertSame($pending, $notice['booking_id']);
     }
 
     private function student(string $email): User
