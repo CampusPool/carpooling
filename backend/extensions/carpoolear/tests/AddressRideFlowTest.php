@@ -27,7 +27,7 @@ final class AddressRideFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['MOBILITY_PUBLIC_STUDENT_ONLY' => 'true', 'MOBILITY_PILOT_UI_ENABLED' => 'false', 'MOBILITY_COLLEGE_CODE' => 'CAMPUS-BLR', 'MOBILITY_COHORT_REQUIRED' => 'true'] as $key => $value) {
+        foreach (['MOBILITY_PUBLIC_STUDENT_ONLY' => 'true', 'MOBILITY_PILOT_UI_ENABLED' => 'false', 'MOBILITY_COLLEGE_CODE' => 'CAMPUS-BLR', 'MOBILITY_COHORT_REQUIRED' => 'true', 'MOBILITY_DEMO_VEHICLES_ENABLED' => 'false'] as $key => $value) {
             $this->environment[$key] = getenv($key);
             putenv($key.'='.$value);
         }
@@ -79,11 +79,18 @@ final class AddressRideFlowTest extends TestCase
         $date = now('Asia/Kolkata')->addDay()->toDateString();
         $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $car->id, 'total_seats' => 1];
         $this->actingAsApiUser($rider)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'not-owner'])->assertForbidden();
-        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'publish-address'])->assertOk()->json('data.trip_id');
+        $departureUtc = $date.'T03:00:00.000000Z';
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'publish-address'])
+            ->assertOk()->assertJsonPath('data.departure_at', $departureUtc)->json('data.trip_id');
+        $this->actingAsApiUser($driver)->getJson($base.'offers')
+            ->assertOk()->assertJsonPath('data.0.departure_at', $departureUtc);
         $this->assertDatabaseHas('trips', ['id' => $trip, 'car_id' => $car->id, 'total_seats' => 1]);
         $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['car_id' => $secondCar->id]), ['Idempotency-Key' => 'publish-address'])->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
         $url = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
-        $card = $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonCount(1, 'data')->json('data.0');
+        $this->actingAsApiUser($rider)->putJson($base.'profile', array_replace($this->profile('rider'), ['outbound_time' => '07:44']))->assertOk();
+        $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAsApiUser($rider)->putJson($base.'profile', array_replace($this->profile('rider'), ['outbound_time' => '07:50']))->assertOk();
+        $card = $this->actingAsApiUser($rider)->getJson($url)->assertOk()->assertJsonPath('pickup_window_minutes', 45)->assertJsonCount(1, 'data')->json('data.0');
         $this->assertArrayNotHasKey('route_map', $card);
         $this->assertArrayNotHasKey('driver_route_origin_label', $card);
         $this->assertArrayNotHasKey('demo_fixture', $card);
@@ -164,6 +171,73 @@ final class AddressRideFlowTest extends TestCase
         $notice = $this->actingAsApiUser($rider)->getJson($base.'notifications')->assertOk()->json('data.0');
         $this->assertSame('booking_cancelled', $notice['kind']);
         $this->assertSame($pending, $notice['booking_id']);
+    }
+
+    public function test_demo_vehicle_lookup_save_and_shared_capacity_stay_scoped_to_the_demo(): void
+    {
+        $driver = $this->student('demo.driver@stu.pes.edu');
+        $rider = $this->student('demo.rider@stu.pes.edu');
+        $other = $this->student('demo.other@stu.pes.edu');
+        $third = $this->student('demo.third@stu.pes.edu');
+        $base = '/api/mobility/address-rides/';
+        $swift = ['registration' => 'ka00 de 0007'];
+        $this->actingAsApiUser($driver)->postJson($base.'vehicles/lookup', $swift)->assertNotFound();
+        putenv('MOBILITY_DEMO_VEHICLES_ENABLED=true');
+        $this->actingAsApiUser($driver)->postJson($base.'vehicles/lookup', ['registration' => 'KA00DE9999'])->assertNotFound();
+        $this->actingAsApiUser($driver)->postJson($base.'vehicles/lookup', $swift)->assertOk()
+            ->assertJsonPath('data.registration', 'KA00DE0007')
+            ->assertJsonPath('data.name', 'Maruti Suzuki Swift')
+            ->assertJsonPath('data.passenger_seats', 4)
+            ->assertJsonPath('data.description', 'Demo verified — simulated vehicle lookup, not RTO verified.');
+        $this->assertDatabaseCount('cars', 0);
+        $carId = $this->actingAsApiUser($driver)->postJson($base.'vehicles', $swift)->assertOk()->json('data.id');
+        $this->actingAsApiUser($driver)->postJson($base.'vehicles', $swift)->assertOk()->assertJsonPath('data.id', $carId);
+        $scooter = $this->actingAsApiUser($driver)->postJson($base.'vehicles', ['registration' => 'KA00DE0001'])->assertOk()
+            ->assertJsonPath('data.type', 'Scooter')->assertJsonPath('data.vehicle_type', 'bike')
+            ->assertJsonPath('data.passenger_seats', 1)->json('data.id');
+        $this->assertDatabaseHas('cars', ['id' => $carId, 'user_id' => $driver->id, 'patente' => 'KA00DE0007', 'car_color_id' => null]);
+        $this->assertDatabaseCount('cars', 2);
+        $this->assertDatabaseCount('mobility_host_applications', 0);
+        $this->assertDatabaseCount('mobility_driver_onboardings', 0);
+        $this->assertFalse(CohortPolicy::hostApproved($driver->id));
+        $this->actingAsApiUser($driver)->getJson($base.'vehicles')->assertOk()->assertJsonCount(2, 'data');
+        $this->actingAsApiUser($rider)->getJson($base.'vehicles')->assertOk()->assertJsonCount(0, 'data');
+
+        $this->actingAsApiUser($driver)->putJson($base.'profile', $this->profile('driver'))->assertOk();
+        foreach ([$rider, $other, $third] as $passenger) {
+            $this->actingAsApiUser($passenger)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        }
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $carId, 'total_seats' => 2];
+        $this->actingAsApiUser($rider)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'demo-not-owner'])->assertForbidden();
+        $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['car_id' => $scooter, 'vehicle_type' => 'bike']), ['Idempotency-Key' => 'demo-too-many'])->assertUnprocessable()->assertJsonPath('error.code', 'VEHICLE_SEAT_LIMIT');
+        $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['vehicle_type' => 'bike']), ['Idempotency-Key' => 'demo-type-mismatch'])->assertForbidden();
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'demo-publish'])->assertOk()->json('data.trip_id');
+        $this->assertDatabaseHas('trips', ['id' => $trip, 'car_id' => $carId, 'total_seats' => 2]);
+
+        $search = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
+        $profile = $this->profile('rider');
+        $profile['home']['lat'] += 0.001;
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
+        $this->actingAsApiUser($rider)->getJson($search)->assertOk()
+            ->assertJsonPath('data.0.choice', 'ON_ROUTE_MEETING_POINT')
+            ->assertJsonPath('data.0.detour_meters', 0);
+
+        $bookings = [];
+        foreach ([$rider, $other, $third] as $index => $passenger) {
+            $token = $this->actingAsApiUser($passenger)->getJson($search)->assertOk()->assertJsonPath('data.0.seats_available', 2)->json('data.0.quote_token');
+            $bookings[] = $this->actingAsApiUser($passenger)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $token], ['Idempotency-Key' => 'demo-request-'.$index])->assertOk()->json('data.booking_id');
+        }
+        foreach (array_slice($bookings, 0, 2) as $booking) {
+            $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$booking.'/accept', [], ['Idempotency-Key' => 'demo-accept-'.$booking])->assertOk();
+        }
+        $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$bookings[2].'/accept', [], ['Idempotency-Key' => 'demo-overbook'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'NOT_SEAT_AVAILABLE');
+        $this->actingAsApiUser($driver)->getJson($base.'offers')->assertOk()->assertJsonPath('data.0.seats_available', 0);
+
+        putenv('MOBILITY_DEMO_VEHICLES_ENABLED=false');
+        $this->actingAsApiUser($driver)->getJson($base.'vehicles')->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'demo-disabled-publish'])->assertUnprocessable();
     }
 
     private function student(string $email): User

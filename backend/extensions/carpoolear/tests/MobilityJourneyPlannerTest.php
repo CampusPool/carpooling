@@ -75,7 +75,9 @@ final class MobilityJourneyPlannerTest extends TestCase
     public function test_detour_is_measured_on_complete_pickup_and_dropoff_route(): void
     {
         $p = $this->provider(); $baseline = $this->baseline($p);
-        $this->assertFalse((new JourneyPlanner($p))->plan($baseline, $this->origin, $this->destination, 'car', 'DIRECT_RIDER_PICKUP', 999, 100, 3600)['available']);
+        $result = (new JourneyPlanner($p))->plan($baseline, $this->origin, $this->destination, 'car', 'DIRECT_RIDER_PICKUP', 999, 100, 3600);
+        $this->assertFalse($result['available']);
+        $this->assertTrue($result['detour_limit_exceeded']);
     }
 
     public function test_invalid_walking_policy_graph_and_pricing_fail_closed(): void

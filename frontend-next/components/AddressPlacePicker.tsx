@@ -43,6 +43,7 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
         }).slice(0, 6);
         setSuggestions(next);
         setActiveIndex(next.length ? 0 : -1);
+        if (!next.length) setError("No addresses found. Try a nearby landmark.");
       } catch {
         if (generation.current === requestId) setError("Address suggestions could not load. Try again.");
       } finally {
@@ -107,7 +108,7 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
       }} /></label>
     {suggestions.length > 0 && <div id={listId} role="listbox" className={styles.suggestions} aria-label={`${label} suggestions`}>
       {suggestions.map((suggestion, index) => <button id={`${listId}-option-${index}`} type="button" role="option" aria-selected={activeIndex === index} key={suggestion.id}
-        onClick={() => void select(suggestion)}>{suggestion.label}</button>)}
+        onPointerDown={event => event.preventDefault()} onClick={() => void select(suggestion)}>{suggestion.label}</button>)}
     </div>}
     {busy && <small role="status">Finding address…</small>}
     {error && <small className={styles.error} role="alert">{error}</small>}

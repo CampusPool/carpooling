@@ -86,6 +86,7 @@ class MobilityServiceProvider extends ServiceProvider
         $this->loadRoutesFrom($root.'/routes/mobility.php');
         $this->loadRoutesFrom($root.'/routes/college-auth.php');
         $this->loadRoutesFrom($root.'/routes/address-rides.php');
+        $this->loadRoutesFrom($root.'/routes/planned-rides.php');
         $this->loadRoutesFrom($root.'/routes/local-auth.php');
         $this->loadRoutesFrom($root.'/routes/commute.php');
         $this->loadRoutesFrom($root.'/routes/driver-onboarding.php');

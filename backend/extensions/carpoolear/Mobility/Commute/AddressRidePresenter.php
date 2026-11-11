@@ -40,7 +40,10 @@ final class AddressRidePresenter
 
     private static function booking(array $booking): array
     {
-        unset($booking['demo_fixture'], $booking['wallet_state'], $booking['receipt'], $booking['release_at'], $booking['rider_arrived_at']);
+        unset($booking['demo_fixture']);
+        if (!AddressRideContext::walletEnabled()) {
+            unset($booking['wallet_state'], $booking['receipt'], $booking['release_at'], $booking['rider_arrived_at']);
+        }
         if ((int) ($booking['request_state'] ?? -1) !== Passenger::STATE_ACCEPTED) {
             unset($booking['route_map'], $booking['driver_route_origin_label'], $booking['driver_route_destination_label'], $booking['meeting_details']);
             $booking['pickup_label'] = 'Pickup details shared after acceptance';

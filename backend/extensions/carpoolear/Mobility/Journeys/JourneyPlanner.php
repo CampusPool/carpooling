@@ -37,7 +37,7 @@ final class JourneyPlanner
         if ($pairs === []) return $this->unavailable('ROUTE_DIRECTION_INCOMPATIBLE');
         if ($choice === 'DIRECT_RIDER_PICKUP') $pairs = [$pairs[0]];
         $deadline = $this->now() + self::DEADLINE_SECONDS;
-        $options = []; $evaluated = 0;
+        $options = []; $evaluated = 0; $detourLimitExceeded = false;
         foreach (array_slice($pairs, 0, self::MAX_PAIRS) as [$start, $end]) {
             $evaluated++;
             $pickup = $choice === 'DIRECT_RIDER_PICKUP' ? $origin : $start['point'];
@@ -46,7 +46,10 @@ final class JourneyPlanner
                 $vehicle = $this->path([$driverPoints[0], $pickup, $dropoff, $driverPoints[1]], $mode, $deadline);
                 if ($vehicle['data_version'] !== $baseline['data_version']) throw new PickupException('PICKUP_GRAPH_MISMATCH', 503);
                 $detour = ['added_distance_meters' => max(0, $vehicle['distance_meters'] - $baseline['distance_meters']), 'added_duration_seconds' => max(0, $vehicle['duration_seconds'] - $baseline['duration_seconds'])];
-                if ($detour['added_distance_meters'] > $maxDetourMeters || $detour['added_duration_seconds'] > $maxDetourSeconds) continue;
+                if ($detour['added_distance_meters'] > $maxDetourMeters || $detour['added_duration_seconds'] > $maxDetourSeconds) {
+                    $detourLimitExceeded = true;
+                    continue;
+                }
                 $pickup = $this->fromPair($vehicle['waypoints'][1]['location']);
                 $dropoff = $this->fromPair($vehicle['waypoints'][2]['location']);
                 $access = $this->walking($origin, $pickup, $deadline);
@@ -68,7 +71,7 @@ final class JourneyPlanner
             }
         }
         usort($options, static fn ($a, $b) => [$a['total_walking_meters'], $a['detour']['added_duration_seconds'], $a['pricing']['total_fare_minor']] <=> [$b['total_walking_meters'], $b['detour']['added_duration_seconds'], $b['pricing']['total_fare_minor']]);
-        return ($options[0] ?? $this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS')) + ['evaluated_candidates' => $evaluated, 'candidate_limit' => self::MAX_PAIRS, 'ranking' => 'least_total_walking_among_evaluated_ordered_candidates'];
+        return ($options[0] ?? ($this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS') + ['detour_limit_exceeded' => $detourLimitExceeded])) + ['evaluated_candidates' => $evaluated, 'candidate_limit' => self::MAX_PAIRS, 'ranking' => 'least_total_walking_among_evaluated_ordered_candidates'];
     }
 
     /** Foot-network rendezvous on the unchanged ordered driver road path. */

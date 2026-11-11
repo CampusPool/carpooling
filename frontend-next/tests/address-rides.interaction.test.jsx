@@ -50,7 +50,9 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   const requests = [];
   vi.stubGlobal("fetch", vi.fn(async (url, options) => {
     requests.push([url, options]);
-    const body = String(url).endsWith("/membership/me") ? { host_applications: [] } : { data: [] };
+    const body = String(url).includes("/address-rides/rides?") ? {
+      data: [], excluded: [{ reason: "PICKUP_TIME_MISMATCH" }, { reason: "DETOUR_LIMIT_EXCEEDED" }],
+    } : { data: [] };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }));
   render(<AddressRides token="synthetic-session" />);
@@ -60,7 +62,9 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   fireEvent.click(await screen.findByRole("option", { name: locations.Whitefield.label }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Find rides" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
-  await screen.findByText("No matching rides yet. Try another pickup time or a nearby address.");
+  await screen.findByText(/No matching rides for/);
+  expect(screen.getByText(/outside your search window/)).toBeVisible();
+  expect(screen.getByText(/longer detour than the driver allowed/)).toBeVisible();
   const profile = requests.find(([url]) => url === "/api/mobility/address-rides/profile");
   expect(JSON.parse(profile[1].body)).toMatchObject({ home: locations.Indiranagar, campus: locations.Whitefield, role: "rider" });
   expect(requests.some(([url]) => url.includes("/address-rides/rides?"))).toBe(true);
@@ -99,4 +103,24 @@ it("does not offer cancellation after the ride starts", async () => {
   fireEvent.click(screen.getByRole("tab", { name: "Bookings" }));
   await screen.findByText("Driver");
   expect(screen.queryByRole("button", { name: "Cancel booking" })).not.toBeInTheDocument();
+});
+
+it("publishes the selected capacity from a server-approved demo car", async () => {
+  const requests = [];
+  vi.stubGlobal("fetch", vi.fn(async (url, options) => {
+    requests.push([String(url), options]);
+    const body = String(url).endsWith("/vehicles") ? {
+      demo_vehicle_enabled: true,
+      data: [{ id: 8, registration: "KA00DE0007", name: "Maruti Suzuki Swift", vehicle_type: "car", passenger_seats: 4, demo_verified: true }],
+    } : { data: [] };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }));
+  render(<AddressRides token="synthetic-session" initialMode="offer" rideDefaults={{ origin: locations.Indiranagar, destination: locations.Whitefield }} />);
+  const capacity = await screen.findByRole("combobox", { name: "Passenger seats" });
+  expect(capacity.querySelectorAll("option")).toHaveLength(4);
+  fireEvent.change(capacity, { target: { value: "4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Publish ride" }));
+  await screen.findByText("Your ride is published. Riders can now request a seat.");
+  const [, request] = requests.find(([url, options]) => url.endsWith("/offers") && options.method === "POST");
+  expect(JSON.parse(request.body)).toMatchObject({ car_id: 8, total_seats: 4, vehicle_type: "car" });
 });

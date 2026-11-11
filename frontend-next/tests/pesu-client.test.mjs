@@ -12,3 +12,20 @@ test('bounds actual streamed response bytes without Content-Length',async()=>{
  const oversized=new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(2_000_001));c.close();}}));
  await assert.rejects(()=>fetchTimetable('synthetic','synthetic',async()=>oversized),{code:'PES_UNEXPECTED_RESPONSE'});
 });
+
+test('recognizes an active Academy verification challenge and does not fetch the timetable', async () => {
+  const calls = [];
+  const fetch = async (url) => {
+    calls.push(url.pathname);
+    if (url.pathname === '/Academy/') return new Response('<meta name="csrf-token" content="token"><div id="postPasswordOtpModal"></div>');
+    return new Response('<input name="j_password" type="password"><script>openPostPasswordOtpModal("a masked contact");</script>');
+  };
+  await assert.rejects(() => fetchTimetable('test-user', 'synthetic', fetch), { code: 'PES_VERIFICATION_REQUIRED' });
+  assert.deepEqual(calls, ['/Academy/', '/Academy/j_spring_security_check']);
+});
+
+test('ignores timetable placeholders in unused slots and rejects invalid alternatives', () => {
+  const withPlaceholder = html.replace('"ttDivText_1_1_1"', '"ttDivText_1_97_1":[], "ttDivText_1_1_1"');
+  assert.equal(parseTimetable(withPlaceholder).entries.length, 3);
+  assert.throws(() => parseTimetable(html.replace('ttDivText_1_1_2', 'ttDivText_1_1_101')), { reason: 'invalid_entry_reference' });
+});

@@ -50,7 +50,13 @@ export async function POST(req) {
   const backend = process.env.MOBILITY_API_ORIGIN || 'http://127.0.0.1:18080';
   try {
     const response = await fetch(`${backend}/api/mobility/commute/me`, { headers: { Authorization: authorization }, signal: AbortSignal.timeout(5000), cache: 'no-store', redirect: 'error' });
-    if (!response.ok) return reply({ error: 'CampusPool session invalid' }, response.status === 401 || response.status === 403 ? 401 : 503);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      return reply({
+        error: unauthorized ? 'Your CampusPool session expired. Sign in again to import.' : 'CampusPool service unavailable.',
+        code: unauthorized ? 'CAMPUSPOOL_SESSION_EXPIRED' : 'CAMPUSPOOL_UNAVAILABLE',
+      }, unauthorized ? 401 : 503);
+    }
   } catch { return reply({ error: 'CampusPool service unavailable' }, 503); }
   const hash = createHash('sha256').update(authorization).digest('hex');
   const now = Date.now();
@@ -68,11 +74,13 @@ export async function POST(req) {
     const messages = {
       INVALID_INPUT: [400, 'Enter your PES SRN and password.'],
       PES_SIGN_IN_FAILED: [401, 'PES sign-in failed. Check your details or sign in to Academy directly.'],
+      PES_VERIFICATION_REQUIRED: [422, 'Academy requires an additional verification step. Open PES Academy to view your schedule and add your classes here.'],
       PES_SESSION_EXPIRED: [401, 'PES session expired. Please try again.'],
       PES_UNAVAILABLE: [503, 'PES Academy is temporarily unavailable.'],
       UNSAFE_REDIRECT: [502, 'PES returned an unexpected redirect.'],
       PES_LOGIN_CHANGED: [502, 'The PES login page has changed.'],
       EMPTY_OR_UNRECOGNIZED_TIMETABLE: [422, 'No timetable could be verified.'],
+      PES_UNEXPECTED_RESPONSE: [502, 'Academy returned an unexpected response. Try again or add your classes manually.'],
       TIMETABLE_FORMAT_CHANGED: [502, 'The PES timetable format has changed.'],
     };
     const [status, message] = messages[code] || [502, 'PES timetable could not be retrieved.'];
