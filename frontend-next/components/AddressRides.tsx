@@ -215,6 +215,7 @@ export default function AddressRides({ token, onDriverOnboarding }: { token: str
         <p>{ride.pickup_label} → {ride.dropoff_label}</p>
         <p className={styles.meta}>{when(ride.departure_at)} · {ride.vehicle_label || (ride.vehicle_type === "bike" ? "Motorbike" : "Car")} · {ride.seats_available} seat{Number(ride.seats_available) === 1 ? "" : "s"} available</p>
         {typeof ride.total_fare_minor === "number" && <p>Estimated contribution {money(ride.total_fare_minor)}</p>}
+        {mode === "offer" && <button type="button" className="secondary" disabled={busy} onClick={() => { if (window.confirm("Cancel this ride? Pending and accepted bookings will be cancelled.")) void action(`trips/${ride.trip_id}/transition`, { action: "cancel" }, "Your ride and its bookings were cancelled."); }}>Cancel ride</button>}
         {mode === "find" && <button type="button" className={styles.primary} disabled={busy || Number(ride.seats_available) < 1 || requested} onClick={() => void action(`rides/${ride.trip_id}/request`, { quote_token: ride.quote_token }, "Seat requested. Your driver will respond in Bookings.").then(saved => { if (saved) setMode("bookings"); })}>{requested ? "Requested" : "Request a seat"}</button>}
       </article>; })}</div>
     </>}

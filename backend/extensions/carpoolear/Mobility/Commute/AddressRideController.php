@@ -112,14 +112,19 @@ final class AddressRideController
     {
         return $this->run($request, function () use ($request, $trip): JsonResponse {
             $this->publication($trip);
-            $request->validate(['action' => 'required|in:start,board,alight,complete', 'passenger_id' => 'sometimes|integer|min:1']);
+            $request->validate(['action' => 'required|in:start,board,alight,complete,cancel', 'passenger_id' => 'sometimes|integer|min:1']);
             return DB::transaction(function () use ($request, $trip): JsonResponse {
                 $locked = Trip::whereKey($trip)->lockForUpdate()->firstOrFail();
                 if ((int) $locked->user_id !== (int) $request->user()->id) throw new SegmentException('TRIP_OWNER_REQUIRED', 403);
                 $meta = DB::table('mobility_commute_demo_trips')->where('trip_id', $trip)->first();
-                AddressRideContext::approvedVehicle($request->user(), (int) $locked->car_id, $meta->vehicle_type);
+                if ($request->input('action') !== 'cancel') AddressRideContext::approvedVehicle($request->user(), (int) $locked->car_id, $meta->vehicle_type);
+                $affected = $request->input('action') === 'cancel' ? Passenger::where('trip_id', $trip)->whereIn('request_state', [Passenger::STATE_PENDING, Passenger::STATE_ACCEPTED])->get() : collect();
                 $request->attributes->set('commute.canonical_transition', true);
-                return app(MobilityController::class)->transition($request, $locked);
+                $response = app(MobilityController::class)->transition($request, $locked);
+                if ($response->isSuccessful()) {
+                    foreach ($affected as $booking) app(CommuteNotificationService::class)->bookingAction($booking, $locked, 'booking_cancelled', $request->user());
+                }
+                return $response;
             });
         });
     }
