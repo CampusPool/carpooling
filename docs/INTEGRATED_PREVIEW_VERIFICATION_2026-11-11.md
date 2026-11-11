@@ -38,10 +38,17 @@ from PR96; this combined release is reviewed through PR95.
 
 ## Browser acceptance
 
-Browser release result is recorded separately after execution. Tests use the
-actual deployed frontend and real Google Places, with API requests privately
-bridged to the disposable backend on InstaBox3 port18084. This is isolated
-integration evidence; it does not insert synthetic bookings in the real
+Chrome passed the complete two-account journey using the actual deployed
+frontend and real Google Places, with API requests privately bridged to the
+disposable backend on InstaBox3 port18084: driver publication, rider search and
+request, driver acceptance, cross-account message readback, start, pickup,
+dropoff and completion visible to both participants.86 API requests recorded
+no5xx response. Initial attempts exposed test timing and temporary network
+bridge failures; waiting for enabled chat and retrying the bridge resolved them.
+
+Timetable navigation, manual class save/reload,390px layout without page overflow,
+and the hosted import route authentication/origin boundary passed. This is
+isolated integration evidence; it does not insert synthetic bookings in the real
 presentation database or constitute a real two-person production journey.
 
 ## Remaining acceptance boundaries
