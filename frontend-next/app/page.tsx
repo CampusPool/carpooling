@@ -10,6 +10,7 @@ import StudentProfile from "../components/StudentProfile";
 import AccountMenu from "../components/AccountMenu";
 import PesTimetable from "../components/PesTimetable";
 import CanonicalPool from "../components/CanonicalPool";
+import AddressRides from "../components/AddressRides";
 import LiveCarpool from "../components/LiveCarpool";
 import OperatorAnalytics from "../components/OperatorAnalytics";
 import { isCurrentUnauthorized } from "../lib/session-events";
@@ -1500,8 +1501,9 @@ export default function Page() {
             }} />}
           {studentPreview && activeView === "timetable" && <PesTimetable key={token} token={token} />}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
-          {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
-          {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
+          {activeView === "pool" && studentPreview && <AddressRides key={token} token={token} onDriverOnboarding={() => setView("driver-onboarding")} />}
+          {activeView === "pool" && !studentPreview && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
+          {activeView === "pool" && !studentPreview && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
             <>
               {routeGeometry.length > 1 && (
