@@ -9,7 +9,7 @@ use STS\Mobility\Trust\CohortPolicy;
 final class CommuteService {
  public static function demoEnabled():bool{return app()->environment(['local','testing'])&&filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN);}
  public static function demoActor(int$id):bool{return self::demoEnabled()&&(DB::table('mobility_commute_demo_actors')->where('user_id',$id)->exists()||DB::table('mobility_local_accounts')->where('user_id',$id)->exists());}
- public function requireDemo(User$u):void{if(!self::demoActor($u->id)||!CohortPolicy::approved($u->id))throw new SegmentException('DEMO_SESSION_REQUIRED',403);}
+ public function requireDemo(User$u):void{if((!self::demoActor($u->id)&&!AddressRideContext::allows($u))||!CohortPolicy::approved($u->id))throw new SegmentException('DEMO_SESSION_REQUIRED',403);}
  public function accountRole(User$u):?string{return DB::table('mobility_local_accounts')->where('user_id',$u->id)->value('role');}
  public function requireRole(User$u,string$role):void{$accountRole=$this->accountRole($u);if($accountRole!==null&&$accountRole!==$role)throw new SegmentException('ACCOUNT_ROLE_REQUIRED',403);}
  private function actor(string$key,string$name):User {
@@ -95,7 +95,7 @@ final class CommuteService {
  }
  private function planned(Trip$t):void{if(DB::table('mobility_trip_lifecycles')->where('trip_id',$t->id)->value('state')!=='planned'||CarbonImmutable::parse($t->trip_date,'Asia/Kolkata')->lte(now('Asia/Kolkata')))throw new SegmentException('COMMUTE_TRIP_CLOSED',409);}
  public function bookings(User$u):array{
-  $this->requireDemo($u);$rows=Passenger::whereExists(fn($q)=>$q->selectRaw('1')->from('mobility_commute_demo_trips')->whereColumn('mobility_commute_demo_trips.trip_id','trip_passengers.trip_id'))->where(function($q)use($u){$q->where('user_id',$u->id)->orWhereExists(fn($t)=>$t->selectRaw('1')->from('trips')->whereColumn('trips.id','trip_passengers.trip_id')->where('trips.user_id',$u->id));})->orderByDesc('id')->limit(50)->get();return['data'=>$rows->map(fn($b)=>$this->bookingDto($b,$u))->all()];
+  $this->requireDemo($u);$rows=Passenger::whereExists(fn($q)=>$q->selectRaw('1')->from('mobility_commute_demo_trips')->whereColumn('mobility_commute_demo_trips.trip_id','trip_passengers.trip_id')->when(AddressRideContext::active(),fn($q)=>$q->where('mobility_commute_demo_trips.journey->student_address',true)))->where(function($q)use($u){$q->where('user_id',$u->id)->orWhereExists(fn($t)=>$t->selectRaw('1')->from('trips')->whereColumn('trips.id','trip_passengers.trip_id')->where('trips.user_id',$u->id));})->orderByDesc('id')->limit(50)->get();return['data'=>$rows->map(fn($b)=>$this->bookingDto($b,$u))->all()];
  }
  public function bookingDto(Passenger$b,User$u):array{
   $trip=Trip::findOrFail($b->trip_id);if((int)$b->user_id!==$u->id&&(int)$trip->user_id!==$u->id)throw new SegmentException('TRIP_FORBIDDEN',403);
