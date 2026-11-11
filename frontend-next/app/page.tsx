@@ -7,7 +7,8 @@ import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
 import StudentProfile from "../components/StudentProfile";
-import AccountMenu from "../components/AccountMenu";
+import PlannedRides from "../components/PlannedRides";
+import { DashboardFrame, DashboardHome, DashboardChats, DashboardAccount, DashboardVehicles, type RideSection, type RideDefaults } from "../components/StudentDashboard";
 import PesTimetable from "../components/PesTimetable";
 import CanonicalPool from "../components/CanonicalPool";
 import AddressRides from "../components/AddressRides";
@@ -58,6 +59,7 @@ export default function Page() {
     [mapError, setMapError] = useState(""),
     [mapRetry, setMapRetry] = useState(0),
     [view, setView] = useState("home"),
+    [studentRide, setStudentRide] = useState<{ section: RideSection; defaults?: RideDefaults; revision: number }>({ section: "find", revision: 0 }),
     [origin, setOrigin] = useState<R>(),
     [destination, setDestination] = useState<R>(),
     [originText, setOriginText] = useState(""),
@@ -536,7 +538,7 @@ export default function Page() {
       if (saved?.token && ["rider", "driver"].includes(saved.role)) {
         void sync(saved.token, saved.role).then(() => {
           if (!active) return;
-          setRole(saved.role); setToken(saved.token); setView("pool");
+          setRole(saved.role); setToken(saved.token); setView("home");
         }).catch((error: Error & { status?: number }) => {
           if (!active) return;
           // Only invalid credentials should destroy a saved session. A temporary
@@ -547,7 +549,7 @@ export default function Page() {
           }
           setRole(saved.role);
           setToken(saved.token);
-          setView("pool");
+          setView("home");
           setSessionSyncNeeded(true);
           setError("Your session was preserved, but account details could not load. Retry account loading.");
         });
@@ -1171,19 +1173,66 @@ export default function Page() {
           const identity = await sync(accountToken, accountRole);
           setToken(accountToken);
           setSessionSyncNeeded(false);
-          if (studentPreview) setView("pool");
+          if (studentPreview) setView("home");
           else if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
         } catch (e: any) {
           if (e?.status !== 401) {
             setSessionSyncNeeded(true);
             setToken(accountToken);
-            if (studentPreview) setView("pool");
+            if (studentPreview) setView("home");
             setError("Signed in, but account details could not be loaded. Retry to continue.");
           }
         }
       }}
     />
   );
+  if (studentPreview) {
+    const student = me?.student_profile;
+    const name = student?.name || me?.user?.name || "Your account";
+    const email = student?.email || me?.user?.email || "";
+    const initials = name.trim().split(/\s+/).slice(0, 2).map((part: string) => part[0]).join("").toUpperCase() || "C";
+    const screen = student?.complete === false ? "complete-profile" : view === "pool" ? "rides" : view;
+    const navigate = (next: string) => {
+      setError("");
+      setView(next);
+      window.scrollTo(0, 0);
+    };
+    const openRide = (section: RideSection, defaults?: RideDefaults) => {
+      setStudentRide(current => ({ section, defaults, revision: current.revision + 1 }));
+      navigate("rides");
+    };
+    const title: Record<string, string> = {
+      rides: "Rides", chats: "Chats", timetable: "My timetable", account: "Account",
+      settings: "Profile & settings", vehicle: "My vehicle", plan: "Planned rides", "complete-profile": "Complete your profile",
+    };
+    return <DashboardFrame view={screen} initials={initials} onNavigate={next => {
+      if (next === "rides" && screen !== "rides") openRide("find");
+      else navigate(next);
+    }} onUpdates={() => openRide("updates")}>
+      {title[screen] && <h1>{title[screen]}</h1>}
+      {error && <p className="error banner" role="alert">{error}</p>}
+      {sessionSyncNeeded && <button className="primary" disabled={busy} onClick={async () => {
+        setBusy(true);
+        try { await sync(token, role); setSessionSyncNeeded(false); setError(""); }
+        catch (failure: any) { if (failure?.status !== 401) setError("Account details are still unavailable. Please retry."); }
+        finally { setBusy(false); }
+      }}>Retry account loading</button>}
+      {screen === "home" && <DashboardHome key={token} token={token} name={name} openRide={openRide} openPlan={() => navigate("plan")} />}
+      {screen === "rides" && <AddressRides key={`${token}:${studentRide.revision}`} token={token}
+        {...{ initialMode: studentRide.section, rideDefaults: studentRide.defaults }}
+        onDriverOnboarding={() => navigate("vehicle")} />}
+      {screen === "chats" && <DashboardChats key={token} token={token} onFind={() => openRide("find")} />}
+      {screen === "timetable" && <PesTimetable key={token} token={token} />}
+      {screen === "plan" && <PlannedRides token={token} onBack={() => navigate("home")} />}
+      {screen === "vehicle" && <DashboardVehicles key={token} token={token} onOffer={() => openRide("offer")} />}
+      {screen === "account" && <DashboardAccount name={name} email={email} initials={initials} verified={Boolean(student)}
+        onNavigate={navigate} openRide={openRide} signOut={() => void signOut()} />}
+      {["complete-profile", "settings"].includes(screen) && <StudentProfile token={token} onSaved={updated => {
+        setMe(current => ({ ...current, user: { ...current?.user, name: updated.name }, student_profile: updated }));
+        navigate(screen === "settings" ? "account" : "home");
+      }} />}
+    </DashboardFrame>;
+  }
   const home = profile.home?.label || "",
     campus = profile.campus?.label || "";
   const displayedHome = direction === "return" ? destination : origin;
@@ -1193,14 +1242,8 @@ export default function Page() {
   ).slice(0, 5);
   // Local accounts use the map-backed ride flow, never the duplicate legacy demo.
   const localAccount = me?.account_role === "rider" || me?.account_role === "driver";
-  const activeView = studentPreview && me?.student_profile?.complete === false
-    ? "complete-profile"
-    : studentPreview && ["home", "profile"].includes(view)
-      ? "pool"
-      : localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
-  const navItems: [string, string][] = studentPreview
-    ? [["pool", "Rides"], ["timetable", "Timetable"], ["driver-onboarding", "Driver onboarding"]]
-    : me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
+  const activeView = localAccount && ["home", "rides", "bookings"].includes(view) ? "pool" : view;
+  const navItems: [string, string][] = me?.operator && process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
     ? [["operator", "Operations"]]
     : localAccount || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1"
       ? [["pool", "Rides and bookings"], ...(localAccount && me?.account_role === "driver" ? [["driver-onboarding", "Driver onboarding"] as [string, string]] : [])]
@@ -1246,13 +1289,7 @@ export default function Page() {
         >
           Sign out
         </button>}
-        {studentPreview && <AccountMenu
-          name={me?.student_profile?.name || me?.user?.name || "Your account"}
-          email={me?.user?.email || ""}
-          busy={busy}
-          onSettings={() => { setNotice(""); setView("settings"); }}
-          onSignOut={() => void signOut()}
-        />}
+
       </header>
       <div className={activeView === "complete-profile" ? "layout profile-onboarding" : "layout"}>
         {activeView !== "complete-profile" && <aside>
@@ -1493,15 +1530,7 @@ export default function Page() {
               </div>
             </>
           )}
-          {studentPreview && ["complete-profile", "settings"].includes(activeView) && <StudentProfile token={token}
-            onSaved={updated => {
-              setMe(current => ({ ...current, user: { ...current?.user, name: updated.name }, student_profile: updated }));
-              setNotice("");
-              setView("pool");
-            }} />}
-          {studentPreview && activeView === "timetable" && <PesTimetable key={token} token={token} />}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
-          {activeView === "pool" && studentPreview && <AddressRides key={token} token={token} onDriverOnboarding={() => setView("driver-onboarding")} />}
           {activeView === "pool" && !studentPreview && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
           {activeView === "pool" && !studentPreview && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
