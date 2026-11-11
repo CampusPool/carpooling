@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import Page from "../app/page";
 
@@ -21,13 +21,14 @@ it("public student mode exposes only verified-student OTP and hides synthetic/de
     return json({ error: { code: "NOT_FOUND" } }, 404);
   }));
   render(<Page />);
-  const studentHeading = await screen.findByText("Student sign-in or registration");
+  const studentHeading = await screen.findByRole("heading", { name: "Student sign-in" });
   expect(studentHeading).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Local demo account" })).not.toBeInTheDocument();
   expect(screen.queryByText("Administrator sign-in")).not.toBeInTheDocument();
-  fireEvent.click(studentHeading);
   fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+  const send = screen.getByRole("button", { name: "Send code" });
+  await waitFor(() => expect(send).toBeEnabled());
+  fireEvent.click(send);
   expect(await screen.findByLabelText("Verification code")).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("5:00");
 });

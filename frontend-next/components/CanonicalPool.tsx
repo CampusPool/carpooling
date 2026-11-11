@@ -270,8 +270,8 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
         </details>
         <button className="primary wide" disabled={busy || !capabilities.discover || points.length < 2}>{busy ? "Searching…" : "Search available seats"}</button>
       </form>
-      {points.length < 2 && !busy && <p className="review-note">The server has fewer than two pickup points configured. Ask the operator to prepare the route catalog.</p>}
-      {searched && matches.length === 0 && <p className="empty">No rides match these pickup points and date. Check the route and time. Your own offers are hidden; use a different rider account to test your offer.</p>}
+      {points.length < 2 && !busy && <p className="review-note">Ride search is unavailable until campus pickup points are added.</p>}
+      {searched && matches.length === 0 && <p className="empty">No rides match these pickup points and date. Try a different time or route.</p>}
       {!!matches.length && <div className="pool-results">{matches.map((match) => <article className="onboarding-panel pool-result" key={match.match_id}>
       <div><strong>{pointName(match.pickup_point_id)} → {pointName(match.dropoff_point_id)}</strong><p className="fine">Host: {match.host_name || "Host"} · Vehicle: {match.vehicle_label || (match.vehicle_type === "bike" ? "Motorbike" : "Car")}</p><p className="fine">Pickup {localTime(match.pickup_local)} IST · drop-off {localTime(match.dropoff_local)} IST · {Number(match.seats_available)} seat{Number(match.seats_available) === 1 ? "" : "s"} free · {price(match.seat_price_minor)} per passenger · no payment collected</p>{match.synthetic_only && <p className="review-note">Synthetic test quote</p>}</div>
         <button type="button" className="primary" disabled={busy || !capabilities.request || Number(match.seats_available) < 1} onClick={() => void requestSeat(match)}>Request one seat</button>

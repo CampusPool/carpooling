@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatOtpCountdown, normalizeStudentEmail } from "../lib/student-email";
+
+import styles from "./StudentSignIn.module.css";
 
 type Request = (path: string, token: string, method?: string, json?: Record<string, unknown>) => Promise<any>;
 
@@ -16,7 +18,11 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [campuses, setCampuses] = useState<string[]>([]);
-  const [deliveryScope, setDeliveryScope] = useState<string>("unavailable");
+  const [deliveryScope, setDeliveryScope] = useState("");
+  const [deliveryAvailable, setDeliveryAvailable] = useState<boolean | null>(null);
+  const emailInput = useRef<HTMLInputElement>(null);
+  const codeInput = useRef<HTMLInputElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
   const [expiryAt, setExpiryAt] = useState(0);
   const [resendAt, setResendAt] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -26,8 +32,11 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     let active = true;
     request("college-auth/config", "").then(result => {
       if (active && Array.isArray(result.campuses)) setCampuses(result.campuses.filter((item: unknown): item is string => typeof item === "string"));
-      if (active) setDeliveryScope(typeof result.delivery_scope === "string" ? result.delivery_scope : "unavailable");
-    }).catch(() => { if (active) setCampuses([]); });
+      if (active) {
+        setDeliveryScope(typeof result.delivery_scope === "string" ? result.delivery_scope : "");
+        setDeliveryAvailable(result.delivery_available === true);
+      }
+    }).catch(() => { if (active) setDeliveryAvailable(false); });
     return () => { active = false; };
   }, [request]);
 
@@ -42,7 +51,16 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     return () => clearInterval(interval);
   }, [challenge, expiryAt, resendAt]);
 
+  useEffect(() => {
+    if (challenge) codeInput.current?.focus();
+  }, [challenge]);
+
+  useEffect(() => {
+    if (newStudent) nameInput.current?.focus();
+  }, [newStudent]);
+
   async function issueCode() {
+    if (!deliveryAvailable || busy || pending) return;
     const normalized = normalizeStudentEmail(email);
     if (!normalized) {
       setError("Use your @stu.pes.edu email address or PES student SRN.");
@@ -78,38 +96,57 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     } catch (e: any) {
       if (e?.code === "STUDENT_NAME_INVALID") {
         setNewStudent(true);
-        setError("First sign-in? Complete your student profile below, then verify again.");
+        setError("Enter your name, registration number, and campus to finish setting up your account.");
       } else {
         setError(e?.message || "Could not verify the code.");
       }
     } finally { setPending(false); }
   }
 
-  return <details className="admin-login">
-    <summary>Student sign-in or registration</summary>
-    <p className="fine">Enter your @stu.pes.edu address or your PES SRN. Verification codes last five minutes. Never enter your college portal password.</p>
-    {deliveryScope === "local_capture" && <p className="fine" role="note">Development testing: emails are captured in Mailpit and do not reach your PES inbox.</p>}
-    {deliveryScope === "unavailable" && <p className="fine" role="note">External email delivery is not confirmed for this environment.</p>}
-    {!challenge ? <form onSubmit={sendCode} className="form-grid">
-      <label>College email or SRN<input type="text" autoComplete="username" placeholder="PES1UG24AM920 or student@stu.pes.edu" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-      <button type="submit" className="secondary wide" disabled={busy || pending}>Send code</button>
-    </form> : <form onSubmit={verifyCode} className="form-grid">
-      <p className="fine">Enter the six-digit code sent to {email}.</p>
-      <p className="fine" role="status">{secondsLeft > 0 ? "Code expires in " + formatOtpCountdown(secondsLeft) : "Code expired. Request a new one."}</p>
-      <label>Verification code<input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required /></label>
-      <label><input type="checkbox" checked={newStudent} onChange={e => setNewStudent(e.target.checked)} /> I need to complete my student profile</label>
+  function changeEmail() {
+    setChallenge("");
+    setCode("");
+    setNewStudent(false);
+    setName("");
+    setSrn("");
+    setCampus("");
+    setError("");
+    requestAnimationFrame(() => emailInput.current?.focus());
+  }
+
+  const mailpit = deliveryScope === "local_capture";
+  return <section className={styles.card} aria-labelledby="student-signin">
+    <h2 id="student-signin">{challenge ? (newStudent ? "Complete your profile" : "Check your email") : "Student sign-in"}</h2>
+    {!challenge ? <>
+      <p>Enter your PES student email or SRN. We’ll email you a six-digit sign-in code.</p>
+      {mailpit && <p className={styles.note} role="note">Test codes are available in Mailpit.</p>}
+      {deliveryAvailable === false && <p className={styles.note} role="status">Email sign-in is temporarily unavailable. Try again later.</p>}
+      <form onSubmit={sendCode} className={styles.form}>
+        <label>College email or SRN
+          <input ref={emailInput} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="name@stu.pes.edu" value={email} onChange={e => setEmail(e.target.value)} required />
+        </label>
+        <button type="submit" className={styles.submit} disabled={busy || pending || deliveryAvailable !== true}>{pending ? "Sending code…" : "Send code"}</button>
+      </form>
+    </> : <form onSubmit={verifyCode} className={styles.form}>
+      <p>{mailpit ? "Open Mailpit for the code addressed to " : "Enter the code we sent to "}<strong>{email}</strong>.</p>
+      <p className={styles.timer} role="status" aria-live={secondsLeft > 0 ? "off" : "polite"}>{secondsLeft > 0 ? "Code expires in " + formatOtpCountdown(secondsLeft) : "Code expired. Request a new one."}</p>
+      <label>Verification code
+        <input ref={codeInput} className={styles.code} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required />
+      </label>
       {newStudent && <>
-        <label>Name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" required /></label>
+        <label>Name<input ref={nameInput} value={name} onChange={e => setName(e.target.value)} autoComplete="name" required /></label>
         <label>SRN<input value={srn} onChange={e => setSrn(e.target.value)} required /></label>
-        <label>Campus<select value={campus} onChange={e => setCampus(e.target.value)} required><option value="">Select campus</option>{campuses.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
-        {campuses.length === 0 && <p className="error">Campus options are unavailable. Please try again later.</p>}
+        <label>Campus<select value={campus} onChange={e => setCampus(e.target.value)} required><option value="">Select campus</option>{campuses.map(item => <option key={item} value={item}>{item === "CAMPUS-BLR" ? "Bengaluru" : item}</option>)}</select></label>
+        {campuses.length === 0 && <p className={styles.note}>Campus options are unavailable. Please try again later.</p>}
       </>}
-      <button type="submit" className="secondary wide" disabled={busy || pending || secondsLeft <= 0}>Verify and sign in</button>
-      <button type="button" className="secondary wide" disabled={busy || pending || resendSeconds > 0} onClick={() => void issueCode()}>
-        {resendSeconds > 0 ? "Resend available in " + formatOtpCountdown(resendSeconds) : "Resend a new code"}
-      </button>
-      <button type="button" className="secondary wide" disabled={pending} onClick={() => { setChallenge(""); setCode(""); setError(""); }}>Use a different email</button>
+      <button type="submit" className={styles.submit} disabled={busy || pending || secondsLeft <= 0}>{pending ? "Please wait…" : "Verify and sign in"}</button>
+      <div className={styles.actions}>
+        <button type="button" disabled={busy || pending || resendSeconds > 0} onClick={() => void issueCode()}>
+          {resendSeconds > 0 ? "Resend available in " + formatOtpCountdown(resendSeconds) : "Resend code"}
+        </button>
+        <button type="button" disabled={pending} onClick={changeEmail}>Change email</button>
+      </div>
     </form>}
-    {error && <p className="error" role="alert">{error}</p>}
-  </details>;
+    {error && <p className={styles.error} role="alert">{error}</p>}
+  </section>;
 }

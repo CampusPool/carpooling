@@ -21,27 +21,125 @@ export async function validSession(cookie, secret, now=Date.now()) {
   if (!match || Number(match[1]) <= now || Number(match[1]) > now+8*3600000) return false;
   return equal(match[2], await signature(match[1], secret));
 }
-const page = `<!doctype html><meta name="viewport" content="width=device-width"><title>CampusPool tester access</title><main style="font:18px system-ui;max-width:440px;margin:12vh auto;padding:24px"><h1>CampusPool tester access</h1><p>Enter the access key shared by the CampusPool team to open this private preview. Once inside, sign in separately with your PES email or SRN.</p><form method="post" action="/_tester"><label>Tester access key <input name="password" type="password" required autocomplete="current-password" style="display:block;width:100%;margin:16px 0;padding:10px;box-sizing:border-box"></label><button style="padding:10px 20px">Open CampusPool</button></form></main>`;
+function accessPage(invalidKey = false) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview access | CampusPool</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #142b25;
+      background: #f7f6ef;
+      font: 1rem/1.55 system-ui, sans-serif;
+    }
+    .layout {
+      width: min(100% - 2rem, 32rem);
+      margin-inline: auto;
+      padding-block: clamp(1.75rem, 8vh, 6rem) 2rem;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      font-size: 1.15rem;
+      font-weight: 750;
+      letter-spacing: -.035em;
+      margin-bottom: clamp(1.5rem, 6vh, 4rem);
+    }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: .6rem;
+      color: white;
+      background: #165b48;
+      letter-spacing: 0;
+    }
+    main {
+      padding: clamp(1.25rem, 6vw, 2.75rem);
+      border: 1px solid #d9ded3;
+      border-radius: 1.4rem;
+      background: #fff;
+      box-shadow: 0 1rem 2.5rem #142b250a;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 6vw, 2.45rem);
+      line-height: 1.1;
+      letter-spacing: -.045em;
+    }
+    p { margin-block: .8rem 0; color: #485d55; }
+    form { display: grid; gap: .55rem; margin-top: 1.6rem; }
+    label { font-size: .9rem; font-weight: 680; }
+    input, button { min-height: 3rem; width: 100%; border-radius: .65rem; font: inherit; }
+    input {
+      padding: .6rem .8rem;
+      border: 1px solid #84988d;
+      background: white;
+      color: inherit;
+    }
+    button {
+      margin-top: .55rem;
+      padding: .65rem 1rem;
+      border: 0;
+      background: #165b48;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { background: #104936; }
+    :focus-visible { outline: .18rem solid #165b48; outline-offset: .2rem; }
+    .error { margin: 0; color: #9d291c; font-size: .9rem; }
+    [aria-invalid="true"] { border-color: #9d291c; }
+    .note { font-size: .875rem; margin-top: 1.1rem; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <header><span class="mark" aria-hidden="true">C</span>CampusPool</header>
+    <main>
+      <h1>Join the campus preview</h1>
+      <p>Enter the access key from your CampusPool invitation.</p>
+      <form method="post" action="/_tester">
+        <label for="access-key">Preview access key</label>
+        <input id="access-key" name="password" type="password" required autocomplete="current-password"${invalidKey ? ' aria-invalid="true" aria-describedby="key-error"' : ''}>
+        ${invalidKey ? '<p class="error" id="key-error" role="alert">That key did not match. Check your invitation and try again.</p>' : ''}
+        <button type="submit">Continue to CampusPool</button>
+      </form>
+      <p class="note">After opening the preview, sign in with your PES student email or SRN.</p>
+    </main>
+  </div>
+</body>
+</html>`;
+}
 function reply(body, status, headers={}) {
   return new Response(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',...headers}});
+}
+function accessReply(status) {
+  return reply(accessPage(status === 403),status,{
+    'Content-Type':'text/html; charset=utf-8',
+    // Native form submissions need a same-origin Origin header for the POST check.
+    'Referrer-Policy':'same-origin',
+    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+  });
 }
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (!env.TESTER_PASSWORD || !env.SESSION_SECRET || !env.ORIGIN_TOKEN || !env.ORIGIN_URL) return reply('Preview unavailable',503);
     if (url.pathname === '/_tester') {
-      // Native form submissions need their same-origin Origin header for the POST check.
-      if (request.method === 'GET') return reply(page,200,{
-        'Content-Type':'text/html; charset=utf-8',
-        'Referrer-Policy':'same-origin',
-        'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-      });
+      if (request.method === 'GET') return accessReply(200);
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return reply('Forbidden',403);
       if (Number(request.headers.get('Content-Length')||0)>1024) return reply('Request too large',413);
       const body = await request.text();
       if (body.length>1024) return reply('Request too large',413);
       const password = new URLSearchParams(body).get('password')||'';
-      if (!await equal(password,env.TESTER_PASSWORD)) return reply('Invalid tester key',403);
+      if (!await equal(password,env.TESTER_PASSWORD)) return accessReply(403);
       const expiry = String(Date.now()+8*3600000);
       return reply(null,303,{'Location':'/','Set-Cookie':`${COOKIE}=${expiry}.${await signature(expiry,env.SESSION_SECRET)}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800`});
     }

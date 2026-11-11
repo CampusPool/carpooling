@@ -13,7 +13,14 @@ test('tester login rejects cross-origin, bad passwords and forged sessions',asyn
  const login=(origin,password)=>worker.fetch(new Request('https://preview.workers.dev/_tester',{method:'POST',headers:{Origin:origin},body:new URLSearchParams({password})}),env);
  assert.equal((await login('https://evil.example',env.TESTER_PASSWORD)).status,403);
  assert.equal((await login('null',env.TESTER_PASSWORD)).status,403);
- assert.equal((await login('https://preview.workers.dev','wrong')).status,403);
+ const invalid=await login('https://preview.workers.dev','wrong');
+ assert.equal(invalid.status,403);
+ assert.equal(invalid.headers.get('Referrer-Policy'),'same-origin');
+ assert.equal(invalid.headers.get('Set-Cookie'),null);
+ const invalidPage=await invalid.text();
+ assert.match(invalidPage,/role="alert">That key did not match/);
+ assert.match(invalidPage,/aria-describedby="key-error"/);
+ assert.doesNotMatch(invalidPage,/wrong/);
  const response=await login('https://preview.workers.dev',env.TESTER_PASSWORD);
  assert.equal(response.status,303);
  const cookie=response.headers.get('set-cookie');

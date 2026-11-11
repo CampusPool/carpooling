@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { request } from "../lib/legacy-api";
 import LocalAccountSignIn from "./LocalAccountSignIn";
 import StudentSignIn from "./StudentSignIn";
+import styles from "./StudentSignIn.module.css";
 
 type Props = {
   request: typeof request;
@@ -33,6 +34,25 @@ export default function LocalAccountLanding({
       .catch(() => { if (active) setStudentOnly(forceStudentOnly); });
     return () => { active = false; };
   }, [request, forceStudentOnly]);
+  if (studentOnly) {
+    return (
+      <main className={styles.landing}>
+        <header className={styles.brand}>
+          <span aria-hidden="true" className={styles.mark}>C</span>
+          CampusPool
+        </header>
+        <div className={styles.layout}>
+          <section className={styles.intro} aria-labelledby="student-intro">
+            <h1 id="student-intro">Share a ride<br />to campus.</h1>
+            <p>Find a seat with another PES student or offer a ride on your campus commute.</p>
+          </section>
+          <StudentSignIn request={request} busy={busy} onSignedIn={token => onSignedIn(token, "rider")} />
+        </div>
+        {error && <p className={styles.pageError} role="alert">{error}</p>}
+      </main>
+    );
+  }
+
   return (
     <main className="landing">
       <div className="brand"><span className="logo">C</span>CampusPool</div>
@@ -40,13 +60,9 @@ export default function LocalAccountLanding({
         <div>
           <p className="eyebrow">CAMPUS COMMUTE</p>
           <h1>Share the<br /><em>way home.</em></h1>
-          <p className="lede">{studentOnly === true
-            ? "Sign in with your verified PES student email to find or share a campus commute."
-            : "Create separate rider and driver accounts. Use different browser profiles or a normal and private window, so each account keeps its own sign-in while you publish a ride, request a seat, and accept it."}</p>
-          {studentOnly
-            ? <StudentSignIn request={request} busy={busy} onSignedIn={async token => onSignedIn(token, "rider")} />
-            : <LocalAccountSignIn request={request} busy={busy} onSignedIn={onSignedIn} />}
-          {!studentOnly && <details className="admin-login">
+          <p className="lede">Create separate rider and driver accounts. Use different browser profiles or a normal and private window, so each account keeps its own sign-in while you publish a ride, request a seat, and accept it.</p>
+          <LocalAccountSignIn request={request} busy={busy} onSignedIn={onSignedIn} />
+          <details className="admin-login">
             <summary>Administrator sign-in</summary>
             <p className="fine">Use an existing administrator account. This form does not create accounts or grant privileges.</p>
             <form onSubmit={onAdminSignIn} className="form-grid">
@@ -54,11 +70,9 @@ export default function LocalAccountLanding({
               <label>Administrator password<input type="password" value={adminPassword} onChange={(event) => onAdminPasswordChange(event.target.value)} autoComplete="current-password" required /></label>
               <button className="secondary wide" type="submit" disabled={busy}>Sign in as administrator</button>
             </form>
-          </details>}
+          </details>
           {error && <p className="error">{error}</p>}
-          <p className="fine">{studentOnly === true
-            ? "Verified student access · development pilot; payments and GPS are not live."
-            : "Local classroom demo · synthetic credits only"}</p>
+          <p className="fine">Local classroom demo · synthetic credits only</p>
         </div>
         <div className="hero-art"><div className="sun" /><div className="road" /></div>
       </section>
