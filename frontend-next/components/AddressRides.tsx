@@ -102,10 +102,14 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       ? offers.find(offer => offer.trip_id === selectedDetails.ride.trip_id)
       : selectedDetails?.ride;
   const details = selectedDetails && detailsRide ? { kind: selectedDetails.kind, ride: detailsRide } : undefined;
+  const pickupApproach = details?.ride.pickup_approach ?? (details?.ride.route_map ? {
+    pickup: details.ride.route_map.points?.pickup, walking_geometry: details.ride.route_map.access_geometry,
+  } : undefined);
   const [searchSummary, setSearchSummary] = useState<{ distance_meters: number; duration_seconds: number }>();
   const [searched, setSearched] = useState(false);
   const [searchReasons, setSearchReasons] = useState<string[]>([]);
   const [pickupWindow, setPickupWindow] = useState<number>();
+  const [pickupChoice, setPickupChoice] = useState<"DIRECT_RIDER_PICKUP" | "ON_ROUTE_MEETING_POINT">("ON_ROUTE_MEETING_POINT");
   const [detourKm, setDetourKm] = useState("4");
   const [detourMinutes, setDetourMinutes] = useState("10");
   const attempts = useRef(new Map<string, string>());
@@ -209,7 +213,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       });
       if (mode === "offer") {
         await mutate("offers", { date, direction: "outbound", vehicle_type: vehicle!.vehicle_type, car_id: vehicle!.id, total_seats: seats,
-          choice: "DIRECT_RIDER_PICKUP", max_detour_meters: meters, max_detour_seconds: seconds });
+          choice: pickupChoice, max_detour_meters: meters, max_detour_seconds: seconds });
         setNotice("Your ride is published. Riders can now request a seat.");
         await refresh();
       } else {
@@ -267,6 +271,15 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       {details.ride.driver_verified_pes === true && <p className={styles.verified}>✓ Verified PES email</p>}
       <RouteLabels ride={details.ride} />
       <RideMetrics ride={details.ride} />
+      {details.ride.choice === "ON_ROUTE_MEETING_POINT" && pickupApproach?.pickup && <>
+        <p>Meeting point: {Number(pickupApproach.pickup.lat).toFixed(5)}, {Number(pickupApproach.pickup.lng).toFixed(5)}</p>
+        <p>Walk to this point to meet the driver. The walking distance includes estimated gaps where the map cannot route to an exact endpoint.</p>
+        {useOla && pickupApproach.walking_geometry?.length > 1 && <>
+          <p>Walking route to pickup</p>
+          <OlaStaticRouteMap token={token} geometry={pickupApproach.walking_geometry} />
+        </>}
+      </>}
+      {details.ride.choice === "DIRECT_RIDER_PICKUP" && <p>Driver comes to your pickup. The estimate includes a direct-pickup demo surcharge.</p>}
       {!useOla && mapStatus === "ready" && (details.ride.route_map?.points || (details.kind === "match" && pickup && dropoff)) && <CanonicalRouteMap points={noPoints}
         pickup={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.pickup || details.ride.route_map.points.driver_start, 1, "Pickup") : pickup}
         dropoff={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.dropoff || details.ride.route_map.points.driver_end, 2, "Drop-off") : dropoff}
@@ -301,12 +314,19 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
             </select>
           </label>}
           {selectedVehicle && <>
+            <label className={styles.wide}>Pickup arrangement
+              <select value={pickupChoice} onChange={event => setPickupChoice(event.target.value as typeof pickupChoice)} disabled={busy}>
+                <option value="ON_ROUTE_MEETING_POINT">Rider walks to my route</option>
+                <option value="DIRECT_RIDER_PICKUP">I drive to the rider</option>
+              </select>
+            </label>
+            <p className={styles.meta}>{pickupChoice === "ON_ROUTE_MEETING_POINT" ? "The rider walks to a meeting point along your route." : "The rider is quoted an extra demo contribution for direct pickup."}</p>
             <label>Maximum detour (km)<input type="number" min="0" max="10" step="0.1" value={detourKm} onChange={event => setDetourKm(event.target.value)} disabled={busy} required /></label>
             <label>Maximum extra drive (minutes)<input type="number" min="0" max="30" step="1" value={detourMinutes} onChange={event => setDetourMinutes(event.target.value)} disabled={busy} required /></label>
             <p className={`${styles.meta} ${styles.wide}`}>Both limits apply to this offer. Enter zero to keep the published route.</p>
           </>}
           {selectedVehicle?.demo_verified && <p className={`${styles.meta} ${styles.wide}`}>Demo verified — simulated vehicle lookup, not RTO verified.</p>}
-          {seats > 1 && <p className={`${styles.meta} ${styles.wide}`}>Shared rides use meeting points along the agreed route.</p>}
+          {seats > 1 && <p className={`${styles.meta} ${styles.wide}`}>Once a rider is accepted, later riders meet along the agreed route.</p>}
         </>}
         {(mode !== "offer" || !!vehicles.length) && <button type="submit" className={`${styles.primary} ${styles.wide}`} disabled={busy || !origin || !destination || (mode === "offer" && (!vehicleLoaded || Boolean(vehicleError) || !selectedVehicle))}>
           {busy ? "Please wait…" : mode === "offer" ? "Publish ride" : "Find rides"}
@@ -324,6 +344,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         {!searchReasons.length && <p>No eligible offer was found near that time for this trip.</p>}
         <p>Check that the driver published for this date, or try a nearby meeting point.</p>
       </div>}
+      {mode === "find" && searched && !!rides.length && <p>Matches require less than 1 km of combined walking to pickup and after drop-off.</p>}
       {mode === "find" && searched && !!rides.length && <div className={styles.resultHeading}>
         <h2>{rides.length} matching {rides.length === 1 ? "ride" : "rides"}</h2>
         {searchSummary && isDistance(searchSummary.distance_meters) && <span>{distance(searchSummary.distance_meters)} between your locations</span>}
@@ -337,6 +358,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         </header>
         <RouteLabels ride={ride} />
         <RideMetrics ride={ride} />
+        {mode === "find" && <p>{ride.choice === "ON_ROUTE_MEETING_POINT" ? "Walk to a meeting point on the driver’s route" : "Driver comes to your pickup"}</p>}
         <div className={styles.cardFooter}>
           <RideFare ride={ride} />
           <div className={styles.actions}>
@@ -407,7 +429,7 @@ function RouteLabels({ ride }: { ride: Json }) {
 
 function RideFare({ ride }: { ride: Json }) {
   return <div className={styles.fare}>
-    {typeof ride.total_fare_minor === "number" && <><strong>{money(ride.total_fare_minor)}</strong><span>Estimated contribution</span></>}
+    {typeof ride.total_fare_minor === "number" && <><strong>{money(ride.total_fare_minor)}</strong><span>Demo estimate · no real payment</span></>}
     {Number.isInteger(ride.seats_available) && <span>{ride.seats_available} {ride.seats_available === 1 ? "seat" : "seats"} available</span>}
   </div>;
 }

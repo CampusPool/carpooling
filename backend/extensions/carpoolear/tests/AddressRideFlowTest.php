@@ -33,6 +33,7 @@ final class AddressRideFlowTest extends TestCase
         }
         // Opt in only on a disposable configured host; keep normal CI deterministic.
         if (filter_var(getenv('ADDRESS_TEST_REAL_ROUTING'), FILTER_VALIDATE_BOOLEAN)) return;
+        config(['mobility_routing.provider' => 'osrm']);
         foreach (['car', 'bike', 'foot'] as $mode) {
             config(['mobility_routing.'.$mode.'_expected_data_version' => $mode.'|crop_sha256='.str_repeat('a', 64).'|profile_sha256='.str_repeat('b', 64)]);
         }
@@ -208,7 +209,7 @@ final class AddressRideFlowTest extends TestCase
             $this->actingAsApiUser($passenger)->putJson($base.'profile', $this->profile('rider'))->assertOk();
         }
         $date = now('Asia/Kolkata')->addDay()->toDateString();
-        $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $carId, 'total_seats' => 2];
+        $offer = ['date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'ON_ROUTE_MEETING_POINT', 'car_id' => $carId, 'total_seats' => 2];
         $this->actingAsApiUser($rider)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'demo-not-owner'])->assertForbidden();
         $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['car_id' => $scooter, 'vehicle_type' => 'bike']), ['Idempotency-Key' => 'demo-too-many'])->assertUnprocessable()->assertJsonPath('error.code', 'VEHICLE_SEAT_LIMIT');
         $this->actingAsApiUser($driver)->postJson($base.'offers', array_replace($offer, ['vehicle_type' => 'bike']), ['Idempotency-Key' => 'demo-type-mismatch'])->assertForbidden();
@@ -219,9 +220,26 @@ final class AddressRideFlowTest extends TestCase
         $profile = $this->profile('rider');
         $profile['home']['lat'] += 0.001;
         $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
-        $this->actingAsApiUser($rider)->getJson($search)->assertOk()
+        $meeting = $this->actingAsApiUser($rider)->getJson($search)->assertOk()
             ->assertJsonPath('data.0.choice', 'ON_ROUTE_MEETING_POINT')
-            ->assertJsonPath('data.0.detour_meters', 0);
+            ->assertJsonPath('data.0.detour_meters', 0)->json('data.0');
+        $this->assertArrayNotHasKey('route_map', $meeting);
+        $this->assertNotEmpty($meeting['pickup_approach']['pickup']);
+        $this->assertArrayNotHasKey('driver_geometry', $meeting['pickup_approach']);
+
+        if (!filter_var(getenv('ADDRESS_TEST_REAL_ROUTING'), FILTER_VALIDATE_BOOLEAN)) {
+            // The provider here is a deterministic fixture: exercise the actual
+            // match endpoint and walking rule without claiming a real road route.
+            $profile['home']['lat'] = 12.9716 + 0.0027;
+            $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
+            $walk = $this->actingAsApiUser($rider)->getJson($search)->assertOk()->json('data.0.access_meters');
+            $this->assertGreaterThanOrEqual(290, $walk);
+            $this->assertLessThanOrEqual(310, $walk);
+            $profile['home']['lat'] = 12.9716 + 0.0095;
+            $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
+            $this->actingAsApiUser($rider)->getJson($search)->assertOk()->assertJsonCount(0, 'data');
+            $this->actingAsApiUser($rider)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        }
 
         $bookings = [];
         foreach ([$rider, $other, $third] as $index => $passenger) {
@@ -238,6 +256,65 @@ final class AddressRideFlowTest extends TestCase
         putenv('MOBILITY_DEMO_VEHICLES_ENABLED=false');
         $this->actingAsApiUser($driver)->getJson($base.'vehicles')->assertOk()->assertJsonCount(0, 'data');
         $this->actingAsApiUser($driver)->postJson($base.'offers', $offer, ['Idempotency-Key' => 'demo-disabled-publish'])->assertUnprocessable();
+    }
+
+    public function test_shared_driver_direct_pickup_is_preserved_before_route_is_agreed(): void
+    {
+        $driver = $this->student('shared.direct.driver@stu.pes.edu');
+        $rider = $this->student('shared.direct.rider@stu.pes.edu');
+        putenv('MOBILITY_DEMO_VEHICLES_ENABLED=true');
+        $base = '/api/mobility/address-rides/';
+        $carId = $this->actingAsApiUser($driver)->postJson($base.'vehicles', ['registration' => 'KA00DE0007'])->assertOk()->json('data.id');
+        $this->actingAsApiUser($driver)->putJson($base.'profile', $this->profile('driver'))->assertOk();
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', [
+            'date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car',
+            'choice' => 'DIRECT_RIDER_PICKUP', 'car_id' => $carId, 'total_seats' => 2,
+        ], ['Idempotency-Key' => 'shared-direct-offer'])->assertOk()->json('data.trip_id');
+        $search = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
+        $card = $this->actingAsApiUser($rider)->getJson($search)
+            ->assertOk()->assertJsonPath('data.0.choice', 'DIRECT_RIDER_PICKUP')->json('data.0');
+        $this->assertGreaterThan(0, $card['surcharge_minor']);
+        $booking = $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', [
+            'quote_token' => $card['quote_token'],
+        ], ['Idempotency-Key' => 'shared-direct-request'])->assertOk()->json('data.booking_id');
+        $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$booking.'/accept', [], [
+            'Idempotency-Key' => 'shared-direct-accept',
+        ])->assertOk();
+        $later = $this->student('shared.direct.later@stu.pes.edu');
+        $this->actingAsApiUser($later)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        $this->actingAsApiUser($later)->getJson($search)->assertOk()
+            ->assertJsonPath('data.0.choice', 'ON_ROUTE_MEETING_POINT');
+
+    }
+
+    public function test_real_ola_meeting_point_for_rider_about_300m_from_driver_start(): void
+    {
+        if (!filter_var(getenv('ADDRESS_TEST_REAL_ROUTING'), FILTER_VALIDATE_BOOLEAN)) {
+            $this->markTestSkipped('Requires explicitly configured Ola routing in a disposable test environment.');
+        }
+        $driver = $this->student('walk.road.driver@stu.pes.edu');
+        $rider = $this->student('walk.road.rider@stu.pes.edu');
+        putenv('MOBILITY_DEMO_VEHICLES_ENABLED=true');
+        $base = '/api/mobility/address-rides/';
+        $carId = $this->actingAsApiUser($driver)->postJson($base.'vehicles', ['registration' => 'KA00DE0007'])->assertOk()->json('data.id');
+        $this->actingAsApiUser($driver)->putJson($base.'profile', $this->profile('driver'))->assertOk();
+        $profile = $this->profile('rider');
+        // Roughly 300 m north in a straight line; the actual Ola walk may be longer.
+        $profile['home']['lat'] += 0.0027;
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $profile)->assertOk();
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $this->actingAsApiUser($driver)->postJson($base.'offers', [
+            'date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car',
+            'choice' => 'ON_ROUTE_MEETING_POINT', 'car_id' => $carId, 'total_seats' => 2,
+        ], ['Idempotency-Key' => 'real-walk-offer'])->assertOk();
+        $card = $this->actingAsApiUser($rider)->getJson($base.'rides?direction=outbound&date='.$date.'&vehicle_type=car')
+            ->assertOk()->assertJsonPath('data.0.choice', 'ON_ROUTE_MEETING_POINT')->json('data.0');
+        $this->assertGreaterThan(0, $card['access_meters']);
+        $this->assertLessThan(1000, $card['access_meters'] + $card['egress_meters']);
+        $this->assertNotEmpty($card['pickup_approach']['walking_geometry']);
+        $this->assertNotEmpty($card['pickup_approach']['pickup']);
     }
 
     private function student(string $email): User

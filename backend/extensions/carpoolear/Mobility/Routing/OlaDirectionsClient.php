@@ -91,7 +91,9 @@ final class OlaDirectionsClient
             }
             $start = $this->snapped($leg['start_location'] ?? null);
             $end = $this->snapped($leg['end_location'] ?? null);
-            $limit = $mode === 'foot' ? 50 : 250;
+            // Keep the same bounded endpoint tolerance as the shared planner.
+            // Walking gaps remain explicit and count toward the rider's 999 m limit.
+            $limit = 250;
             foreach ([[$points[$index], $start], [$points[$index + 1], $end]] as [$source, $snap]) {
                 if ($this->haversine($source, $snap) > $limit) {
                     throw new RoutingException('ROUTE_SNAP_TOO_FAR');

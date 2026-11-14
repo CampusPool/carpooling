@@ -119,8 +119,27 @@ it("publishes the selected capacity from a server-approved demo car", async () =
   const capacity = await screen.findByRole("combobox", { name: "Passenger seats" });
   expect(capacity.querySelectorAll("option")).toHaveLength(4);
   fireEvent.change(capacity, { target: { value: "4" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Pickup arrangement" }), { target: { value: "DIRECT_RIDER_PICKUP" } });
   fireEvent.click(screen.getByRole("button", { name: "Publish ride" }));
   await screen.findByText("Your ride is published. Riders can now request a seat.");
   const [, request] = requests.find(([url, options]) => url.endsWith("/offers") && options.method === "POST");
-  expect(JSON.parse(request.body)).toMatchObject({ car_id: 8, total_seats: 4, vehicle_type: "car" });
+  expect(JSON.parse(request.body)).toMatchObject({ car_id: 8, total_seats: 4, vehicle_type: "car", choice: "DIRECT_RIDER_PICKUP" });
+});
+
+it("shows walking distance, meeting coordinates and demo pricing on a matching ride", async () => {
+  vi.stubGlobal("fetch", vi.fn(async url => {
+    const body = String(url).includes("/address-rides/rides?") ? { data: [{
+      trip_id: 15, driver_name: "Driver", departure_at: "2026-11-20T08:30:00+05:30",
+      pickup_label: "Meeting point on driver route", dropoff_label: "Campus", seats_available: 1,
+      choice: "ON_ROUTE_MEETING_POINT", access_meters: 300, egress_meters: 20,
+      total_fare_minor: 1500, pickup_approach: { pickup: { lat: 12.9345, lng: 77.5348 }, walking_geometry: [] },
+    }] } : { data: [] };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }));
+  render(<AddressRides token="synthetic-session" rideDefaults={{ origin: locations.Indiranagar, destination: locations.Whitefield }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
+  expect(await screen.findByText("300 m")).toBeVisible();
+  expect(screen.getByText("Demo estimate · no real payment")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Ride details" }));
+  expect(screen.getByText(/Meeting point: 12.93450, 77.53480/)).toBeVisible();
 });

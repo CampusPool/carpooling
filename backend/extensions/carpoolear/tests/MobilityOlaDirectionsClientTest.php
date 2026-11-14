@@ -122,6 +122,18 @@ final class MobilityOlaDirectionsClientTest extends TestCase
         }
     }
 
+    public function test_walking_snap_is_bounded_and_reported_for_gap_accounting(): void
+    {
+        Http::fake(fn () => Http::response($this->routeBody()));
+        $points = $this->points();
+        $points[0]['lat'] += 0.001;
+        $path = (new OlaPathProvider(new OlaDirectionsClient))->path($points, 'foot');
+        $this->assertGreaterThan(100, $path['waypoints'][0]['distance_meters']);
+        $this->assertLessThan(250, $path['waypoints'][0]['distance_meters']);
+        $points[0]['lat'] += 0.002;
+        $this->reject(fn () => (new OlaDirectionsClient)->directions($points, 'foot'), 'ROUTE_SNAP_TOO_FAR');
+    }
+
     public function test_quota_limit_redirect_and_network_timeout_are_bounded(): void
     {
         foreach ([429, 302, 500] as $status) {

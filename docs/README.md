@@ -5,6 +5,7 @@ The repository contains historical migration reports and sprint-specific evidenc
 | Read first | Use it for |
 | --- | --- |
 | [Project overview](../README.md) | Purpose, current stack and basic setup |
+| [Ola sprint continuity](OLA_SPRINT_CONTINUITY.md) | Current pickup story and preserved prior contributions |
 | [Feature status](FEATURE_STATUS.md) | Canonical live UI vs backend-only vs pending implementation |
 | [Teacher demonstration](COURSE_DEMO.md) | Practical two-browser walkthrough and viva preparation |
 | [Architecture](ARCHITECTURE.md) | Why Laravel/MySQL, Google browser maps, OSRM and optional Mongo exist |
