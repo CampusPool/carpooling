@@ -12,9 +12,17 @@ class MobilityServiceProvider extends ServiceProvider
     public function register(): void
     {
         $root = rtrim((string) (getenv('MOBILITY_EXTENSION_ROOT') ?: dirname(__DIR__)), '/');
-        $this->app->bind(\STS\Mobility\Routing\RouteProvider::class, \STS\Mobility\Routing\OsrmRouteProvider::class);
-        $this->app->bind(\STS\Mobility\Pickup\PathProvider::class, \STS\Mobility\Pickup\OsrmPathProvider::class);
         $this->mergeConfigFrom($root.'/config/routing.php', 'mobility_routing');
+        $this->app->bind(\STS\Mobility\Routing\RouteProvider::class, function ($app) {
+            return config('mobility_routing.provider') === 'ola'
+                ? $app->make(\STS\Mobility\Routing\OlaRouteProvider::class)
+                : $app->make(\STS\Mobility\Routing\OsrmRouteProvider::class);
+        });
+        $this->app->bind(\STS\Mobility\Pickup\PathProvider::class, function ($app) {
+            return config('mobility_routing.provider') === 'ola'
+                ? $app->make(\STS\Mobility\Pickup\OlaPathProvider::class)
+                : $app->make(\STS\Mobility\Pickup\OsrmPathProvider::class);
+        });
         $this->mergeConfigFrom($root.'/config/college.php', 'college');
         $this->mergeConfigFrom($root.'/config/operator_analytics.php', 'operator_analytics');
     }

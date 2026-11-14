@@ -238,6 +238,27 @@ final class MobilityPoolOfferHttpTest extends TestCase
         $this->assertSame(0, DB::table('trips')->count());
     }
 
+    public function test_stale_osrm_or_ola_quote_is_not_published_after_provider_switch(): void
+    {
+        [$host, $car] = $this->host('car');
+        foreach ([
+            ['ola', 'osrm', OsrmRouteProvider::dataVersion('car', str_repeat('a', 64), str_repeat('b', 64))],
+            ['osrm', 'ola', 'ola-directions-v1:car'],
+        ] as [$active, $stale, $version]) {
+            $quote = $this->quote($host, 'car');
+            $snapshot = json_decode(DB::table('mobility_route_quotes')->where('id', $quote)->value('snapshot'), true);
+            $snapshot['provider'] = $stale;
+            $snapshot['data_version'] = $version;
+            DB::table('mobility_route_quotes')->where('id', $quote)->update(['snapshot' => json_encode($snapshot)]);
+            config(['mobility_routing.provider' => $active]);
+            $this->actingAsApiUser($host)->postJson('/api/mobility/pool-offers', $this->payload($quote, $car),
+                ['Idempotency-Key' => 'stale-'.$active])->assertStatus(409)->assertJsonPath('error.code', 'QUOTE_PROVIDER_MISMATCH');
+            $this->assertNull(DB::table('mobility_route_quotes')->where('id', $quote)->value('consumed_trip_id'));
+        }
+        $this->assertSame(0, DB::table('mobility_pool_publications')->count());
+        $this->assertSame(0, DB::table('trips')->count());
+    }
+
     public function test_nonsynthetic_snapshot_graph_identity_is_required_at_canonical_publication(): void
     {
         [$host, $car] = $this->host('car');

@@ -1,0 +1,21 @@
+# Build only from the pinned, patched external backend prepared by scripts/prepare-carpoolear.sh.
+# Never COPY .local/ or provider credentials into the image.
+FROM php:8.5-fpm AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl libpng-dev libjpeg62-turbo-dev libonig-dev libxml2-dev libzip-dev zip unzip \
+    && docker-php-ext-configure gd --with-jpeg \
+    && docker-php-ext-install -j2 pdo_mysql mbstring exif pcntl bcmath gd zip \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+WORKDIR /var/www
+COPY research/vendor/carpoolear_hardened/ /var/www/
+COPY backend/extensions/carpoolear/ /opt/mobility-extension/
+COPY backend/extensions/carpoolear/Mobility/ /var/www/app/Mobility/
+COPY backend/integrations/carpoolear/MobilityIntegration/ /var/www/app/MobilityIntegration/
+# Installation needs no runtime .env; do not bake credentials into image layers.
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress --no-scripts \
+    && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && php -v | head -1
+EXPOSE 9000
+CMD ["php-fpm", "-F"]

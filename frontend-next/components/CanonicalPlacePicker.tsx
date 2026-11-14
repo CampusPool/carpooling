@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { olaAutocomplete, olaDetails } from "../lib/ola-client";
 
 type Point = { id: number; name: string; lat?: number; lng?: number };
 type Suggestion = { key: string; label: string; prediction: any };
@@ -14,10 +15,11 @@ function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 }
 
 /** A Google address is only a starting point: rides use operator-approved catalog stops. */
-export default function CanonicalPlacePicker({ label, name, points, disabled, mapsReady = true, onSelect }: {
-  label: string; name: string; points: Point[]; disabled?: boolean; mapsReady?: boolean;
+export default function CanonicalPlacePicker({ label, name, points, token, disabled, mapsReady = true, onSelect }: {
+  label: string; name: string; points: Point[]; token: string; disabled?: boolean; mapsReady?: boolean;
   onSelect?: (point: Point | undefined) => void;
 }) {
+  const useOlaMaps = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Point>();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -28,42 +30,57 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
 
   useEffect(() => {
     const term = query.trim();
-    if (term.length < 3 || selected || !mapsReady) { setSuggestions([]); return; }
+    if (term.length < 3 || selected || (!useOlaMaps && !mapsReady)) { setSuggestions([]); return; }
     const current = ++generation.current;
     const timer = setTimeout(async () => {
       setBusy(true); setMessage("");
       try {
-        const g = (window as any).google;
-        const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
-        const result = await places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions({ input: term, includedRegionCodes: ["in"] });
-        if (current !== generation.current) return;
-        setSuggestions((result?.suggestions || []).flatMap((item: any) => {
-          const prediction = item.placePrediction;
-          const labelText = text(prediction?.text) || text(prediction?.description);
-          return prediction?.toPlace && labelText ? [{ prediction, label: labelText, key: prediction.placeId || labelText }] : [];
-        }).slice(0, 5));
-        if (!places?.AutocompleteSuggestion) setMessage("Address suggestions are unavailable. Choose a pickup point below.");
+        if (useOlaMaps) {
+          const result = await olaAutocomplete(term, token);
+          if (current !== generation.current) return;
+          setSuggestions((result.predictions || []).slice(0, 5).map((item) => ({
+            prediction: { placeId: item.placeId }, label: item.description, key: item.placeId,
+          })));
+        } else {
+          const g = (window as any).google;
+          const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
+          const result = await places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions({ input: term, includedRegionCodes: ["in"] });
+          if (current !== generation.current) return;
+          setSuggestions((result?.suggestions || []).flatMap((item: any) => {
+            const prediction = item.placePrediction;
+            const labelText = text(prediction?.text) || text(prediction?.description);
+            return prediction?.toPlace && labelText ? [{ prediction, label: labelText, key: prediction.placeId || labelText }] : [];
+          }).slice(0, 5));
+          if (!places?.AutocompleteSuggestion) setMessage("Google Places is unavailable. Search by the configured pickup point name below.");
+        }
       } catch {
-        if (current === generation.current) { setSuggestions([]); setMessage("Address suggestions are unavailable. Choose a pickup point below."); }
+        if (current === generation.current) { setSuggestions([]); setMessage("Address search is unavailable. Choose a pickup point below."); }
       } finally { if (current === generation.current) setBusy(false); }
     }, 250);
     return () => { generation.current++; clearTimeout(timer); };
-  }, [query, selected, mapsReady]);
+  }, [query, selected, mapsReady, useOlaMaps, token]);
 
   async function choose(suggestion: Suggestion) {
     const current = ++generation.current;
     setSuggestions([]); setNearby([]); setMessage("Finding nearby pickup points…");
     try {
-      const place = suggestion.prediction.toPlace();
-      await place.fetchFields({ fields: ["formattedAddress", "location"] });
+      let lat: number, lng: number, address: string;
+      if (useOlaMaps) {
+        const result = await olaDetails(suggestion.prediction.placeId, token);
+        lat = result.place.lat; lng = result.place.lng; address = result.place.label;
+      } else {
+        const place = suggestion.prediction.toPlace();
+        await place.fetchFields({ fields: ["formattedAddress", "location"] });
+        lat = typeof place.location?.lat === "function" ? place.location.lat() : place.location?.lat;
+        lng = typeof place.location?.lng === "function" ? place.location.lng() : place.location?.lng;
+        address = place.formattedAddress || suggestion.label;
+      }
       if (current !== generation.current) return;
-      const lat = typeof place.location?.lat === "function" ? place.location.lat() : place.location?.lat;
-      const lng = typeof place.location?.lng === "function" ? place.location.lng() : place.location?.lng;
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw Error("Coordinates unavailable");
       const nearest = points.flatMap((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)
         ? [{ point, km: distanceKm({ lat, lng }, { lat: Number(point.lat), lng: Number(point.lng) }) }]
         : []).sort((a, b) => a.km - b.km).slice(0, 5);
-      setQuery(place.formattedAddress || suggestion.label);
+      setQuery(address);
       setNearby(nearest);
       setMessage(nearest.length ? "Choose a nearby pickup point." : "Choose a pickup point below.");
     } catch {
@@ -80,7 +97,7 @@ export default function CanonicalPlacePicker({ label, name, points, disabled, ma
   return <div className="canonical-place-picker">
     <label>Search {label.toLowerCase()} by address<input type="search" value={query} disabled={disabled} autoComplete="off" placeholder="Type an address" onChange={(event) => { setQuery(event.target.value); setSelected(undefined); onSelect?.(undefined); setNearby([]); setMessage(""); }} /></label>
     <input type="hidden" name={name} value={selected?.id ?? ""} />
-    {busy && <small className="fine">Searching Google Places…</small>}
+    {busy && <small className="fine">Searching {useOlaMaps ? "Ola" : "Google"} Places…</small>}
     {suggestions.length > 0 && <div className="canonical-place-suggestions" role="listbox" aria-label={`${label} address suggestions`}>
       {suggestions.map((item) => <button key={item.key} type="button" disabled={disabled} onClick={() => void choose(item)}>{item.label}</button>)}
     </div>}

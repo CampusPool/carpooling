@@ -190,7 +190,7 @@ final class JourneyPlanner
     private function validate(array $path, array $points, string $mode): void
     {
         PickupPolicy::graph($mode, (string) ($path['data_version'] ?? ''));
-        if (($path['provider'] ?? '') !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
+        if (! \STS\Mobility\Routing\RouteDataVersion::validForProvider($path['data_version'] ?? null, $mode, $path['provider'] ?? null) || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
             || ! is_array($path['waypoints'] ?? null) || ! array_is_list($path['waypoints']) || count($path['waypoints']) !== count($points)
             || ! is_array($path['legs'] ?? null) || ! array_is_list($path['legs']) || count($path['legs']) !== count($points) - 1
             || ! is_array($path['geometry'] ?? null) || ! array_is_list($path['geometry']) || count($path['geometry']) < 2 || count($path['geometry']) > 20000) throw new PickupException('JOURNEY_ROUTE_INVALID', 503);

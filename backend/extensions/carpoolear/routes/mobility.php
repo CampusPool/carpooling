@@ -90,6 +90,12 @@ Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
 // The demo credential is public to this local map page; server credentials
 // must never be placed in this file. No provider content is persisted here.
 Route::middleware(['web'])->get('mobility-pilot/maps-config', function () {
+    // Retired Google-only browser endpoint: Ola's live UI is served by Next.js.
+    // Never expose the previous Google key or silently fall back to Google.
+    if (config('mobility_routing.provider') === 'ola') {
+        return response()->json(['error' => 'LEGACY_MAPS_DISABLED_IN_OLA_MODE'], 410,
+            ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+    }
     if (app()->environment() !== 'testing' ||
         ! filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
         abort(404);
@@ -115,6 +121,15 @@ Route::middleware(['web'])->get('mobility-pilot/maps-config', function () {
 Route::middleware(['web'])->get('mobility-pilot/{asset?}', function (?string $asset = null) {
     if (! filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
         abort(404);
+    }
+    if (config('mobility_routing.provider') === 'ola') {
+        // Existing classroom pages remain intact for the separate OSRM rollback.
+        // In Ola mode, the maintained Next.js journey replaces their Google-only UI.
+        if ($asset === null) {
+            return redirect()->away(rtrim((string) (getenv('MOBILITY_FRONTEND_URL') ?: 'http://127.0.0.1:3012'), '/').'/', 302);
+        }
+        return response('Open CampusPool in the Ola-enabled Next.js application.', 410,
+            ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
     }
     $files = [
         null => ['index.html', 'text/html; charset=utf-8'],

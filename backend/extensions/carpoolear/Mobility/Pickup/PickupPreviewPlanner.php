@@ -71,7 +71,7 @@ class PickupPreviewPlanner
                 $pickup = $vehicle['waypoints'][1]['location'];
                 $walk = $this->path([$origin, ['lng' => $pickup[0], 'lat' => $pickup[1]]], 'foot', $deadline);
                 $version = $walk['data_version'] ?? null;
-                if (! is_string($version) || preg_match('/^foot\|crop_sha256=[a-f0-9]{64}\|profile_sha256=[a-f0-9]{64}$/D', $version) !== 1
+                if (! RouteDataVersion::validForProvider($version, 'foot', $walk['provider'] ?? null)
                     || ($footVersion !== null && $footVersion !== $version)) {
                     throw new PickupException('ROUTE_GRAPH_MISMATCH', 503);
                 }
@@ -189,10 +189,8 @@ class PickupPreviewPlanner
     private function validatePath(array $path, array $points, string $mode): void
     {
         $version = $path['data_version'] ?? null;
-        $validVersion = $mode === 'foot'
-            ? is_string($version) && preg_match('/^foot\|crop_sha256=[a-f0-9]{64}\|profile_sha256=[a-f0-9]{64}$/D', $version) === 1
-            : RouteDataVersion::valid($version, $mode);
-        if (! $validVersion || ($path['provider'] ?? null) !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === '') {
+        $validVersion = RouteDataVersion::validForProvider($version, $mode, $path['provider'] ?? null);
+        if (! $validVersion || ! is_string($path['profile'] ?? null) || $path['profile'] === '') {
             throw new PickupException('PICKUP_ROUTE_INVALID', 503);
         }
         foreach (['distance_meters' => 100000, 'duration_seconds' => 86400] as $field => $limit) {

@@ -1,0 +1,13 @@
+# Public access is optional, behind mandatory HTTP Basic authentication.
+# Use a real DNS name, HTTPS, a separate non-reused password hash and restricted Ola keys.
+{$CAMPUSPOOL_DOMAIN} {
+    encode zstd gzip
+    basic_auth {
+        {$CAMPUSPOOL_GATE_USER} {$CAMPUSPOOL_GATE_BCRYPT_HASH}
+    }
+    reverse_proxy frontend:3000
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+}

@@ -266,7 +266,8 @@ final class PickupSelectionService
     private function validatePath(mixed $path, string $mode, string $version, int $pointCount): void
     {
         PickupPolicy::graph($mode, $version);
-        if (! is_array($path) || ($path['data_version'] ?? null) !== $version || ($path['provider'] ?? null) !== 'osrm'
+        if (! is_array($path) || ($path['data_version'] ?? null) !== $version
+            || ! \STS\Mobility\Routing\RouteDataVersion::validForProvider($version, $mode, $path['provider'] ?? null)
             || ! is_string($path['profile'] ?? null) || $path['profile'] === '') throw new PickupException('MALFORMED_OPTION');
         foreach (['distance_meters' => 100000, 'duration_seconds' => 86400] as $key => $bound) {
             if (! is_int($path[$key] ?? null) || $path[$key] < 0 || $path[$key] > $bound) throw new PickupException('MALFORMED_OPTION');

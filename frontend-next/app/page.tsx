@@ -4,6 +4,8 @@ import "./offer-management.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
+import { olaAutocomplete, olaDetails } from "../lib/ola-client";
+import OlaMapPanel from "../components/OlaMapPanel";
 import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
 import StudentProfile from "../components/StudentProfile";
@@ -30,6 +32,7 @@ async function restoreStudentBrowser(): Promise<string> {
 }
 
 export default function Page() {
+  const useOlaMaps = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
   const [token, setToken] = useState(""),
     [role, setRole] = useState("rider"),
     [adminEmail, setAdminEmail] = useState(""),
@@ -297,6 +300,7 @@ export default function Page() {
       setMapStatus("ready");
       setMapError("");
     };
+    if (useOlaMaps) { ready(); return; }
     setMapStatus("loading");
     return loadMapsSdk({
       fetchImpl: fetch,
@@ -305,7 +309,7 @@ export default function Page() {
       onReady: ready,
       onUnavailable: fail,
     });
-  }, [token, mapRetry, me?.account_role]);
+  }, [token, mapRetry, me?.account_role, useOlaMaps]);
   async function suggestPlaces(kind: "origin" | "destination", input: string) {
     const generation = ++placeRequestGeneration.current[kind];
     cancelPlaceDebounce(kind);
@@ -325,19 +329,27 @@ export default function Page() {
         }, 250);
       });
       if (generation !== placeRequestGeneration.current[kind]) return;
-      const g = (window as any).google;
-      const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
-      const Suggestion = places?.AutocompleteSuggestion;
-      if (!Suggestion?.fetchAutocompleteSuggestions) throw Error("New Google Places suggestions are unavailable.");
-      const result = await Suggestion.fetchAutocompleteSuggestions({ input: input.trim(), includedRegionCodes: ["in"] });
-      if (generation !== placeRequestGeneration.current[kind]) return;
-      setPlaceSuggestions((current) => ({
-        ...current,
-        [kind]: (result?.suggestions || [])
-          .filter((item: R) => typeof item.placePrediction?.toPlace === "function" && Boolean(predictionText(item.placePrediction)))
-          .slice(0, 5)
-          .map((item: R) => ({ prediction: item.placePrediction, label: predictionText(item.placePrediction), key: item.placePrediction.placeId || `${kind}-${predictionText(item.placePrediction)}` })),
-      }));
+      if (useOlaMaps) {
+        const result = await olaAutocomplete(input.trim(), token);
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        setPlaceSuggestions((current) => ({ ...current, [kind]: result.predictions.slice(0, 5).map((place) => ({
+          prediction: { placeId: place.placeId }, label: place.description, key: place.placeId,
+        })) }));
+      } else {
+        const g = (window as any).google;
+        const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
+        const Suggestion = places?.AutocompleteSuggestion;
+        if (!Suggestion?.fetchAutocompleteSuggestions) throw Error("New Google Places suggestions are unavailable.");
+        const result = await Suggestion.fetchAutocompleteSuggestions({ input: input.trim(), includedRegionCodes: ["in"] });
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        setPlaceSuggestions((current) => ({
+          ...current,
+          [kind]: (result?.suggestions || [])
+            .filter((item: R) => typeof item.placePrediction?.toPlace === "function" && Boolean(predictionText(item.placePrediction)))
+            .slice(0, 5)
+            .map((item: R) => ({ prediction: item.placePrediction, label: predictionText(item.placePrediction), key: item.placePrediction.placeId || `${kind}-${predictionText(item.placePrediction)}` })),
+        }));
+      }
     } catch {
       if (generation === placeRequestGeneration.current[kind]) {
         setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
@@ -352,25 +364,32 @@ export default function Page() {
     cancelPlaceDebounce(kind);
     setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
     try {
-      const place = suggestion.prediction?.toPlace?.();
-      if (!place?.fetchFields) throw Error("This suggestion is no longer available. Search again.");
-      await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+      let value: R;
+      if (useOlaMaps) {
+        const result = await olaDetails(suggestion.prediction?.placeId, token);
+        value = result.place;
+      } else {
+        const place = suggestion.prediction?.toPlace?.();
+        if (!place?.fetchFields) throw Error("This suggestion is no longer available. Search again.");
+        await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        const location = place.location;
+        if (!location) throw Error("Google did not return coordinates for this place.");
+        const displayName = placeText(place.displayName);
+        value = {
+          label: place.formattedAddress || displayName || suggestion.label,
+          lat: typeof location.lat === "function" ? location.lat() : location.lat,
+          lng: typeof location.lng === "function" ? location.lng() : location.lng,
+        };
+      }
       if (generation !== placeRequestGeneration.current[kind]) return;
-      const location = place.location;
-      if (!location) throw Error("Google did not return coordinates for this place.");
-      const displayName = placeText(place.displayName);
-      const value = {
-        label: place.formattedAddress || displayName || suggestion.label,
-        lat: typeof location.lat === "function" ? location.lat() : location.lat,
-        lng: typeof location.lng === "function" ? location.lng() : location.lng,
-      };
       setBookingRoute(undefined);
       setRouteGeometry([]);
       setNotice("");
       if (kind === "origin") { setOrigin(value); setOriginText(value.label); }
       else { setDestination(value); setDestinationText(value.label); }
     } catch {
-      if (generation === placeRequestGeneration.current[kind]) setNotice("Google could not retrieve coordinates for this address. Check the Maps/Places configuration or demo quota, then try again.");
+      if (generation === placeRequestGeneration.current[kind]) setNotice("Maps could not retrieve coordinates for this address. Check the provider configuration or quota, then try again.");
     }
   }
   function dismissPlaces(kind: "origin" | "destination") {
@@ -390,7 +409,7 @@ export default function Page() {
     }
   }, [view]);
   useEffect(() => {
-    if (mapStatus !== "ready" || !mapRef.current) return;
+    if (useOlaMaps || mapStatus !== "ready" || !mapRef.current) return;
     const g = (window as any).google;
     const mapOrigin = bookingRoute?.origin || origin;
     const mapDestination = bookingRoute?.destination || destination;
@@ -431,6 +450,7 @@ export default function Page() {
     }
   }, [
     mapStatus,
+    useOlaMaps,
     origin,
     destination,
     routeGeometry,
@@ -777,7 +797,7 @@ export default function Page() {
     setRouteGeometry([]);
     setNotice("");
     if (!origin || !destination) {
-      setError("Select both places from Google Places suggestions.");
+      setError(useOlaMaps ? "Select both places from Ola Places suggestions." : "Select both places from Google Places suggestions.");
       return;
     }
     setBusy(true);
@@ -1357,7 +1377,7 @@ export default function Page() {
                   />
                   {(placeBusy.origin || placeSuggestions.origin.length > 0) && (
                     <div className="place-suggestions" role="listbox" aria-label="Origin suggestions">
-                      {placeBusy.origin && <small className="fine">Searching Google Places…</small>}
+                      {placeBusy.origin && <small className="fine">Searching {useOlaMaps ? "Ola" : "Google"} Places…</small>}
                       {placeSuggestions.origin.map((suggestion) => (
                         <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("origin", suggestion)}>{suggestion.label}</button>
                       ))}
@@ -1384,7 +1404,7 @@ export default function Page() {
                   />
                   {(placeBusy.destination || placeSuggestions.destination.length > 0) && (
                     <div className="place-suggestions" role="listbox" aria-label="Destination suggestions">
-                      {placeBusy.destination && <small className="fine">Searching Google Places…</small>}
+                      {placeBusy.destination && <small className="fine">Searching {useOlaMaps ? "Ola" : "Google"} Places…</small>}
                       {placeSuggestions.destination.map((suggestion) => (
                         <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("destination", suggestion)}>{suggestion.label}</button>
                       ))}
@@ -1500,7 +1520,10 @@ export default function Page() {
                 </button>
               </form>
               <div className="map-card">
-                <div ref={mapRef} className="real-map">
+                {useOlaMaps ? <OlaMapPanel token={token} origin={bookingRoute?.origin || origin} destination={bookingRoute?.destination || destination}
+                  geometry={routeGeometry.length > 1 ? routeGeometry : undefined} pick={null} onPick={() => {}}
+                  onState={(isReady) => { if (!isReady) setMapError("The Ola map is not available."); else setMapError(""); }}
+                  onError={setMapError} /> : <div ref={mapRef} className="real-map">
                   <span>
                     {me?.account_role
                       ? "Map-based place selection is available in Pool offers."
@@ -1515,7 +1538,8 @@ export default function Page() {
                       Retry map
                     </button>
                   )}
-                </div>
+                </div>}
+                {useOlaMaps && mapError && <p role="alert">{mapError}</p>}
                 <div className="map-caption">
                   <b>
                     {bookingRoute?.origin?.label || origin?.label || home || "Origin"} →{" "}
@@ -1535,13 +1559,10 @@ export default function Page() {
           {activeView === "pool" && !studentPreview && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
             <>
-              {routeGeometry.length > 1 && (
-                <div
-                  ref={mapRef}
-                  className="real-map"
-                  aria-label="Matched ride route map"
-                />
-              )}
+              {routeGeometry.length > 1 && (useOlaMaps
+                ? <OlaMapPanel token={token} origin={bookingRoute?.origin || origin} destination={bookingRoute?.destination || destination}
+                    geometry={routeGeometry} pick={null} onPick={() => {}} onState={() => {}} onError={setMapError} />
+                : <div ref={mapRef} className="real-map" aria-label="Matched ride route map" />)}
               <div className="cards">
                 {rides.length === 0 ? (
                   <div className="empty">
