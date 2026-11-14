@@ -1,0 +1,8 @@
+.git
+.local
+**/node_modules
+**/.next
+research/vendor/carpoolear_backend
+research/vendor/carpoolear_hardened/.git
+research/vendor/carpoolear_hardened/vendor
+research/experiments/carpoolear/raw

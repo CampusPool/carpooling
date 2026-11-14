@@ -142,6 +142,26 @@ final class OfferService
             } elseif ($routeSchema !== null || $legs !== null || count($points) > 2) {
                 throw new OfferException('QUOTE_INVALID', 409);
             }
+            // Never consume a stale OSRM quote after switching to Ola (or vice
+            // versa), even if the quote has not yet reached its five-minute TTL.
+            // Test-only fake route providers (segment-fake, dispatch-test, etc.)
+            // intentionally carry no real provider identity. Accept them only
+            // in Laravel's testing environment when the quote was explicitly
+            // marked synthetic. Never exempt a quote that *claims* OSRM or Ola:
+            // such a quote must match the active provider even in test mode.
+            $activeProvider = config('mobility_routing.provider');
+            $quoteProvider = $snapshot['provider'] ?? null;
+            $quoteVersion = $snapshot['data_version'] ?? null;
+            $expectedVersion = RouteDataVersion::expected((string) $snapshot['vehicle_type']);
+            $isFixture = $synthetic && app()->environment('testing')
+                && is_string($quoteProvider) && ! in_array($quoteProvider, ['osrm', 'ola'], true);
+            if (! $isFixture && (! in_array($activeProvider, ['ola', 'osrm'], true)
+                || $quoteProvider !== $activeProvider
+                || ! RouteDataVersion::validForProvider($quoteVersion, (string) $snapshot['vehicle_type'], $activeProvider)
+                || ! is_string($expectedVersion)
+                || ! hash_equals($expectedVersion, (string) $quoteVersion))) {
+                throw new OfferException('QUOTE_PROVIDER_MISMATCH', 409);
+            }
             $quoteForContext = array_merge($snapshot, ['distance_meters' => $snapshot['distance_meters'], 'duration_seconds' => $snapshot['duration_seconds'], 'seat_price_minor' => $snapshot['seat_price_minor']]);
             TrustedRouteContext::push($points, $quoteForContext);
             try {

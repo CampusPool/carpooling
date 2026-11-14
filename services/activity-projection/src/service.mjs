@@ -25,7 +25,7 @@ async function main() {
     }
   });
   const server = createActivityServer({ key: config.key, worker, collection });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, '0.0.0.0', resolve); });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, process.env.MOBILITY_ACTIVITY_BIND_HOST || '0.0.0.0', resolve); });
   worker.start();
   console.log(JSON.stringify({ service: 'mobility-activity', status: 'started' }));
   let closing = false;

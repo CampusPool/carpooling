@@ -148,7 +148,8 @@ final class CanonicalRouteIntervalProjector
     /** @return array<string,mixed> */
     private function route(array $path, bool $unambiguous = true): array
     {
-        if (($path['provider'] ?? null) !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === '' || ! is_string($path['data_version'] ?? null) || $path['data_version'] === '') {
+        if (! \STS\Mobility\Routing\RouteDataVersion::validAny($path['data_version'] ?? null, $path['provider'] ?? null)
+            || ! is_string($path['profile'] ?? null) || $path['profile'] === '') {
             throw new InvalidArgumentException('ROUTE_INVALID');
         }
         $geometry = $path['geometry'] ?? null;

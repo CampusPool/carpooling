@@ -13,7 +13,10 @@ export function loadMapsSdk({ fetchImpl, documentRef, google, onReady, onUnavail
     if (script?.parentNode) script.parentNode.removeChild(script);
     fail("Google Maps could not load. Check the browser key, network, and Places API access.");
   };
-  fetchImpl("/mobility-pilot/maps-config")
+  fetchImpl("/api/maps/config", { cache: "no-store" })
+    .then((response) => response.status === 404
+      ? fetchImpl("/mobility-pilot/maps-config", { cache: "no-store" })
+      : response)
     .then(async (response) => {
       if (!response.ok) throw Error("Map configuration is unavailable.");
       const config = await response.json();
@@ -26,7 +29,7 @@ export function loadMapsSdk({ fetchImpl, documentRef, google, onReady, onUnavail
         script = documentRef.createElement("script");
         script.id = SDK_ID;
         script.async = true;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${config.browser_key}&libraries=places`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.browser_key)}&libraries=places`;
         script.addEventListener("load", () => { if (script.dataset) script.dataset.mobilityLoaded = "true"; }, { once: true });
         script.addEventListener("load", ready, { once: true });
         script.addEventListener("error", onError, { once: true });

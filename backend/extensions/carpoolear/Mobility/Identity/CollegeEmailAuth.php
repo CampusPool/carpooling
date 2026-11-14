@@ -4,6 +4,8 @@ namespace STS\Mobility\Identity;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
@@ -17,18 +19,62 @@ final class CollegeEmailAuth
     public function normalizeEmail(mixed $email): ?string
     {
         if (! is_string($email)) return null;
+        // Do not accept Unicode/confusable or whitespace-containing identifiers.
         $email = strtolower(trim($email));
-        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+        // PES UG SRN is an exact-domain email shorthand, never an auth bypass.
+        // Resolve it to the same canonical mailbox before starting any challenge.
+        if (preg_match('/^pes[0-9]ug[0-9]{2}[a-z]{2,4}[0-9]{3,4}$/D', $email)) {
+            $email .= '@stu.pes.edu';
+        }
+        if (! preg_match('/^[\x21-\x7e]+$/D', $email) || ! filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
+        if (strlen($email) > 320 || str_contains($email, '+')) return null;
         $parts = explode('@', $email, 2);
         return count($parts) === 2 && in_array($parts[1], $this->domains(), true) ? $email : null;
     }
 
+    private function resendTransportEnabled(): bool
+    {
+        return getenv('MOBILITY_EMAIL_TRANSPORT') === 'resend_api';
+    }
+
+    private function nylasTransportEnabled(): bool
+    {
+        return getenv('MOBILITY_EMAIL_TRANSPORT') === 'nylas_api';
+    }
+
     public function deliveryAvailable(): bool
     {
+        if ($this->nylasTransportEnabled()) {
+            return strlen((string) getenv('MOBILITY_NYLAS_API_KEY')) >= 20
+                && Str::isUuid((string) getenv('MOBILITY_NYLAS_GRANT_ID'));
+        }
+        // Explicit opt-in only. Missing or unverified sender keys fail closed.
+        if ($this->resendTransportEnabled()) {
+            $key = (string) getenv('MOBILITY_RESEND_API_KEY');
+            $from = strtolower(trim((string) getenv('MOBILITY_RESEND_FROM')));
+            return strlen($key) >= 20
+                && filter_var($from, FILTER_VALIDATE_EMAIL) !== false
+                && ! str_ends_with($from, '.invalid')
+                && ! str_ends_with($from, '@stu.pes.edu');
+        }
         $default = (string) config('mail.default', '');
         $smtp = config('mail.mailers.smtp', []);
         return $default === 'smtp' && is_array($smtp) && trim((string) ($smtp['host'] ?? '')) !== ''
-            && trim((string) ($smtp['username'] ?? '')) !== '' && trim((string) ($smtp['password'] ?? '')) !== '';
+            && (
+                (trim((string) ($smtp['username'] ?? '')) !== '' && trim((string) ($smtp['password'] ?? '')) !== '')
+                || (app()->environment(['local', 'testing']) && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)
+                    && in_array((string) ($smtp['host'] ?? ''), ['mailpit', '127.0.0.1', 'localhost'], true))
+            );
+    }
+
+    /** A local mail catcher is not evidence of real inbox delivery. */
+    public function deliveryScope(): string
+    {
+        if (! $this->deliveryAvailable()) return 'unavailable';
+        if ($this->resendTransportEnabled() || $this->nylasTransportEnabled()) return 'external_api_configured_unverified';
+        if (app()->environment(['local', 'testing'])
+            && filter_var(getenv('MOBILITY_MAILPIT_MODE'), FILTER_VALIDATE_BOOLEAN)) return 'local_capture';
+        return 'configured_smtp_unverified';
     }
 
     public function request(mixed $email, ?string $ip): array
@@ -38,23 +84,61 @@ final class CollegeEmailAuth
         if (! $this->deliveryAvailable()) throw new CollegeEmailAuthException('COLLEGE_MAIL_UNAVAILABLE', 503);
         $this->consumeRate([['send-email:'.$email,3],['send-ip:'.($ip?:'unknown'),10]],60);
         $now = now();
-        $code = (string) random_int(100000, 999999);
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $challenge = (string) Str::uuid();
         $ttl = (int) config('college.otp_ttl', 300);
         $resend = (int) config('college.otp_resend_after', 30);
-        $hash = hash('sha256', $challenge.':'.$code.':'.(string) config('app.key'));
+        $hash = $this->otpDigest($challenge, $email, $code);
         DB::transaction(function()use($challenge,$email,$hash,$ip,$now,$ttl,$resend){
             // Serialise challenge allocation across PHP workers for this email.
             DB::table('mobility_college_otp_rate_windows')->where('bucket_hash',hash('sha256','send-email:'.$email))->lockForUpdate()->first();
-            if(DB::table('mobility_college_email_challenges')->where('email',$email)->where('resend_after','>',$now)->exists())throw new CollegeEmailAuthException('COLLEGE_OTP_RETRY_LATER',429);
+            if(DB::table('mobility_college_email_challenges')->where('email',$email)->whereNull('consumed_at')->whereNull('invalidated_at')->where('expires_at','>',$now)->where('resend_after','>',$now)->exists())throw new CollegeEmailAuthException('COLLEGE_OTP_RETRY_LATER',429);
+            // New successful sends supersede every earlier code, including still-unexpired ones.
+            DB::table('mobility_college_email_challenges')->where('email',$email)->whereNull('consumed_at')->whereNull('invalidated_at')->update(['invalidated_at'=>$now,'updated_at'=>$now]);
             DB::table('mobility_college_email_challenges')->insert(['challenge_id'=>$challenge,'email'=>$email,'code_hash'=>$hash,'ip_address'=>$ip,'expires_at'=>$now->copy()->addSeconds($ttl),'resend_after'=>$now->copy()->addSeconds($resend),'created_at'=>$now,'updated_at'=>$now]);
         });
         try {
-            Mail::raw('Your college sign-in code is '.$code.'. It expires in five minutes.', function ($message) use ($email): void {
-                $message->to($email)->subject('Your college sign-in code');
-            });
+            $minutes = $ttl === 60 ? 'one minute' : ($ttl === 300 ? 'five minutes' : $ttl.' seconds');
+            $text = 'Your college sign-in code is '.$code.'. It expires in '.$minutes.'.';
+            if ($this->nylasTransportEnabled()) {
+                $grant = (string) getenv('MOBILITY_NYLAS_GRANT_ID');
+                $response = Http::withToken((string) getenv('MOBILITY_NYLAS_API_KEY'))
+                    ->asJson()->acceptJson()->connectTimeout(4)->timeout(10)
+                    ->withHeaders(['Idempotency-Key' => $challenge])
+                    ->post('https://api.us.nylas.com/v3/grants/'.rawurlencode($grant).'/messages/send', [
+                        'to' => [['email' => $email]],
+                        'subject' => 'Your CampusPool sign-in code',
+                        'body' => $text,
+                    ]);
+                $messageId = $response->json('data.id');
+                if (! $response->successful() || ! is_string($messageId) || trim($messageId) === '') {
+                    throw new \RuntimeException('Transactional email service did not accept the message');
+                }
+                // Identifiers support delivery investigation; never log OTPs or response bodies.
+                Log::info('college_email_provider_accepted', ['provider' => 'nylas', 'message_id' => $messageId,
+                    'challenge_id' => $challenge, 'http_status' => $response->status()]);
+            } elseif ($this->resendTransportEnabled()) {
+                $http = Http::withToken((string) getenv('MOBILITY_RESEND_API_KEY'))
+                    ->asJson()->connectTimeout(4)->timeout(10);
+                $proxy = trim((string) getenv('MOBILITY_RESEND_HTTPS_PROXY'));
+                if ($proxy !== '') $http = $http->withOptions(['proxy' => $proxy]);
+                $response = $http->post('https://api.resend.com/emails', [
+                    'from' => (string) getenv('MOBILITY_RESEND_FROM'),
+                    'to' => [$email],
+                    'subject' => 'Your college sign-in code',
+                    'text' => $text,
+                ]);
+                // API acceptance is not proof of inbox delivery.
+                if (! $response->successful() || ! is_string($response->json('id'))) {
+                    throw new \RuntimeException('Transactional email service did not accept the message');
+                }
+            } else {
+                Mail::raw($text, function ($message) use ($email): void {
+                    $message->to($email)->subject('Your college sign-in code');
+                });
+            }
         } catch (\Throwable) {
-            DB::table('mobility_college_email_challenges')->where('challenge_id',$challenge)->update(['consumed_at'=>now(),'updated_at'=>now()]);
+            DB::table('mobility_college_email_challenges')->where('challenge_id',$challenge)->update(['invalidated_at'=>now(),'updated_at'=>now()]);
             throw new CollegeEmailAuthException('COLLEGE_MAIL_UNAVAILABLE',503);
         }
         return ['challenge_id' => $challenge, 'expires_in' => $ttl, 'resend_after' => $resend];
@@ -80,9 +164,9 @@ final class CollegeEmailAuth
     {
         $result = DB::transaction(function () use ($challengeId, $code, $registration): array {
             $challenge = DB::table('mobility_college_email_challenges')->where('challenge_id', $challengeId)->lockForUpdate()->first();
-            if (! $challenge || $challenge->consumed_at || now()->greaterThanOrEqualTo($challenge->expires_at)) throw new CollegeEmailAuthException('COLLEGE_OTP_EXPIRED', 422);
+            if (! $challenge || $challenge->consumed_at || $challenge->invalidated_at || now()->greaterThanOrEqualTo($challenge->expires_at)) throw new CollegeEmailAuthException('COLLEGE_OTP_EXPIRED', 422);
             if ((int) $challenge->attempts >= (int) config('college.otp_max_attempts', 5)) throw new CollegeEmailAuthException('COLLEGE_OTP_ATTEMPTS_EXCEEDED', 422);
-            $expected = hash('sha256', $challengeId.':'.$code.':'.(string) config('app.key'));
+            $expected = $this->otpDigest($challengeId, (string) $challenge->email, $code);
             if (! hash_equals((string) $challenge->code_hash, $expected)) {
                 DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->increment('attempts');
                 return ['error' => 'COLLEGE_OTP_INVALID'];
@@ -103,6 +187,7 @@ final class CollegeEmailAuth
                 $name = is_string($registration['name'] ?? null) ? trim($registration['name']) : '';
                 $srnInput = is_string($registration['srn'] ?? null) ? trim($registration['srn']) : '';
                 $campus = is_string($registration['campus_code'] ?? null) ? strtoupper(trim($registration['campus_code'])) : '';
+                if ($campus === '' && count($this->campuses()) === 1) $campus = $this->campuses()[0];
                 $srn = strtoupper($srnInput);
                 if (mb_strlen($name) < 2 || mb_strlen($name) > 120 || preg_match('/[<>\x00-\x1F]/u', $name)) {
                     throw new CollegeEmailAuthException('STUDENT_NAME_INVALID', 422);
@@ -113,8 +198,9 @@ final class CollegeEmailAuth
                 if (! in_array($campus, $this->campuses(), true)) {
                     throw new CollegeEmailAuthException('STUDENT_CAMPUS_INVALID', 422);
                 }
+                $details = StudentProfile::details($registration, StudentIdentityBoundary::publicMode());
                 try {
-                    DB::table('mobility_student_profiles')->insert(['user_id' => $user->id, 'srn_normalized' => $srn, 'campus_code' => $campus, 'created_at' => now(), 'updated_at' => now()]);
+                    DB::table('mobility_student_profiles')->insert($details + ['user_id' => $user->id, 'srn_normalized' => $srn, 'campus_code' => $campus, 'created_at' => now(), 'updated_at' => now()]);
                     if ($user->name !== $name) {
                         $user->name = $name;
                         $user->save();
@@ -151,10 +237,24 @@ final class CollegeEmailAuth
                 DB::table('mobility_membership_audits')->insert(['membership_id' => $membership->id, 'user_id' => $user->id, 'actor_id' => $user->id, 'previous_status' => 'pending', 'new_status' => 'approved', 'version' => (int) $membership->version + 1, 'reason' => 'college_email_otp_verification', 'created_at' => now(), 'updated_at' => now()]);
             }
             DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->update(['consumed_at' => now(), 'updated_at' => now()]);
-            return ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
+            $browser = StudentIdentityBoundary::publicMode() ? ['browser_session' => app(StudentBrowserSession::class)->issue($user)] : [];
+            return $browser + ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
         });
         if (($result['error'] ?? null) === 'COLLEGE_OTP_INVALID') throw new CollegeEmailAuthException('COLLEGE_OTP_INVALID', 422);
         return $result;
+    }
+
+    /** Bind the code to its random challenge and normalized recipient using a secret HMAC key. */
+    public function otpDigest(string $challengeId, string $email, string $code): string
+    {
+        $key = (string) config('app.key', '');
+        if ($key === '') throw new CollegeEmailAuthException('COLLEGE_AUTH_UNAVAILABLE', 503);
+        if (str_starts_with($key, 'base64:')) {
+            $decoded = base64_decode(substr($key, 7), true);
+            if ($decoded === false || strlen($decoded) < 32) throw new CollegeEmailAuthException('COLLEGE_AUTH_UNAVAILABLE', 503);
+            $key = $decoded;
+        }
+        return hash_hmac('sha256', $challengeId.':'.$email.':'.$code, $key);
     }
 
     private function isSrnUniqueViolation(QueryException $error): bool

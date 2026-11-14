@@ -1,10 +1,10 @@
 # CampusPool feature status — authoritative review snapshot
 
-**Updated:** 10 November 2026 · **Code baseline:** GitHub `main` at `2b782c4` (merged PR #90)
+**Updated:** 10 November 2026 · **Code baseline:** draft Ola migration PR #92, with separately preserved Google/OSRM rollback
 
 The words **E2E verified**, **backend verified**, **prototype**, and **pending** are not interchangeable:
 
-- **E2E verified:** real Chrome interaction with the cloned Next.js application, independently prepared Laravel code, and its own MySQL database; real Google Maps/Places used. See [the exact environment and deviations](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md).
+- **E2E verified:** real headed Chrome with Ola Places and Directions in a separately cloned Laravel/MySQL stack. SQL records and fresh browser login/reload were verified independently. See [Ola evidence](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md); the earlier [Google/OSRM run](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md) is historical evidence.
 - **Backend verified:** implemented services/API behavior covered by integration or unit tests; **not necessarily exposed in the student UI**.
 - **Prototype/partial:** tracked code exists, but key real-device/provider or user-facing proof is missing.
 - **Pending:** no supported claim that this works end to end in the present repository.
@@ -14,7 +14,7 @@ The words **E2E verified**, **backend verified**, **prototype**, and **pending**
 | Capability | Evidence level | Verified boundary |
 | --- | --- | --- |
 | Separate local rider and driver sign-up/sign-in | **E2E verified** | Synthetic username/password accounts, not university identity |
-| Real place autocomplete, route selection, map preview | **E2E verified** | Google Places and Maps with a restricted browser key; provider and billing required |
+| Real place autocomplete, route selection, map preview | **E2E verified** | Real Ola Places, routing preview and map; browser key restrictions require provider-console approval |
 | Driver creates a dated road-routed offer | **E2E verified** | Bengaluru region; local demonstration; no approved real vehicle needed |
 | Rider searches and requests compatible ride | **E2E verified** | Road-based matching, route/time/seat checks; one-passenger demo offer |
 | Driver accepts; account state persists after sign-out/in | **E2E verified** | Isolated, disposable MySQL-backed instance |
@@ -24,7 +24,7 @@ The words **E2E verified**, **backend verified**, **prototype**, and **pending**
 | Rider arrival confirmation | **E2E verified** | **Release waiting period and final synthetic receipt not verified** |
 | Notification/account activity feed | **Browser and unit coverage** | Synthetic demo interactions, not push notifications or SMS |
 
-The E2E run used matching copied OSRM **26.11** graphs/router containers rather than the currently pinned **26.10** on Simular x86, because ARM emulation could not rebuild graphs reliably there. The independent fresh-clone macOS ARM64 run verified startup with the pinned engine. See the original test reports for full attribution and limits.
+The historical Google/OSRM run used copied routing graphs on Simular and belongs to the old baseline. **PR #92** instead passed the Ola-only real-browser journey without OSRM; a separate clean Mac clone built, started and restarted Laravel/MySQL/Next with no Bengaluru crop. See [detailed evidence](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md).
 
 ## Implemented backend / DBMS features (not all student-facing)
 
@@ -49,15 +49,15 @@ The E2E run used matching copied OSRM **26.11** graphs/router containers rather 
 | Real payment gateway, receipts, monetary settlement | **Pending** | Wallet and fare are synthetic only |
 | Physical device GPS and tracking acceptance | **Pending** | Android prototype and tracking code are not an accepted field test; see [issue #82](https://github.com/CampusPool/carpooling/issues/82) |
 | Production deployment, real users and abuse handling | **Pending** | Demo is localhost/disposable; not an operational campus service |
-| Hosted routing provider / Ola Maps replacement | **Planned, not implemented** | Google browser SDK + local OSRM are still current; credentials and migration/testing required |
-| Zero-configuration fresh clone | **Not available** | External pinned Laravel host, OSM crop, Docker and Maps key remain required |
+| Hosted routing provider / Ola Maps replacement | **Implemented and synthetic demo verified in draft PR #92** | OSM crop/OSRM no longer compulsory; restricted keys and separate OSRM rollback required |
+| Teacher-friendly fresh clone | **Verified with explicit prerequisites** | Pinned external Laravel host, Docker, Node and own restricted Ola credentials required; no OSM crop/OSRM |
 | Synthetic wallet release waiting period | **Not browser E2E verified** | Booking hold and arrival confirmation passed; final release/receipt must be tested separately |
 
 ## What teachers should read
 
 **Fastest path:** [Project README](../README.md) → [course demo](COURSE_DEMO.md) → [architecture](ARCHITECTURE.md) → [DBMS evidence](dbms/README.md).
 
-**Evidence:** [Cloned-app and new-database browser test](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md), [fresh-clone startup](engineering/PHASE1_FRESH_CLONE_VERIFICATION_20261109.md), latest [GitHub Actions runs](https://github.com/CampusPool/carpooling/actions).
+**Evidence:** [Cloned-app and new-database browser test](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md), [fresh-clone startup](engineering/PHASE1_FRESH_CLONE_VERIFICATION_20261109.md), latest [GitHub Actions runs](https://github.com/CampusPool/carpooling/actions), and [Ola migration acceptance](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md).
 
 **Issue hygiene:** An open issue indicates work that may be unfinished, partially delivered, or not yet formally closed. Historical sprint documents describe contributor deliverables at a point in time and should not override this matrix. [Open issues](https://github.com/CampusPool/carpooling/issues) need owner confirmation before closure.
 

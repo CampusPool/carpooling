@@ -4,6 +4,8 @@ return [
     // Separate prepared datasets/profiles are required for cars and motorbikes.
     // OSRM's supplied bicycle profile is not evidence of motorbike suitability.
     'provider' => env('MOBILITY_ROUTING_PROVIDER'),
+    // Private server-side key; never expose via serialized config, frontend build, or logs.
+    'ola_api_key' => env('OLA_MAPS_API_KEY'),
     'car_base_url' => env('MOBILITY_ROUTING_CAR_BASE_URL'),
     'bike_base_url' => env('MOBILITY_ROUTING_BIKE_BASE_URL'),
     'car_profile' => env('MOBILITY_ROUTING_CAR_PROFILE'),

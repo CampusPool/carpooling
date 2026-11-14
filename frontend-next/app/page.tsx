@@ -4,21 +4,41 @@ import "./offer-management.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { driverAction } from "../lib/gates";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
+import { olaAutocomplete, olaDetails } from "../lib/ola-client";
+import OlaMapPanel from "../components/OlaMapPanel";
 import DriverOnboarding from "../components/DriverOnboarding";
 import LocalAccountLanding from "../components/LocalAccountLanding";
+import StudentProfile from "../components/StudentProfile";
+import PlannedRides from "../components/PlannedRides";
+import { DashboardFrame, DashboardHome, DashboardChats, DashboardAccount, DashboardVehicles, type RideSection, type RideDefaults } from "../components/StudentDashboard";
+import PesTimetable from "../components/PesTimetable";
 import CanonicalPool from "../components/CanonicalPool";
+import AddressRides from "../components/AddressRides";
 import LiveCarpool from "../components/LiveCarpool";
 import OperatorAnalytics from "../components/OperatorAnalytics";
 import { isCurrentUnauthorized } from "../lib/session-events";
 import { request } from "../lib/legacy-api";
 import { cash, durationMinutes, instant, list, meters, placeText, pickupChoiceLabel, pickupWindow, predictionText, tomorrowInKolkata, type R } from "../lib/legacy-ui-utils";
 
+const studentPreview = process.env.NEXT_PUBLIC_STUDENT_ONLY === "1";
+const studentSessionPath = "/api/mobility/college-auth/session";
+
+async function restoreStudentBrowser(): Promise<string> {
+  const response = await fetch(studentSessionPath, { headers: { Accept: "application/json" }, cache: "no-store" });
+  if (response.status === 401) return "";
+  if (!response.ok) throw new Error("Could not check this browser’s sign-in.");
+  const result = await response.json();
+  return typeof result.token === "string" ? result.token : "";
+}
+
 export default function Page() {
+  const useOlaMaps = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
   const [token, setToken] = useState(""),
     [role, setRole] = useState("rider"),
     [adminEmail, setAdminEmail] = useState(""),
     [adminPassword, setAdminPassword] = useState(""),
     [sessionSyncNeeded, setSessionSyncNeeded] = useState(false),
+    [studentBooting, setStudentBooting] = useState(studentPreview),
     [me, setMe] = useState<R>(),
     [rides, setRides] = useState<R[]>([]),
     [scanTruncated, setScanTruncated] = useState(false),
@@ -42,6 +62,7 @@ export default function Page() {
     [mapError, setMapError] = useState(""),
     [mapRetry, setMapRetry] = useState(0),
     [view, setView] = useState("home"),
+    [studentRide, setStudentRide] = useState<{ section: RideSection; defaults?: RideDefaults; revision: number }>({ section: "find", revision: 0 }),
     [origin, setOrigin] = useState<R>(),
     [destination, setDestination] = useState<R>(),
     [originText, setOriginText] = useState(""),
@@ -117,6 +138,7 @@ export default function Page() {
   const chatGeneration = useRef(0);
   const trustedShareGeneration = useRef(0);
   function clearSession() {
+    activeTokenRef.current = "";
     sessionStorage.removeItem("mobility-local-session");
     setToken("");
     setSessionSyncNeeded(false);
@@ -196,6 +218,20 @@ export default function Page() {
       try { savedToken = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null")?.token || ""; } catch { /* invalid storage is handled at bootstrap */ }
       const currentToken = savedToken || activeTokenRef.current;
       if (!isCurrentUnauthorized(event, currentToken)) return;
+      if (studentPreview && activeTokenRef.current === currentToken) {
+        void restoreStudentBrowser().then(restored => {
+          if (activeTokenRef.current !== currentToken) return;
+          if (restored) {
+            activeTokenRef.current = restored;
+            sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: restored, role: "rider" }));
+            setToken(restored);
+          } else {
+            clearSession();
+            setError("Your session expired. Please sign in again.");
+          }
+        }).catch(() => setError("Could not renew your sign-in. Reload to try again."));
+        return;
+      }
       clearSession();
       setError("Your session expired. Please sign in again.");
     };
@@ -251,7 +287,7 @@ export default function Page() {
     finally { setOperatorTicketBusy(false); }
   }
   useEffect(() => {
-    if (!token || me?.account_role) {
+    if (!token || me?.account_role || studentPreview) {
       setMapStatus("idle");
       setMapError("");
       return;
@@ -264,6 +300,7 @@ export default function Page() {
       setMapStatus("ready");
       setMapError("");
     };
+    if (useOlaMaps) { ready(); return; }
     setMapStatus("loading");
     return loadMapsSdk({
       fetchImpl: fetch,
@@ -272,7 +309,7 @@ export default function Page() {
       onReady: ready,
       onUnavailable: fail,
     });
-  }, [token, mapRetry, me?.account_role]);
+  }, [token, mapRetry, me?.account_role, useOlaMaps]);
   async function suggestPlaces(kind: "origin" | "destination", input: string) {
     const generation = ++placeRequestGeneration.current[kind];
     cancelPlaceDebounce(kind);
@@ -292,19 +329,27 @@ export default function Page() {
         }, 250);
       });
       if (generation !== placeRequestGeneration.current[kind]) return;
-      const g = (window as any).google;
-      const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
-      const Suggestion = places?.AutocompleteSuggestion;
-      if (!Suggestion?.fetchAutocompleteSuggestions) throw Error("New Google Places suggestions are unavailable.");
-      const result = await Suggestion.fetchAutocompleteSuggestions({ input: input.trim(), includedRegionCodes: ["in"] });
-      if (generation !== placeRequestGeneration.current[kind]) return;
-      setPlaceSuggestions((current) => ({
-        ...current,
-        [kind]: (result?.suggestions || [])
-          .filter((item: R) => typeof item.placePrediction?.toPlace === "function" && Boolean(predictionText(item.placePrediction)))
-          .slice(0, 5)
-          .map((item: R) => ({ prediction: item.placePrediction, label: predictionText(item.placePrediction), key: item.placePrediction.placeId || `${kind}-${predictionText(item.placePrediction)}` })),
-      }));
+      if (useOlaMaps) {
+        const result = await olaAutocomplete(input.trim(), token);
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        setPlaceSuggestions((current) => ({ ...current, [kind]: result.predictions.slice(0, 5).map((place) => ({
+          prediction: { placeId: place.placeId }, label: place.description, key: place.placeId,
+        })) }));
+      } else {
+        const g = (window as any).google;
+        const places = g?.maps?.importLibrary ? await g.maps.importLibrary("places") : g?.maps?.places;
+        const Suggestion = places?.AutocompleteSuggestion;
+        if (!Suggestion?.fetchAutocompleteSuggestions) throw Error("New Google Places suggestions are unavailable.");
+        const result = await Suggestion.fetchAutocompleteSuggestions({ input: input.trim(), includedRegionCodes: ["in"] });
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        setPlaceSuggestions((current) => ({
+          ...current,
+          [kind]: (result?.suggestions || [])
+            .filter((item: R) => typeof item.placePrediction?.toPlace === "function" && Boolean(predictionText(item.placePrediction)))
+            .slice(0, 5)
+            .map((item: R) => ({ prediction: item.placePrediction, label: predictionText(item.placePrediction), key: item.placePrediction.placeId || `${kind}-${predictionText(item.placePrediction)}` })),
+        }));
+      }
     } catch {
       if (generation === placeRequestGeneration.current[kind]) {
         setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
@@ -319,25 +364,32 @@ export default function Page() {
     cancelPlaceDebounce(kind);
     setPlaceSuggestions((current) => ({ ...current, [kind]: [] }));
     try {
-      const place = suggestion.prediction?.toPlace?.();
-      if (!place?.fetchFields) throw Error("This suggestion is no longer available. Search again.");
-      await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+      let value: R;
+      if (useOlaMaps) {
+        const result = await olaDetails(suggestion.prediction?.placeId, token);
+        value = result.place;
+      } else {
+        const place = suggestion.prediction?.toPlace?.();
+        if (!place?.fetchFields) throw Error("This suggestion is no longer available. Search again.");
+        await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+        if (generation !== placeRequestGeneration.current[kind]) return;
+        const location = place.location;
+        if (!location) throw Error("Google did not return coordinates for this place.");
+        const displayName = placeText(place.displayName);
+        value = {
+          label: place.formattedAddress || displayName || suggestion.label,
+          lat: typeof location.lat === "function" ? location.lat() : location.lat,
+          lng: typeof location.lng === "function" ? location.lng() : location.lng,
+        };
+      }
       if (generation !== placeRequestGeneration.current[kind]) return;
-      const location = place.location;
-      if (!location) throw Error("Google did not return coordinates for this place.");
-      const displayName = placeText(place.displayName);
-      const value = {
-        label: place.formattedAddress || displayName || suggestion.label,
-        lat: typeof location.lat === "function" ? location.lat() : location.lat,
-        lng: typeof location.lng === "function" ? location.lng() : location.lng,
-      };
       setBookingRoute(undefined);
       setRouteGeometry([]);
       setNotice("");
       if (kind === "origin") { setOrigin(value); setOriginText(value.label); }
       else { setDestination(value); setDestinationText(value.label); }
     } catch {
-      if (generation === placeRequestGeneration.current[kind]) setNotice("Google could not retrieve coordinates for this address. Check the Maps/Places configuration or demo quota, then try again.");
+      if (generation === placeRequestGeneration.current[kind]) setNotice("Maps could not retrieve coordinates for this address. Check the provider configuration or quota, then try again.");
     }
   }
   function dismissPlaces(kind: "origin" | "destination") {
@@ -357,7 +409,7 @@ export default function Page() {
     }
   }, [view]);
   useEffect(() => {
-    if (mapStatus !== "ready" || !mapRef.current) return;
+    if (useOlaMaps || mapStatus !== "ready" || !mapRef.current) return;
     const g = (window as any).google;
     const mapOrigin = bookingRoute?.origin || origin;
     const mapDestination = bookingRoute?.destination || destination;
@@ -398,6 +450,7 @@ export default function Page() {
     }
   }, [
     mapStatus,
+    useOlaMaps,
     origin,
     destination,
     routeGeometry,
@@ -407,6 +460,15 @@ export default function Page() {
     profile.home?.lng,
   ]);
   async function sync(t: string, sessionRole = role) {
+    if (studentPreview) {
+      const [identity, account] = await Promise.all([
+        request("commute/me", t),
+        request("college-auth/profile", t),
+      ]);
+      const student = { ...identity, student_profile: account };
+      setMe(student);
+      return student;
+    }
     const [meResult, bookingsResult, waitlistResult, walletResult, offersResult, notificationsResult] = await Promise.allSettled([
       request("commute/me", t),
       request("commute/bookings", t),
@@ -453,12 +515,50 @@ export default function Page() {
   }
   useEffect(() => {
     let active = true;
+    if (studentPreview) {
+      async function loadStudent() {
+        let saved = "";
+        try {
+          saved = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null")?.token || "";
+        } catch {
+          sessionStorage.removeItem("mobility-local-session");
+        }
+        try {
+          if (!saved) saved = await restoreStudentBrowser();
+          if (!active || !saved) return;
+          try {
+            await sync(saved, "rider");
+          } catch (error) {
+            if ((error as { status?: number }).status !== 401) throw error;
+            sessionStorage.removeItem("mobility-local-session");
+            saved = await restoreStudentBrowser();
+            if (!active || !saved) return;
+            await sync(saved, "rider");
+          }
+          if (!active) return;
+          const remembered = await fetch(studentSessionPath, {
+            method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${saved}` }, cache: "no-store",
+          }).then(response => response.ok).catch(() => false);
+          if (!active) return;
+          sessionStorage.setItem("mobility-local-session", JSON.stringify({ token: saved, role: "rider" }));
+          setError(remembered ? "" : "You’re signed in. This browser could not be remembered. Reload to try again.");
+          setToken(saved);
+          setView("pool");
+        } catch {
+          if (active) setError("Could not check this browser’s sign-in. Reload to try again.");
+        } finally {
+          if (active) setStudentBooting(false);
+        }
+      }
+      void loadStudent();
+      return () => { active = false; };
+    }
     try {
       const saved = JSON.parse(sessionStorage.getItem("mobility-local-session") || "null");
       if (saved?.token && ["rider", "driver"].includes(saved.role)) {
         void sync(saved.token, saved.role).then(() => {
           if (!active) return;
-          setRole(saved.role); setToken(saved.token); setView("pool");
+          setRole(saved.role); setToken(saved.token); setView("home");
         }).catch((error: Error & { status?: number }) => {
           if (!active) return;
           // Only invalid credentials should destroy a saved session. A temporary
@@ -469,7 +569,7 @@ export default function Page() {
           }
           setRole(saved.role);
           setToken(saved.token);
-          setView("pool");
+          setView("home");
           setSessionSyncNeeded(true);
           setError("Your session was preserved, but account details could not load. Retry account loading.");
         });
@@ -662,15 +762,22 @@ export default function Page() {
   }
   async function signOut() {
     const sessionToken = token;
-    clearSession();
+    setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/mobility/college-auth/logout", {
+      const forgetBrowser = studentPreview ? fetch(studentSessionPath, {
+        method: "DELETE", headers: { Accept: "application/json" }, cache: "no-store",
+      }) : Promise.resolve(null);
+      const logout = fetch("/api/mobility/college-auth/logout", {
         method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${sessionToken}` }, cache: "no-store",
       });
-      if (!response.ok && response.status !== 401) throw new Error("Session revocation failed");
+      const [response, forgotten] = await Promise.all([logout, forgetBrowser]);
+      if ((!response.ok && response.status !== 401) || (forgotten && !forgotten.ok)) throw new Error("Session revocation failed");
     } catch (e: any) {
       if (e?.status !== 401) setError("Signed out on this device, but the server could not revoke the session.");
+    } finally {
+      clearSession();
+      setBusy(false);
     }
   }
   async function switchCommuteView() {
@@ -690,7 +797,7 @@ export default function Page() {
     setRouteGeometry([]);
     setNotice("");
     if (!origin || !destination) {
-      setError("Select both places from Google Places suggestions.");
+      setError(useOlaMaps ? "Select both places from Ola Places suggestions." : "Select both places from Google Places suggestions.");
       return;
     }
     setBusy(true);
@@ -1068,6 +1175,7 @@ export default function Page() {
     if (b.state === "in_progress") return `Trip in progress${wallet ? ` · ${wallet}` : ""}`;
     return `${requestLabel(b)}${wallet ? ` · ${wallet}` : ""}`;
   };
+  if (studentBooting) return <main className="landing"><p role="status">Checking your CampusPool sign-in…</p></main>;
   if (!token) return (
     <LocalAccountLanding
       request={request}
@@ -1085,17 +1193,66 @@ export default function Page() {
           const identity = await sync(accountToken, accountRole);
           setToken(accountToken);
           setSessionSyncNeeded(false);
-          if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
+          if (studentPreview) setView("home");
+          else if (identity?.account_role || process.env.NEXT_PUBLIC_CANONICAL_DEMO === "1") setView("pool");
         } catch (e: any) {
           if (e?.status !== 401) {
             setSessionSyncNeeded(true);
             setToken(accountToken);
+            if (studentPreview) setView("home");
             setError("Signed in, but account details could not be loaded. Retry to continue.");
           }
         }
       }}
     />
   );
+  if (studentPreview) {
+    const student = me?.student_profile;
+    const name = student?.name || me?.user?.name || "Your account";
+    const email = student?.email || me?.user?.email || "";
+    const initials = name.trim().split(/\s+/).slice(0, 2).map((part: string) => part[0]).join("").toUpperCase() || "C";
+    const screen = student?.complete === false ? "complete-profile" : view === "pool" ? "rides" : view;
+    const navigate = (next: string) => {
+      setError("");
+      setView(next);
+      window.scrollTo(0, 0);
+    };
+    const openRide = (section: RideSection, defaults?: RideDefaults) => {
+      setStudentRide(current => ({ section, defaults, revision: current.revision + 1 }));
+      navigate("rides");
+    };
+    const title: Record<string, string> = {
+      rides: "Rides", chats: "Chats", timetable: "My timetable", account: "Account",
+      settings: "Profile & settings", vehicle: "My vehicle", plan: "Planned rides", "complete-profile": "Complete your profile",
+    };
+    return <DashboardFrame view={screen} initials={initials} onNavigate={next => {
+      if (next === "rides" && screen !== "rides") openRide("find");
+      else navigate(next);
+    }} onUpdates={() => openRide("updates")}>
+      {title[screen] && <h1>{title[screen]}</h1>}
+      {error && <p className="error banner" role="alert">{error}</p>}
+      {sessionSyncNeeded && <button className="primary" disabled={busy} onClick={async () => {
+        setBusy(true);
+        try { await sync(token, role); setSessionSyncNeeded(false); setError(""); }
+        catch (failure: any) { if (failure?.status !== 401) setError("Account details are still unavailable. Please retry."); }
+        finally { setBusy(false); }
+      }}>Retry account loading</button>}
+      {screen === "home" && <DashboardHome key={token} token={token} name={name} openRide={openRide} openPlan={() => navigate("plan")} />}
+      {screen === "rides" && <AddressRides key={`${token}:${studentRide.revision}`} token={token}
+        {...{ initialMode: studentRide.section, rideDefaults: studentRide.defaults }}
+        onDriverOnboarding={() => navigate("vehicle")} />}
+      {screen === "chats" && <DashboardChats key={token} token={token} onFind={() => openRide("find")} />}
+      {screen === "timetable" && <PesTimetable key={token} token={token} />}
+      {screen === "plan" && <PlannedRides token={token} onBack={() => navigate("home")} />}
+      {screen === "vehicle" && <DashboardVehicles key={token} token={token} onOffer={() => openRide("offer")} />}
+      {screen === "account" && <DashboardAccount key={token} token={token} name={name} email={email} initials={initials} verified={Boolean(student)}
+        onNavigate={navigate} openRide={openRide} signOut={() => void signOut()} />}
+      {["complete-profile", "settings"].includes(screen) && <StudentProfile token={token} onSaved={updated => {
+        setMe(current => ({ ...current, user: { ...current?.user, name: updated.name }, student_profile: updated }));
+        navigate(screen === "settings" ? "account" : "home");
+      }} />}
+    </DashboardFrame>;
+  }
   const home = profile.home?.label || "",
     campus = profile.campus?.label || "";
   const displayedHome = direction === "return" ? destination : origin;
@@ -1130,13 +1287,13 @@ export default function Page() {
     Number(displayedCampus.lng) !== Number(profile.campus?.lng) ||
     searchTime !== savedTime;
   return (
-    <main className="shell">
+    <main className={studentPreview ? "shell student-preview" : "shell"}>
       <header>
         <div className="brand">
           <span className="logo">C</span>CampusPool
         </div>
-        <span className="pill">{role.toUpperCase()} VIEW</span>
-        {role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>
+        {!studentPreview && <span className="pill">{role.toUpperCase()} VIEW</span>}
+        {!studentPreview && role !== "operator" && me?.account_role == null && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <button className="signout" disabled={busy} onClick={switchCommuteView}>
           {role === "rider" ? "Switch to hosting" : "Switch to riding"}
         </button>}
         {sessionSyncNeeded && <button className="signout" disabled={busy} onClick={async () => {
@@ -1145,32 +1302,38 @@ export default function Page() {
           catch (e: any) { if (e?.status !== 401) setError("Account details are still unavailable. Please retry."); }
           finally { setBusy(false); }
         }}>Retry account loading</button>}
-        <button
+        {!studentPreview && <button
           className="signout"
+          disabled={busy}
           onClick={signOut}
         >
           Sign out
-        </button>
+        </button>}
+
       </header>
-      <div className="layout">
-        <aside>
+      <div className={activeView === "complete-profile" ? "layout profile-onboarding" : "layout"}>
+        {activeView !== "complete-profile" && <aside>
           <p className="muted">COMMUTE</p>
           {navItems.map(([v, l]) => (
             <button
               key={v}
               className={`nav ${activeView === v ? "active" : ""}`}
-              onClick={() => setView(v)}
+              aria-current={activeView === v ? "page" : undefined}
+              onClick={() => { setView(v); setNotice(""); }}
             >
               {l}
             </button>
           ))}
-        </aside>
+        </aside>}
         <section className={`content${activeView === "operator" ? " operator-content" : ""}`}>
-          <p className="eyebrow">
+          {!studentPreview && <p className="eyebrow">
             {activeView === "operator" ? "COLLEGE OPERATIONS" : activeView === "pool" ? "PLAN YOUR TRIP" : savedRouteChanged ? "COMMUTE CHANGES WILL SAVE BEFORE SEARCH" : "SAVED COMMUTE"}
-          </p>
+          </p>}
           <h2>
-            {activeView === "home"
+            {activeView === "complete-profile" ? "Complete your profile"
+              : activeView === "settings" ? "Profile & settings"
+              : activeView === "timetable" ? "My timetable"
+              : activeView === "home"
               ? "Choose your route."
               : activeView === "rides"
                 ? "Available rides."
@@ -1185,13 +1348,13 @@ export default function Page() {
                 : activeView === "driver-onboarding"
                   ? "Apply to drive."
                 : activeView === "pool"
-                  ? (me?.account_role ? "Rides and bookings" : "Pool offers.")
+                  ? (studentPreview ? "Campus rides" : me?.account_role ? "Rides and bookings" : "Pool offers.")
                   : "Demo wallet."}
           </h2>
           {error && <p className="error banner" role="alert">{error}</p>}
           {notice && <p className="banner" role="status">{notice}</p>}
-          {me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
-          {!localAccount && view === "home" && (
+          {!studentPreview && me?.demo === false && !me?.operator && !me?.account_role && <p className="banner" role="status">Your student account is signed in. Use Pool offers to search or publish; the demo commute views require a demonstration session.</p>}
+          {activeView === "home" && (
             <>
               <form className="search-card" onSubmit={search}>
                 <div className="field place-field" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) dismissPlaces("origin"); }} onKeyDown={(event) => { if (event.key === "Escape") dismissPlaces("origin"); }}>
@@ -1214,7 +1377,7 @@ export default function Page() {
                   />
                   {(placeBusy.origin || placeSuggestions.origin.length > 0) && (
                     <div className="place-suggestions" role="listbox" aria-label="Origin suggestions">
-                      {placeBusy.origin && <small className="fine">Searching Google Places…</small>}
+                      {placeBusy.origin && <small className="fine">Searching {useOlaMaps ? "Ola" : "Google"} Places…</small>}
                       {placeSuggestions.origin.map((suggestion) => (
                         <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("origin", suggestion)}>{suggestion.label}</button>
                       ))}
@@ -1241,7 +1404,7 @@ export default function Page() {
                   />
                   {(placeBusy.destination || placeSuggestions.destination.length > 0) && (
                     <div className="place-suggestions" role="listbox" aria-label="Destination suggestions">
-                      {placeBusy.destination && <small className="fine">Searching Google Places…</small>}
+                      {placeBusy.destination && <small className="fine">Searching {useOlaMaps ? "Ola" : "Google"} Places…</small>}
                       {placeSuggestions.destination.map((suggestion) => (
                         <button key={suggestion.key} type="button" className="place-suggestion" onClick={() => choosePlace("destination", suggestion)}>{suggestion.label}</button>
                       ))}
@@ -1357,7 +1520,10 @@ export default function Page() {
                 </button>
               </form>
               <div className="map-card">
-                <div ref={mapRef} className="real-map">
+                {useOlaMaps ? <OlaMapPanel token={token} origin={bookingRoute?.origin || origin} destination={bookingRoute?.destination || destination}
+                  geometry={routeGeometry.length > 1 ? routeGeometry : undefined} pick={null} onPick={() => {}}
+                  onState={(isReady) => { if (!isReady) setMapError("The Ola map is not available."); else setMapError(""); }}
+                  onError={setMapError} /> : <div ref={mapRef} className="real-map">
                   <span>
                     {me?.account_role
                       ? "Map-based place selection is available in Pool offers."
@@ -1372,7 +1538,8 @@ export default function Page() {
                       Retry map
                     </button>
                   )}
-                </div>
+                </div>}
+                {useOlaMaps && mapError && <p role="alert">{mapError}</p>}
                 <div className="map-caption">
                   <b>
                     {bookingRoute?.origin?.label || origin?.label || home || "Origin"} →{" "}
@@ -1388,17 +1555,14 @@ export default function Page() {
             </>
           )}
           {view === "driver-onboarding" && <DriverOnboarding token={token} />}
-          {activeView === "pool" && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
-          {activeView === "pool" && !me?.account_role && <CanonicalPool token={token} accountRole={role === "rider" || role === "driver" ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
+          {activeView === "pool" && !studentPreview && me?.account_role && <LiveCarpool key={String(me.user?.id || token)} token={token} accountRole={me.account_role} savedProfile={me.profile} />}
+          {activeView === "pool" && !studentPreview && !me?.account_role && <CanonicalPool token={token} accountRole={!studentPreview && (role === "rider" || role === "driver") ? role : undefined} initialMode={role === "driver" ? "publish" : "find"} />}
           {!localAccount && view === "rides" && (
             <>
-              {routeGeometry.length > 1 && (
-                <div
-                  ref={mapRef}
-                  className="real-map"
-                  aria-label="Matched ride route map"
-                />
-              )}
+              {routeGeometry.length > 1 && (useOlaMaps
+                ? <OlaMapPanel token={token} origin={bookingRoute?.origin || origin} destination={bookingRoute?.destination || destination}
+                    geometry={routeGeometry} pick={null} onPick={() => {}} onState={() => {}} onError={setMapError} />
+                : <div ref={mapRef} className="real-map" aria-label="Matched ride route map" />)}
               <div className="cards">
                 {rides.length === 0 ? (
                   <div className="empty">

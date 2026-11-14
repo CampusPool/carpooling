@@ -100,7 +100,7 @@ final class OsrmRouteProvider implements RouteProvider
 
     private static function validDataVersion(mixed $value, string $vehicleType): bool
     {
-        return RouteDataVersion::valid($value, $vehicleType);
+        return RouteDataVersion::validForProvider($value, $vehicleType, 'osrm');
     }
 
     private function coordinate(mixed $value, float $minimum, float $maximum): bool

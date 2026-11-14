@@ -22,7 +22,7 @@ function installMocks() {
     if (url === "/api/mobility/commute/waitlist") return json({ data: [] });
     if (url === "/api/mobility/commute/wallet") return json({ balance_minor: 2500 });
     if (url === "/api/mobility/commute/notifications") return json({ data: [] });
-    if (url === "/mobility-pilot/maps-config") return json({ browser_key: "test-key" });
+    if (url === "/api/maps/config") return json({ browser_key: "test-key" });
     throw new Error(`Unhandled mocked request: ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);

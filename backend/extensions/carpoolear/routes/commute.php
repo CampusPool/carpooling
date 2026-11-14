@@ -1,14 +1,22 @@
 <?php
 use Illuminate\Support\Facades\Route;
 use STS\Mobility\Commute\CommuteController as C;
+use STS\Mobility\Commute\PesTimetableController;
 Route::prefix('api/mobility/commute')->middleware(['api','throttle:30,1'])->group(function(){Route::post('demo-session',[C::class,'demo']);});
 Route::prefix('api/mobility/commute')->middleware(['api','logged'])->group(function(){
+ Route::get('pes-timetable',[PesTimetableController::class,'show']);
+ Route::put('pes-timetable',[PesTimetableController::class,'save']);
+ Route::delete('pes-timetable',[PesTimetableController::class,'destroy']);
  Route::get('offers',[C::class,'offers']);Route::post('offers',[C::class,'publish']);Route::get('waitlist',[C::class,'waitlist']);Route::post('rides/{trip}/waitlist',[C::class,'joinWaitlist'])->whereNumber('trip');Route::post('waitlist/{entry}/refresh',[C::class,'refreshWaitlist'])->whereNumber('entry');Route::post('waitlist/{entry}/request',[C::class,'requestWaitlistSeat'])->whereNumber('entry');Route::post('waitlist/{entry}/cancel',[C::class,'cancelWaitlist'])->whereNumber('entry');
  Route::get('me',[C::class,'me']);Route::put('profile',[C::class,'profile']);Route::get('notifications',[C::class,'notifications']);Route::post('notifications/{notification}/read',[C::class,'readNotification'])->whereNumber('notification');Route::get('rides',[C::class,'rides']);Route::post('rides/{trip}/request',[C::class,'request'])->whereNumber('trip');Route::get('bookings',[C::class,'bookings']);Route::post('bookings/{booking}/{action}',[C::class,'action'])->whereNumber('booking')->whereIn('action',['accept','reject','cancel']);
  Route::get('wallet',[C::class,'wallet']);Route::post('wallet/top-up',[C::class,'topup']);Route::post('wallet/release-due',[C::class,'release']);Route::post('bookings/{booking}/pay',[C::class,'pay'])->whereNumber('booking');Route::post('bookings/{booking}/confirm-arrival',[C::class,'arrive'])->whereNumber('booking');Route::post('bookings/{booking}/confirm-payment-received',[C::class,'confirmPaymentReceived'])->whereNumber('booking');Route::post('trips/{trip}/transition',[C::class,'transition'])->whereNumber('trip');
 });
 Route::middleware('web')->get('mobility/{asset?}',function(?string$asset=null){
- if(!filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN))abort(404);
+ if(\STS\Mobility\Identity\StudentIdentityBoundary::publicMode() || !filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'),FILTER_VALIDATE_BOOLEAN))abort(404);
+ if(config('mobility_routing.provider')==='ola'){
+    if($asset===null)return redirect()->away(rtrim((string)(getenv('MOBILITY_FRONTEND_URL')?:'http://127.0.0.1:3012'),'/').'/',302);
+    return response('Use the Ola-enabled CampusPool Next.js application.',410,['Cache-Control'=>'private, no-store','X-Content-Type-Options'=>'nosniff']);
+ }
  $files=[''=>'commute.html','commute.css'=>'commute.css','commute.mjs'=>'commute.mjs','active-ride-state.mjs'=>'active-ride-state.mjs','trip-chat-ui.mjs'=>'trip-chat-ui.mjs','place-search.mjs'=>'place-search.mjs','commute-map.mjs'=>'commute-map.mjs'];if(!isset($files[$asset??'']))abort(404);$file=$files[$asset??''];$root=rtrim(getenv('MOBILITY_EXTENSION_ROOT')?:dirname(__DIR__),'/');
  $type=str_ends_with($file,'.html')?'text/html':(str_ends_with($file,'.css')?'text/css':'text/javascript');
  // Google Maps propagates the response nonce to its inserted scripts/styles.

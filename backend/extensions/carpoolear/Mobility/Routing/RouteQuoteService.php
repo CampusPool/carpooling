@@ -65,8 +65,8 @@ final class RouteQuoteService
         $rate = config('mobility_routing.'.$vehicle.'_minor_per_km');
         $synthetic = config('mobility_routing.synthetic_only', false);
         $expectedVersions = [
-            'car' => config('mobility_routing.car_expected_data_version'),
-            'bike' => config('mobility_routing.bike_expected_data_version'),
+            'car' => RouteDataVersion::expected('car'),
+            'bike' => RouteDataVersion::expected('bike'),
         ];
         if (! is_string($pricingVersion) || ! preg_match('/^[A-Za-z0-9_.-]{1,64}$/D', $pricingVersion)
             || (! is_int($rate) && ! (is_string($rate) && ctype_digit($rate)))
@@ -100,7 +100,9 @@ final class RouteQuoteService
                     throw new RoutingException('ROUTE_INVALID');
                 }
             }
-            if (! is_string($route['provider'] ?? null) || $route['provider'] === '' || ! is_string($route['profile'] ?? null) || $route['profile'] === '') {
+            if (! is_string($route['provider'] ?? null) || $route['provider'] === ''
+                || (! $synthetic && $route['provider'] !== config('mobility_routing.provider'))
+                || ! is_string($route['profile'] ?? null) || $route['profile'] === '') {
                 throw new RoutingException('ROUTE_INVALID');
             }
             $routeVersion = $route['data_version'] ?? null;

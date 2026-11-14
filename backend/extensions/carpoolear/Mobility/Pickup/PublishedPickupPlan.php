@@ -118,7 +118,8 @@ final class PublishedPickupPlan
     private static function source(object $publication): array
     {
         $path = self::decode($publication->driver_path, 'PRIVATE_PUBLICATION_INVALID');
-        if (($path['provider'] ?? null) !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === '') {
+        if (! RouteDataVersion::validAny($path['data_version'] ?? null, $path['provider'] ?? null)
+            || ! is_string($path['profile'] ?? null) || $path['profile'] === '') {
             throw new PickupException('PRIVATE_PUBLICATION_INVALID', 409);
         }
         $vehicles = array_values(array_filter(['car', 'bike'], static fn (string $vehicle): bool => RouteDataVersion::valid($path['data_version'] ?? null, $vehicle)));

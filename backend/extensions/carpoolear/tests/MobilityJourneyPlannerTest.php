@@ -20,6 +20,7 @@ final class MobilityJourneyPlannerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['mobility_routing.provider' => 'osrm']);
         foreach (['car', 'bike', 'foot'] as $mode) config(['mobility_routing.'.$mode.'_expected_data_version' => self::version($mode)]);
     }
 
@@ -75,7 +76,9 @@ final class MobilityJourneyPlannerTest extends TestCase
     public function test_detour_is_measured_on_complete_pickup_and_dropoff_route(): void
     {
         $p = $this->provider(); $baseline = $this->baseline($p);
-        $this->assertFalse((new JourneyPlanner($p))->plan($baseline, $this->origin, $this->destination, 'car', 'DIRECT_RIDER_PICKUP', 999, 100, 3600)['available']);
+        $result = (new JourneyPlanner($p))->plan($baseline, $this->origin, $this->destination, 'car', 'DIRECT_RIDER_PICKUP', 999, 100, 3600);
+        $this->assertFalse($result['available']);
+        $this->assertTrue($result['detour_limit_exceeded']);
     }
 
     public function test_invalid_walking_policy_graph_and_pricing_fail_closed(): void
@@ -121,6 +124,41 @@ final class MobilityJourneyPlannerTest extends TestCase
         $this->assertEqualsWithDelta(77.523,$result['pickup']['lng'],0.00001);$this->assertSame(0,$result['detour']['added_distance_meters']);$this->assertSame(0,$result['pricing']['direct_pickup_surcharge_minor']);
         $this->assertFalse($planner->plan($baseline,$origin,$this->destination,'car','ON_ROUTE_MEETING_POINT',399,0,0)['available']);
     }
+    public function test_ola_meeting_search_preserves_actual_walk_ranking_with_fewer_provider_calls(): void
+    {
+        config(['mobility_routing.provider' => 'ola']);
+        $provider = new class implements PathProvider {
+            public int $footCalls = 0;
+            public function path(array $points, string $mode, float $timeoutSeconds = 5): array {
+                $geometry = array_map(fn($p) => [$p['lng'], $p['lat']], $points);
+                if ($mode === 'car') {
+                    $geometry = [];
+                    for ($i = 0; $i <= 40; $i++) $geometry[] = [77.50 + $i * 0.0005, 12.9];
+                    $meters = 2200;
+                } else {
+                    $this->footCalls++;
+                    $straight = hypot(($points[1]['lat'] - $points[0]['lat']) * 111200, ($points[1]['lng'] - $points[0]['lng']) * 108400);
+                    $meters = (int) ceil($straight * 1.1);
+                    // The nearest pickup requires a longer real walk; a farther one wins.
+                    if (abs($points[0]['lng'] - 77.504) < 0.00001 && abs($points[1]['lng'] - 77.504) < 0.00001) $meters += 400;
+                }
+                $seconds = max(1, (int) ceil($meters / 1.3));
+                return ['provider'=>'ola','profile'=>$mode,'data_version'=>'ola-directions-v1:'.$mode,
+                    'geometry'=>$geometry,'waypoints'=>array_map(fn($p)=>['location'=>[$p['lng'],$p['lat']],'distance_meters'=>0],$points),
+                    'legs'=>[['distance_meters'=>$meters,'duration_seconds'=>$seconds]],'distance_meters'=>$meters,'duration_seconds'=>$seconds];
+            }
+        };
+        $from = ['lat'=>12.9,'lng'=>77.50]; $to = ['lat'=>12.9,'lng'=>77.52];
+        $origin = ['lat'=>12.9,'lng'=>77.504]; $destination = ['lat'=>12.9,'lng'=>77.516];
+        $baseline = $provider->path([$from,$to], 'car') + ['points'=>[$from,$to]];
+        $result = (new JourneyPlanner($provider))->plan($baseline, $origin, $destination, 'car', 'ON_ROUTE_MEETING_POINT', 999, 0, 0);
+        $this->assertTrue($result['available']);
+        $this->assertNotEqualsWithDelta(77.504, $result['pickup']['lng'], 0.00001);
+        $this->assertLessThan(400, $result['total_walking_meters']);
+        $this->assertLessThan(20, $provider->footCalls, 'Geometric bounds should avoid searching every nearby vertex.');
+        $this->assertSame($baseline['geometry'], $result['driver_path']['geometry']);
+    }
+
     public static function version(string $mode): string { return $mode.'|crop_sha256='.str_repeat('a', 64).'|profile_sha256='.str_repeat($mode === 'car' ? 'b' : ($mode === 'bike' ? 'c' : 'd'), 64); }
     private function provider(): PathProvider
     {

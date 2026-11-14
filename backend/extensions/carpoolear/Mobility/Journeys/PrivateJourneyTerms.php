@@ -28,8 +28,8 @@ final class PrivateJourneyTerms
             if (! is_array($endpoint) || ($endpoint['id'] ?? null) !== $consent->{$role.'_endpoint_id'} || ($endpoint['hash'] ?? null) !== $consent->{$role.'_endpoint_hash'}) self::invalid();
         }
         $path = $s['driver_path'] ?? null;
-        if (! is_array($path) || ($path['provider'] ?? null) !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
-            || ! RouteDataVersion::valid($path['data_version'] ?? null, $s['vehicle_type'])
+        if (! is_array($path) || ! RouteDataVersion::validForProvider($path['data_version'] ?? null, $s['vehicle_type'], $path['provider'] ?? null)
+            || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
             || ! is_array($path['waypoints'] ?? null) || count($path['waypoints']) !== 4 || ! is_array($path['legs'] ?? null) || count($path['legs']) !== 3) self::invalid();
         $ride = $s['riding'] ?? null;
         if (! is_array($ride) || $ride != $path['legs'][1]) self::invalid();
@@ -40,8 +40,8 @@ final class PrivateJourneyTerms
         foreach (['access', 'egress'] as $leg) {
             $walking = $s[$leg] ?? null; $foot = $walking['path'] ?? null;
             if (! is_array($walking) || ! is_int($walking['total_meters'] ?? null) || $walking['total_meters'] < 0
-                || ! is_array($foot) || ($foot['provider'] ?? null) !== 'osrm' || ! is_string($foot['data_version'] ?? null)
-                || ! preg_match('/^foot\|crop_sha256=[a-f0-9]{64}\|profile_sha256=[a-f0-9]{64}$/D', $foot['data_version'])
+                || ! is_array($foot) || ($foot['provider'] ?? null) !== $path['provider']
+                || ! RouteDataVersion::validForProvider($foot['data_version'] ?? null, 'foot', $foot['provider'] ?? null)
                 || ($footVersion !== null && $footVersion !== $foot['data_version'])) self::invalid();
             $footVersion = $foot['data_version']; $walk += $walking['total_meters'];
         }
@@ -67,7 +67,7 @@ final class PrivateJourneyTerms
                 'json_address' => ['private_quote_id' => $quote->id, 'role' => $role]];
         }
         $canonical = ['endpoint_schema' => 'actor-private-v1', 'private_quote_id' => $quote->id, 'points' => $points,
-            'provider' => 'osrm', 'profile' => $path['profile'], 'data_version' => $path['data_version'], 'synthetic_only' => false,
+            'provider' => $path['provider'], 'profile' => $path['profile'], 'data_version' => $path['data_version'], 'synthetic_only' => false,
             'distance_meters' => $ride['distance_meters'], 'duration_seconds' => $ride['duration_seconds'], 'seat_price_minor' => $price['total_fare_minor'], 'currency' => 'INR'];
         return ['private' => true, 'snapshot' => $canonical, 'private_snapshot' => $s, 'hash' => $hash, 'quote_id' => $quote->id,
             'journey_quote_id' => $consent->id, 'rider_id' => (int) $quote->user_id, 'driver_id' => (int) $consent->driver_id,

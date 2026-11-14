@@ -12,6 +12,11 @@ use STS\Mobility\Routing\OfferController;
 use STS\Mobility\Routing\RouteQuoteController;
 use STS\Mobility\Trust\CohortController;
 
+Route::prefix('api/mobility/operator')->middleware('api')->group(function (): void {
+    Route::post('login', [\STS\Mobility\OperatorPasswordController::class, 'login']);
+    Route::post('logout', [\STS\Mobility\OperatorPasswordController::class, 'logout'])->middleware('auth:api');
+});
+
 Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
     Route::post('mobility/pickup-plans', [\STS\Mobility\Pickup\PickupController::class, 'planStore']);
     Route::put('mobility/pickup-plans/{id}', [\STS\Mobility\Pickup\PickupController::class, 'planUpdate'])->whereUuid('id');
@@ -77,6 +82,7 @@ Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
     Route::get('mobility/operator/cash-disputes', [\STS\Mobility\OperatorCashQueueController::class, 'index']);
     Route::get('mobility/operator/dashboard', [OperatorDashboardController::class, 'show']);
     Route::get('mobility/operator/analytics', [\STS\Mobility\OperatorAnalyticsController::class, 'show']);
+    Route::get('mobility/operator/dbms/health', [\STS\Mobility\OperatorDatabaseHealthController::class, 'show']);
     Route::get('mobility/operator/trips/{trip}', [MobilityController::class, 'operatorShow'])
         ->whereNumber('trip');
 });
@@ -84,6 +90,12 @@ Route::prefix('api')->middleware(['api', 'logged'])->group(function (): void {
 // The demo credential is public to this local map page; server credentials
 // must never be placed in this file. No provider content is persisted here.
 Route::middleware(['web'])->get('mobility-pilot/maps-config', function () {
+    // Retired Google-only browser endpoint: Ola's live UI is served by Next.js.
+    // Never expose the previous Google key or silently fall back to Google.
+    if (config('mobility_routing.provider') === 'ola') {
+        return response()->json(['error' => 'LEGACY_MAPS_DISABLED_IN_OLA_MODE'], 410,
+            ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+    }
     if (app()->environment() !== 'testing' ||
         ! filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
         abort(404);
@@ -109,6 +121,15 @@ Route::middleware(['web'])->get('mobility-pilot/maps-config', function () {
 Route::middleware(['web'])->get('mobility-pilot/{asset?}', function (?string $asset = null) {
     if (! filter_var(getenv('MOBILITY_PILOT_UI_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
         abort(404);
+    }
+    if (config('mobility_routing.provider') === 'ola') {
+        // Existing classroom pages remain intact for the separate OSRM rollback.
+        // In Ola mode, the maintained Next.js journey replaces their Google-only UI.
+        if ($asset === null) {
+            return redirect()->away(rtrim((string) (getenv('MOBILITY_FRONTEND_URL') ?: 'http://127.0.0.1:3012'), '/').'/', 302);
+        }
+        return response('Open CampusPool in the Ola-enabled Next.js application.', 410,
+            ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
     }
     $files = [
         null => ['index.html', 'text/html; charset=utf-8'],

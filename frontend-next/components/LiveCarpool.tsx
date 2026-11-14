@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
+import OlaPlaceInput from "./OlaPlaceInput";
+import OlaMapPanel from "./OlaMapPanel";
 import RideConversation from "./RideConversation";
 import LiveAccountActivity from "./LiveAccountActivity";
 import { api } from "../lib/commute-api";
@@ -66,6 +68,7 @@ function PlaceInput({ label, ready, value, onChange, disabled }: { label: string
 }
 
 export default function LiveCarpool({ token, accountRole = "rider", savedProfile }: Props) {
+  const useOlaMaps = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
   const isDriver = accountRole === "driver";
   const [origin, setOrigin] = useState<Place | undefined>(() => validSavedPlace(savedProfile?.home));
   const [destination, setDestination] = useState<Place | undefined>(() => validSavedPlace(savedProfile?.campus));
@@ -108,11 +111,12 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
   }, [token, isDriver]);
   useEffect(() => { mounted.current = true; void refresh(); const timer = setInterval(() => void refresh(), 8000); return () => { mounted.current = false; clearInterval(timer); }; }, [refresh]);
   useEffect(() => {
+    if (useOlaMaps) return;
     setReady(false); setMapError("");
     return loadMapsSdk({ fetchImpl: fetch, documentRef: document, google: (window as any).google, onReady: () => setReady(true), onUnavailable: (message: string) => setMapError(message) });
-  }, [retry]);
+  }, [retry, useOlaMaps]);
   useEffect(() => {
-    if (!ready || !mapRoot.current) return;
+    if (useOlaMaps || !ready || !mapRoot.current) return;
     setMapReady(false);
     let active = true;
     void (async () => {
@@ -136,8 +140,9 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
       } catch { if (active) setMapError("The Google map could not load. Retry Maps."); }
     })();
     return () => { active = false; };
-  }, [ready]);
+  }, [ready, useOlaMaps]);
   useEffect(() => {
+    if (useOlaMaps) return;
     if (!origin || !destination) {
       overlays.current.forEach(o => o.setMap(null)); overlays.current = [];
       setRouteSummary(""); return;
@@ -163,7 +168,7 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
       } catch { if (active) setRouteSummary("Google route preview is unavailable. Your selected places are retained."); }
     })();
     return () => { active = false; };
-  }, [origin, destination, ready, mapReady]);
+  }, [origin, destination, ready, mapReady, useOlaMaps]);
   async function mutate(path: string, body: Json) {
     const signature = path + JSON.stringify(body);
     const key = attempts.current.get(signature) || crypto.randomUUID(); attempts.current.set(signature, key);
@@ -171,7 +176,7 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
   }
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(""); setNotice("");
-    if (!origin || !destination) { setError("Select your pickup and destination from Google Places suggestions or the map."); return; }
+    if (!origin || !destination) { setError("Select your pickup and destination from map suggestions or the map."); return; }
     if (origin.lat === destination.lat && origin.lng === destination.lng) { setError("Choose different pickup and destination places."); return; }
     if (!isFutureCommute(date, time)) { setError("Choose a future departure at least 15 minutes from now (India Standard Time)."); return; }
     setBusy(true);
@@ -236,19 +241,26 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
     <div className={styles.intro}><div><p className={styles.eyebrow}>{isDriver ? "DRIVER" : "RIDER"} · BENGALURU</p><h2>{isDriver ? "Offer your next ride" : "Find your next ride"}</h2><p>{isDriver ? "Choose your route and departure time. Accept requests from riders going your way." : "Choose where you want to go and when. Request a seat from a driver going your way."}</p></div></div>
     <div className={styles.planner}>
       <form className={styles.form} onSubmit={submit}>
-        <PlaceInput label="Pickup place" ready={ready} value={origin} disabled={busy} onChange={place => { setOrigin(place); setRides([]); setSearched(false); setSearchFeedback(""); }} />
-        <PlaceInput label="Destination place" ready={ready} value={destination} disabled={busy} onChange={place => { setDestination(place); setRides([]); setSearched(false); setSearchFeedback(""); }} />
+        {useOlaMaps
+          ? <><OlaPlaceInput label="Pickup place" token={token} ready={ready} value={origin} disabled={busy} onChange={place => { setOrigin(place); setRides([]); setSearched(false); setSearchFeedback(""); }} />
+              <OlaPlaceInput label="Destination place" token={token} ready={ready} value={destination} disabled={busy} onChange={place => { setDestination(place); setRides([]); setSearched(false); setSearchFeedback(""); }} /></>
+          : <><PlaceInput label="Pickup place" ready={ready} value={origin} disabled={busy} onChange={place => { setOrigin(place); setRides([]); setSearched(false); setSearchFeedback(""); }} />
+              <PlaceInput label="Destination place" ready={ready} value={destination} disabled={busy} onChange={place => { setDestination(place); setRides([]); setSearched(false); setSearchFeedback(""); }} /></>}
         <div className={styles.timeRow}>
           <button type="button" disabled={!mapReady || busy} aria-pressed={mapPick === "origin"} onClick={() => setMapPick(v => v === "origin" ? null : "origin")}>Choose pickup on map</button>
           <button type="button" disabled={!mapReady || busy} aria-pressed={mapPick === "destination"} onClick={() => setMapPick(v => v === "destination" ? null : "destination")}>Choose destination on map</button>
         </div>
-        {mapPick && <small role="status">Click a road-accessible point on the map to set your {mapPick === "origin" ? "pickup" : "destination"}. This works when Google Places suggestions are unavailable.</small>}
+        {mapPick && <small role="status">Click a road-accessible point on the map to set your {mapPick === "origin" ? "pickup" : "destination"}. This works when address suggestions are unavailable.</small>}
         <div className={styles.timeRow}><label>Travel date<input required disabled={busy} type="date" value={date} min={istDateTime(new Date()).date} onChange={e => { setDate(e.target.value); setRides([]); setSearched(false); setSearchFeedback(""); }} /></label><label>{isDriver ? "Departure time" : "Preferred pickup time"}<input required disabled={busy} type="time" value={time} onChange={e => { setTime(e.target.value); setRides([]); setSearched(false); setSearchFeedback(""); }} /></label></div>
         <small>Times are in India Standard Time. Rider search includes pickups within 15 minutes of your chosen time.</small>
         <button className={styles.primary} type="submit" disabled={busy || !ready}>{busy ? "Please wait…" : isDriver ? "Publish ride" : "Find rides"}</button>
         {mapError && <div role="alert">{mapError} <button type="button" onClick={() => setRetry(v => v + 1)}>Retry Maps</button></div>}
       </form>
-      <div className={styles.mapPanel}><div ref={mapRoot} className={styles.map} aria-label="Google map of your selected route" /><p>{routeSummary || "Select your pickup and destination to see the driving route on Google Maps."}</p></div>
+      {useOlaMaps
+        ? <OlaMapPanel key={retry} token={token} origin={origin} destination={destination} pick={mapPick}
+            onPick={(kind, place) => { if (kind === "origin") setOrigin(place); else setDestination(place); setMapPick(null); setRides([]); setSearched(false); setSearchFeedback(""); }}
+            onState={isReady => { setReady(isReady); setMapReady(isReady); }} onError={setMapError} />
+        : <div className={styles.mapPanel}><div ref={mapRoot} className={styles.map} aria-label="Google map of your selected route" /><p>{routeSummary || "Select your pickup and destination to see the driving route on Google Maps."}</p></div>}
     </div>
     {error && <p className={styles.error} role="alert">{error}</p>}{notice && <p className={styles.notice} role="status">{notice}</p>}
     <div className={styles.columns}>

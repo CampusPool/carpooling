@@ -1,0 +1,36 @@
+# No OSM download, graph build, OSRM container, fixed OSRM network or ARM image.
+# The Ola server key comes ONLY from an ignored mode-600 runtime env file.
+services:
+  deps:
+    environment:
+      COMPOSER_MAX_PARALLEL_HTTP: "4"
+      COMPOSER_MAX_PARALLEL_PROCESSES: "1"
+    volumes:
+      - core-php-vendor:/var/www/vendor
+  migrate:
+    volumes:
+      - core-php-vendor:/var/www/vendor:ro
+  app:
+    env_file:
+      - ${MOBILITY_OLA_ENV_FILE:?Private Ola runtime env file required}
+    volumes:
+      - core-php-vendor:/var/www/vendor:ro
+    environment:
+      MOBILITY_ROUTING_PROVIDER: ola
+      MOBILITY_FRONTEND_URL: ${MOBILITY_FRONTEND_URL:-http://127.0.0.1:3012}
+      MOBILITY_ROUTING_PRICING_VERSION: local-core-v1
+      MOBILITY_ROUTING_CAR_MINOR_PER_KM: "800"
+      MOBILITY_ROUTING_BIKE_MINOR_PER_KM: "400"
+      MOBILITY_ROUTING_SYNTHETIC_ONLY: "false"
+      HTTPS_PROXY: ${MOBILITY_OLA_HTTPS_PROXY:-}
+      HTTP_PROXY: ${MOBILITY_OLA_HTTPS_PROXY:-}
+    networks: [appnet, ola-egress]
+    extra_hosts:
+      - host.docker.internal:host-gateway
+volumes:
+  core-php-vendor:
+
+networks:
+  ola-egress:
+    driver: bridge
+    # Egress for the *server-side* Ola API; no published ports or road graphs.

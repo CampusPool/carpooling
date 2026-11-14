@@ -1,0 +1,70 @@
+.shell{min-height:100dvh;background:#f5f8ff;color:#142443}
+.header{position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;min-height:64px;padding:0 clamp(16px,4vw,48px);background:#fff;border-bottom:1px solid #e1e9f6}
+.brand,.headerActions,.actions,.verified{display:flex;align-items:center;gap:12px}
+.brand{padding:0;font-weight:800;font-size:20px;letter-spacing:-.045em}
+.brand span{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#1758eb;color:#fff}
+.headerActions button{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:#eff5ff;color:#1846a2}
+.avatar,.headerActions .avatar{display:grid;place-items:center;border-radius:50%;background:#164fcd;color:#fff;font-weight:800}
+.layout{max-width:1540px;margin:auto;display:grid;grid-template-columns:208px minmax(0,1fr);min-height:calc(100dvh - 64px)}
+.nav{padding:26px 14px;background:white;border-right:1px solid #e1e9f6}
+.nav button{display:flex;align-items:center;width:100%;gap:13px;min-height:50px;padding:0 14px;margin-bottom:5px;border-radius:12px;color:#425779;text-align:left;font-weight:650}
+.nav button[aria-current=page]{background:#eaf1ff;color:#134bc4}
+.content{min-width:0;padding:clamp(18px,3.6vw,46px);width:100%;max-width:1260px;margin:0 auto}
+.layout:not(:has(.nav)){grid-template-columns:minmax(0,1fr)}
+.content>h1{font-size:clamp(25px,3.5vw,38px);letter-spacing:-.045em;margin:0 0 20px}
+.hero{position:relative;isolation:isolate;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:14px;border-radius:24px;padding:clamp(24px,4.6vw,52px);color:white;background:linear-gradient(135deg,#103baf,#175bed 73%,#3381f5);margin-bottom:24px}
+.hero h1{font-size:clamp(36px,5.8vw,62px);margin:8px 0;letter-spacing:-.06em;line-height:1.05;overflow-wrap:anywhere}
+.hero p{color:#eaf2ff;margin:0 0 14px;line-height:1.5}
+.hero p:first-child{font-weight:750}
+.hero .actions{margin-top:24px}
+.heroArt{flex:none;display:grid;place-items:center;width:clamp(90px,16vw,200px);aspect-ratio:1;border-radius:34%;background:#ffffff20;box-shadow:0 0 0 22px #ffffff14,0 0 0 44px #ffffff0c;transform:rotate(-9deg)}
+.heroArt svg{width:65%;height:65%;stroke-width:1}
+.actions{flex-wrap:wrap}
+.primary,.secondary,.heroPrimary,.heroSecondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 15px;min-height:44px;border-radius:12px;font-weight:750}
+.primary{background:#1758e4;color:#fff}
+.secondary{background:#eaf1ff;color:#1049bc}
+.heroPrimary{background:#fff;color:#1049bc}
+.heroSecondary{background:#123994;color:#fff}
+.primary:disabled,.secondary:disabled{opacity:.56;cursor:default}
+.columns{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}
+.stack{display:grid;gap:16px}
+.panel,.profileCard{min-width:0;padding:clamp(16px,2.4vw,24px);background:#fff;border:1px solid #e1e9f6;border-radius:18px;box-shadow:0 6px 20px #12265808}
+.panel h2,.profileCard h2{font-size:20px;letter-spacing:-.035em;margin:0 0 10px}
+.sectionHead{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+.link{min-height:36px;padding:4px;color:#144bbd;font-weight:750}
+.muted,.activity span{color:#526689;line-height:1.5}
+.dates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:12px 0}
+.dates button{min-height:42px;padding:4px;border:1px solid #d8e4f6;border-radius:10px;font-size:clamp(11px,2.9vw,14px)}
+.dates button[aria-pressed=true],.chatList button[aria-pressed=true]{background:#e9f1ff;color:#1247b4;font-weight:750}
+.routeCard{padding:14px 12px;border-top:1px solid #e7eef8;display:grid;gap:8px}
+.routeCard>div{display:grid;gap:5px;overflow-wrap:anywhere}
+.routeCard>div span::before{content:"";display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:#1a57d4}
+.routeCard button{justify-self:start}
+.activity{display:grid;gap:4px;padding:13px 0;border-top:1px solid #e7eef8;overflow-wrap:anywhere}
+.activity button{justify-self:start}
+.profileCard{display:flex;align-items:center;gap:16px;background:linear-gradient(115deg,#fff,#e2edff)}
+.profileCard .avatar{width:62px;height:62px;flex:none;font-size:21px}
+.profileCard p{overflow-wrap:anywhere;margin:0 0 8px}
+.verified,.activity .verified{color:#12634c;font-weight:700}
+.accountRow{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:52px;text-align:left;border-bottom:1px solid #e7eef8;font-weight:650}
+.accountRow:last-child{border-bottom:0}
+.danger{color:#a32334}
+.empty{text-align:center;padding:44px 12px}
+.empty>svg{width:54px;height:54px;color:#215ad4;margin-bottom:14px}
+.chatGrid{display:grid;grid-template-columns:minmax(0,210px) minmax(0,1fr);gap:16px}
+.chatList{display:grid;align-content:start;gap:8px}
+.chatList button{display:grid;gap:4px;text-align:left;padding:12px;border:1px solid #e1e9f6;border-radius:12px}
+.chatList span{color:#526689;font-size:13px}
+.vehicleForm{display:grid;gap:10px;max-width:470px}
+.vehicleForm label{font-weight:750}
+.vehicleForm p{margin:0}
+.vehicleForm button{justify-self:start}
+.plate{display:flex;min-width:0;border:1px solid #c5d6f1;border-radius:12px;overflow:hidden}
+.plate span{display:grid;place-items:center;padding:0 12px;background:#eaf1ff;color:#144bbd;font-weight:800}
+.plate input{width:100%;min-width:0;border:0;padding:13px;color:#142443}
+.shell button:focus-visible,.shell input:focus-visible{outline:3px solid #72a3ff;outline-offset:2px}
+@media(max-width:900px){.columns{grid-template-columns:minmax(0,1fr)}.layout{grid-template-columns:156px minmax(0,1fr)}}
+@media(max-width:767px){.layout{display:block}.content{padding:18px 16px calc(88px + env(safe-area-inset-bottom))}.nav{position:fixed;z-index:50;inset:auto 0 0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:5px 4px calc(5px + env(safe-area-inset-bottom));border:0;border-top:1px solid #e1e9f6;box-shadow:0 -3px 12px #1226580c}.nav button{flex-direction:column;justify-content:center;gap:4px;margin:0;padding:3px 0;font-size:12px;min-width:0}.heroArt{display:none}.chatGrid{grid-template-columns:minmax(0,1fr)}}
+
+.pickupTime{display:grid;gap:5px;justify-self:start;font-weight:650;font-size:14px}
+.pickupTime input{min-height:44px;border:1px solid #d8e4f6;border-radius:10px;padding:7px 10px;background:white;color:inherit}

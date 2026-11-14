@@ -1,35 +1,25 @@
 # Architecture and source boundaries
 
-This document explains the **current merged `main`**, not the planned Ola Maps migration or a hypothetical production system.
+This document explains the draft PR #92 Ola-first synthetic classroom demo. The historical Google/OSRM architecture is retained only as an isolated rollback, not a compulsory runtime.
 
 ## Why these parts exist
 
-```text
-                          ┌───────────────────────────────┐
-                          │ Next.js student web frontend  │
-                          │ frontend-next/                │
-                          │ Google Maps JS + Places SDK   │
-                          └───────────────┬───────────────┘
-                                          │ API proxy / authentication token
-                                          ▼
-                     ┌─────────────────────────────────────────────┐
-                     │ Carpoolear Laravel host (external, pinned)  │
-                     │ + CampusPool Mobility extension            │
-                     │ backend/extensions/carpoolear/Mobility/    │
-                     └──────┬────────────────┬─────────────────┬───┘
-                            │                │                 │
-                            ▼                ▼                 ▼
-                     MySQL source      OSRM routers        SQL→Mongo read
-                     of truth          car/bike/walk        model (optional)
-                     for bookings      OSM road crop       for analytics
-                                       externally supplied
-```
+    Next.js student frontend
+       | Ola Maps Web SDK (restricted browser key)
+       | authenticated same-origin Places/Directions proxy
+       v
+    Pinned external Laravel host + CampusPool Mobility extension
+       |                  |                          |
+       v                  v                          v
+    MySQL                Ola Directions              Optional SQL-to-Mongo
+    bookings/wallet      car/bike/foot                analytics read model
+    chat/lifecycle       route geometry / snapping
 
 ### The minimum classroom journey
 
-The **Next.js UI, Laravel API, MySQL, Google Places/Maps and road-routing service** are required for the full currently verified classroom journey. Backend matching uses OSRM-generated road geometry to validate pickup feasibility, detours and distance-sensitive demo fares; the Google SDK in the browser **only** provides interactive map/search and visual route preview.
+Next.js, Laravel, MySQL, correctly restricted Ola credentials and network access are required. **The Bengaluru road PBF and three local OSRM servers are not required in Ola mode.** A clean Mac clone built/restarted this stack and retained its MySQL account; a separate Ola-credentialed stack passed the real two-role browser journey. [Acceptance report](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md).
 
-The **Mongo activity projection** is useful DBMS evidence but not the primary booking store. The **Android prototype** is optional; physical tracking acceptance remains pending. The older static/browser screens under `backend/extensions/carpoolear/web/` are separate from the recommended Next.js demo.
+MongoDB projection is useful DBMS evidence but not the authoritative booking database. The Android GPS companion is optional and has no Google Maps SDK; physical-device acceptance is pending. Older static Laravel browser views remain separate from the recommended Next.js demo; in Ola mode their entrypoints redirect and Google-only scripts return HTTP 410.
 
 ### The two supported frontend account paths
 
@@ -44,26 +34,26 @@ The Laravel host is fetched at pinned commit `6ba3d8913a8f77e664e848a526f196690a
 
 MySQL is the source of truth for account/offer/booking/payment-demo lifecycles. MongoDB hosts derived, replayable read models; it is **not** a backup or replacement for transaction-safe SQL bookings. Use disposable databases in tests; keep instructor/pilot data separate from CI and browser E2E environments.
 
-The road dataset is a verified, ODbL-sourced Bengaluru crop supplied independently of Git. Its absence is a setup prerequisite, **not a missing committed file**. The current OSRM pin requires ARM64 support; x86 Docker needs emulation. A future provider migration may remove the graph requirement, but must first replace all routing interfaces (including snapped points, walking paths, segment geometry, travel time and route legs) and run the same tests.
+For the historical **OSRM rollback only**, the road dataset is an ODbL-sourced, checksum-locked Bengaluru crop outside Git; the old router image may need ARM64 support or emulation. The default Ola path skips crop downloads, graph build and OSRM entirely. Route providers, snapped geometry, multi-stop legs, walking and quote identity have automated tests; real four-point car and walking routes passed separately.
 
 ## Code map
 
 | Area | Where | Intended responsibility |
 | --- | --- | --- |
-| UI and client session | `frontend-next/` | Pages, role-specific planning components, Google browser SDK, client tests |
+| UI and client session | `frontend-next/` | Role-specific UI, Ola browser SDK/Places proxy, session and client tests |
 | Domain API | `backend/extensions/carpoolear/Mobility/` | Matching, pickup, recurrence, bookings, payments-demo, safety and communications |
 | Host integration | `backend/integrations/carpoolear/` | Laravel app bindings and provider adapters |
-| Routing bootstrap | `scripts/mobility-road-router.py` | OSM crop validation, road graph lifecycle, runtime ownership checks |
+| Routing bootstrap | `scripts/mobility-road-router.py` | Optional OSRM rollback graph/ownership commands; not used by Ola startup |
 | Build/run/test setup | `scripts/run-local-core.sh`, `research/experiments/carpoolear/` | External backend reconstruction and isolated integration |
 | SQL and Mongo reports | `docs/dbms/`, `services/activity-projection/` | Data dictionary, actual routines, projections and failure isolation |
 
 ## Design trade-offs that a reviewer should know
 
 1. **Good:** booking integrity is evaluated on the backend, not trusted to browser-generated distances.
-2. **Costly:** separate Docker routing services, a pinned external host and optional Mongo projection increase operating burden for a college project.
+2. **Costly:** the pinned external Laravel host and optional Mongo projection still add overhead; Ola mode removes the three local OSRM services.
 3. **Mitigation:** route-provider abstraction and automated regression tests allow gradual replacement without rewriting booking logic.
 4. **Boundary:** campus timetables, pickup agreements and reminders have backend tests but are **not fully integrated into the currently demonstrated local student frontend**. See [feature status](FEATURE_STATUS.md).
-5. **Next architecture decision:** compare hosted mapping provider terms and response coverage, then implement a **separate adapter PR**. Do not delete local OSRM before a fully independent real-browser and backend match test.
+5. **Rollback:** the Ola adapters live in draft PR #92; keep the separate OSRM data/runtime until explicit approval and provider quota/referrer restrictions are confirmed.
 
 ## References for reviewers
 
@@ -71,5 +61,6 @@ The road dataset is a verified, ODbL-sourced Bengaluru crop supplied independent
 - [Course demo](COURSE_DEMO.md)
 - [DBMS reports](dbms/README.md)
 - [Reproducible local run](../RUN_LOCAL_CORE.md)
-- [Actual cloned-stack browser evidence](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md)
+- [Ola clean startup, SQL and browser evidence](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md)
+- [Historical Google/OSRM browser evidence](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md)
 - [External source and licenses](../THIRD_PARTY_NOTICES.md)

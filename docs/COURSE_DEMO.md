@@ -6,19 +6,19 @@
 
 ## Before the review
 
-1. Use a clean clone of the current `main` and follow [RUN_LOCAL_CORE.md](../RUN_LOCAL_CORE.md). Supply the **exact checksum-verified Bengaluru OSM crop** separately and a **private Google browser key**; use a disposable Docker database, not pilot data.
-2. Run `sh scripts/run-local-core.sh --dataset /absolute/path/to/the-verified.osm.pbf --maps-config .local/maps-demo/google.json --check` first, then run the same command without `--check` to start the stack. The usual frontend address is `http://127.0.0.1:3012/`.
-3. Open **one normal browser profile for the driver and one private/incognito profile for the rider**. Two tabs in one profile will share the same login session.
-4. Confirm map tiles, Google place suggestions, database connectivity and both browser sessions **before** presenting. Use two fresh *synthetic* demo accounts. Pick locations within the configured Bengaluru routing crop.
-5. Choose a **future departure at least 15 minutes from now** (India time) and exactly the **same date and compatible route** for both accounts. To avoid accidental clock rollover during the review, schedule the next day or later. Keep the two route endpoints distinct.
-6. Keep the terminal displaying the real runtime checks and the repository's [feature-status table](FEATURE_STATUS.md) open as fallback proof; never display the private Maps key, password or unredacted user data.
+1. Use a clean clone of **draft PR #92** (or a later owner-approved merge) and follow [RUN_LOCAL_CORE.md](../RUN_LOCAL_CORE.md). Provide your own restricted Ola credentials in an ignored, mode-600 configuration file. Docker, Node, Python, Git and normal internet are required; **no Bengaluru OSM crop or OSRM runtime is required**.
+2. Check configuration with **python3 scripts/run-local-core.py --provider ola --check**, then start using **sh scripts/run-local-core.sh --provider ola --project mobility-core-ola-teacher**. The default frontend is http://127.0.0.1:3012. Choose a unique Docker project/context rather than reusing your teammate's data.
+3. Use a normal browser profile for the driver and an independent/incognito one for the rider.
+4. Confirm real Ola map tiles, Places selection, routing and Laravel/MySQL health *before* presenting. Register fresh synthetic accounts in the tested Bengaluru area.
+5. Choose the next day or later, using the same future date and compatible route on both accounts; the driver's start must be at least 15 minutes from now.
+6. Keep [feature status](FEATURE_STATUS.md), [Ola acceptance evidence](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md) and a harmless SQL query handy. Never display provider keys, bearer tokens, passwords or private user data.
 
 ## Show the teacher (target: 6–10 minutes)
 
 | Order | Driver browser | Rider browser | What it demonstrates |
 | --- | --- | --- | --- |
 | 1 | Create a local **driver** account | Create a local **rider** account | Persisted roles and authentication, **not** official university identity |
-| 2 | Search **Pickup place** and **Destination place** using real Google Places | Select the same route and departure date/time | Real geocoding, routing preview and time constraints |
+| 2 | Search **Pickup place** and **Destination place** using real Ola Places | Select the same route and departure date/time | Real geocoding, routing preview and time constraints |
 | 3 | Click **Publish ride** | — | Server validates the route and creates a published offer |
 | 4 | — | Click **Find rides** and **Request seat** on the matching offer | Database-backed matching and seat-request transition |
 | 5 | Refresh updates, then **Accept rider** | Observe accepted request | Capacity and booking state transitions |
@@ -27,13 +27,13 @@
 | 8 | **Start ride**, **Mark rider picked up**, **Mark rider dropped off**, **Complete ride** | Observe lifecycle | Ordered trip transitions and persistent history |
 | 9 | — | Refresh and **Confirm arrival** | Completed booking and arrival acknowledgement |
 
-> The previous isolated browser test completed all of these steps, including a route around 7.7 km. Its final fare was **₹70.52 in synthetic credits**, not a promised fixed price for arbitrary routes. Do **not** claim credit-release/receipt settlement completed: the waiting-period release was not part of that test.
+> The separate real Ola browser journey passed these 19 functional checkpoints. Its observed synthetic fare was **₹60.44**, and the rider added **₹500 demo credits** before holding the fare. Prices depend on routes. Direct SQL inspection confirmed a completed booking, accepted rider, hold, two messages and four lifecycle events. There was **no actual money settlement**; delayed demo release/receipt was not E2E-certified.
 
 ## What to explain about the architecture (roughly one minute)
 
-- **Next.js** handles the student's web UI, local session interactions, place selection and route preview using Google Maps.
+- **Next.js** handles the student's web UI, local session interactions, place selection and route preview using Ola Maps.
 - **Laravel + MySQL** manages account roles, driver offers, route-aware matching, seat inventory, booking actions, synthetic money records, chat and trip status.
-- **OSRM** (for the current revision) uses a separately supplied Bengaluru road graph to evaluate real driving/walking routes and detours on the backend. This is why a Google browser map does not eliminate the dataset in the *current* implementation. Replacing it with a hosted routing provider is planned, not complete.
+- **Ola Directions** replaces compulsory OSRM graph services for driving/walking routes, snapping and distance. The old OSRM path is preserved only as a separate rollback.
 - **MongoDB projection** is an **optional analytics read model**, not the booking database. Booking correctness must still work when the projection service is unavailable.
 - The pinned [upstream Carpoolear backend](../THIRD_PARTY_NOTICES.md) is reconstructed at startup; do not imply all Laravel core code is original team work.
 
@@ -52,10 +52,10 @@ See [Architecture](ARCHITECTURE.md) and the [actual ERD/data dictionary](dbms/RE
 
 ## Troubleshooting during the review
 
-- **Map/Places unavailable:** Verify Maps JavaScript + Places API (New), key restrictions, billing, localhost referrer and browser network access. Map-click selection can substitute *when Maps JS loads but Places suggestions fail*; do not claim this tests real Google Places.
+- **Map/Places unavailable:** Check the Ola Maps browser-key allowed origins, server key, enabled APIs, provider quota and connectivity. An unverified typed coordinate is not an Ola Places result.
 - **No matching ride:** Confirm same date, route, seats, mode, walking tolerance and driver acceptance state; use fresh accounts and do not reuse a closed trip.
-- **Docker/router collision:** Another checkout may own a globally named routing container. Use a dedicated Docker/Colima context as the [setup runbook](../RUN_LOCAL_CORE.md) specifies; don't delete another team's data.
-- **No externally provided OSM crop/key:** Full live demo cannot start, even though the repository and CI work; use the sanitized [integration evidence](engineering/PHASE1_SIMULAR_PR_OWNED_E2E_20261110.md) to explain what was tested and disclose the missing prerequisite.
+- **Docker/project collision:** Use a unique managed project/context; never delete someone else's Docker containers or database.
+- **Missing Ola key/network:** The static app/database may start with test credentials, but real map and routing needs a valid restricted Ola key. No PBF crop is needed in Ola mode. Use [independent evidence](engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md) if provider access is unavailable.
 
 ## After the demonstration
 

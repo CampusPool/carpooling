@@ -12,6 +12,7 @@ DOCS = (
     "README.md", "CONTRIBUTING.md", "RUN_LOCAL_CORE.md",
     "frontend-next/README.md", "docs/README.md", "docs/FEATURE_STATUS.md",
     "docs/ARCHITECTURE.md", "docs/COURSE_DEMO.md",
+    "docs/engineering/OLA_MIGRATION_ACCEPTANCE_20261110.md",
     "docs/engineering/BRANCH_MAINTENANCE_20261110.md",
 )
 LINK = re.compile(r"\]\(([^)]+)\)")

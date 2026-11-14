@@ -12,9 +12,17 @@ class MobilityServiceProvider extends ServiceProvider
     public function register(): void
     {
         $root = rtrim((string) (getenv('MOBILITY_EXTENSION_ROOT') ?: dirname(__DIR__)), '/');
-        $this->app->bind(\STS\Mobility\Routing\RouteProvider::class, \STS\Mobility\Routing\OsrmRouteProvider::class);
-        $this->app->bind(\STS\Mobility\Pickup\PathProvider::class, \STS\Mobility\Pickup\OsrmPathProvider::class);
         $this->mergeConfigFrom($root.'/config/routing.php', 'mobility_routing');
+        $this->app->bind(\STS\Mobility\Routing\RouteProvider::class, function ($app) {
+            return config('mobility_routing.provider') === 'ola'
+                ? $app->make(\STS\Mobility\Routing\OlaRouteProvider::class)
+                : $app->make(\STS\Mobility\Routing\OsrmRouteProvider::class);
+        });
+        $this->app->bind(\STS\Mobility\Pickup\PathProvider::class, function ($app) {
+            return config('mobility_routing.provider') === 'ola'
+                ? $app->make(\STS\Mobility\Pickup\OlaPathProvider::class)
+                : $app->make(\STS\Mobility\Pickup\OsrmPathProvider::class);
+        });
         $this->mergeConfigFrom($root.'/config/college.php', 'college');
         $this->mergeConfigFrom($root.'/config/operator_analytics.php', 'operator_analytics');
     }
@@ -74,6 +82,7 @@ class MobilityServiceProvider extends ServiceProvider
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Dispatch\DispatchBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Journeys\PrivateScheduledBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Routing\QuotedOfferGuard::class);
+        $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Identity\StudentIdentityBoundary::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Trust\CohortGuard::class);
         $this->app['router']->pushMiddlewareToGroup('api', \STS\Mobility\Recurrence\ProgramAdmissionGuard::class);
         $this->commands([\STS\Mobility\Journeys\EndpointRetentionCommand::class, \STS\Mobility\Recurrence\ProgramGenerationCommand::class, \STS\Mobility\Dispatch\DispatchWorkCommand::class]);
@@ -84,6 +93,8 @@ class MobilityServiceProvider extends ServiceProvider
         }
         $this->loadRoutesFrom($root.'/routes/mobility.php');
         $this->loadRoutesFrom($root.'/routes/college-auth.php');
+        $this->loadRoutesFrom($root.'/routes/address-rides.php');
+        $this->loadRoutesFrom($root.'/routes/planned-rides.php');
         $this->loadRoutesFrom($root.'/routes/local-auth.php');
         $this->loadRoutesFrom($root.'/routes/commute.php');
         $this->loadRoutesFrom($root.'/routes/driver-onboarding.php');

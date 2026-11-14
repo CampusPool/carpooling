@@ -13,3 +13,36 @@
 
 /* Keep wide operations tables inside their scroll containers. */
 .content.operator-content{min-width:0}
+
+@media (max-width: 800px) {
+  .student-preview .layout aside {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 0;
+    padding: 12px 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .student-preview .layout aside .muted {
+    display: none;
+  }
+
+  .student-preview .layout aside .nav {
+    width: auto;
+    margin: 0;
+    padding: 10px 12px;
+  }
+}
+
+.profile-onboarding {
+  display: block;
+  max-width: 640px;
+}
+.profile-onboarding .content {
+  padding: 40px 24px;
+}
+.profile-onboarding h2 {
+  margin-top: 0;
+}

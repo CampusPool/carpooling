@@ -24,7 +24,7 @@ describe("canonical pool screen", () => {
     expect(nearest.textContent).toMatch(/m from address/);
     fireEvent.click(nearest);
     expect(screen.getByLabelText("Pickup point")).toHaveValue("101");
-    expect(screen.getByRole("status")).toHaveTextContent("approved pickup catalog");
+    expect(screen.getByRole("status")).toHaveTextContent("Pickup point selected.");
   });
 
   it("quotes and publishes with an approved host vehicle and idempotency key", async () => {

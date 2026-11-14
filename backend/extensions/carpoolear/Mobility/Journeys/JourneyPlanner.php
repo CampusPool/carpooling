@@ -37,7 +37,7 @@ final class JourneyPlanner
         if ($pairs === []) return $this->unavailable('ROUTE_DIRECTION_INCOMPATIBLE');
         if ($choice === 'DIRECT_RIDER_PICKUP') $pairs = [$pairs[0]];
         $deadline = $this->now() + self::DEADLINE_SECONDS;
-        $options = []; $evaluated = 0;
+        $options = []; $evaluated = 0; $detourLimitExceeded = false;
         foreach (array_slice($pairs, 0, self::MAX_PAIRS) as [$start, $end]) {
             $evaluated++;
             $pickup = $choice === 'DIRECT_RIDER_PICKUP' ? $origin : $start['point'];
@@ -46,7 +46,10 @@ final class JourneyPlanner
                 $vehicle = $this->path([$driverPoints[0], $pickup, $dropoff, $driverPoints[1]], $mode, $deadline);
                 if ($vehicle['data_version'] !== $baseline['data_version']) throw new PickupException('PICKUP_GRAPH_MISMATCH', 503);
                 $detour = ['added_distance_meters' => max(0, $vehicle['distance_meters'] - $baseline['distance_meters']), 'added_duration_seconds' => max(0, $vehicle['duration_seconds'] - $baseline['duration_seconds'])];
-                if ($detour['added_distance_meters'] > $maxDetourMeters || $detour['added_duration_seconds'] > $maxDetourSeconds) continue;
+                if ($detour['added_distance_meters'] > $maxDetourMeters || $detour['added_duration_seconds'] > $maxDetourSeconds) {
+                    $detourLimitExceeded = true;
+                    continue;
+                }
                 $pickup = $this->fromPair($vehicle['waypoints'][1]['location']);
                 $dropoff = $this->fromPair($vehicle['waypoints'][2]['location']);
                 $access = $this->walking($origin, $pickup, $deadline);
@@ -68,12 +71,15 @@ final class JourneyPlanner
             }
         }
         usort($options, static fn ($a, $b) => [$a['total_walking_meters'], $a['detour']['added_duration_seconds'], $a['pricing']['total_fare_minor']] <=> [$b['total_walking_meters'], $b['detour']['added_duration_seconds'], $b['pricing']['total_fare_minor']]);
-        return ($options[0] ?? $this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS')) + ['evaluated_candidates' => $evaluated, 'candidate_limit' => self::MAX_PAIRS, 'ranking' => 'least_total_walking_among_evaluated_ordered_candidates'];
+        return ($options[0] ?? ($this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS') + ['detour_limit_exceeded' => $detourLimitExceeded])) + ['evaluated_candidates' => $evaluated, 'candidate_limit' => self::MAX_PAIRS, 'ranking' => 'least_total_walking_among_evaluated_ordered_candidates'];
     }
 
     /** Foot-network rendezvous on the unchanged ordered driver road path. */
     private function meetingPlan(array $baseline, array $origin, array $destination, string $mode, int $maxWalk): array
     {
+        if (config('mobility_routing.provider') === 'ola') {
+            return $this->meetingPlanOla($baseline, $origin, $destination, $mode, $maxWalk);
+        }
         $deadline = $this->now() + self::DEADLINE_SECONDS;
         $evaluated = 0;
         $walkOptions = function (array $point, bool $access) use ($baseline, $deadline, $maxWalk, &$evaluated): array {
@@ -111,6 +117,58 @@ final class JourneyPlanner
                 'ranking' => 'least_actual_total_walking_among_evaluated_ordered_route_points',
                 'access_verified' => false, 'requires_access_acknowledgement' => true, 'booking_enabled' => false];
         }
+        return $this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS') + ['evaluated_candidates' => $evaluated, 'meeting_candidate_limit_per_endpoint' => 48];
+    }
+
+    /** Evaluate nearest plausible ordered pairs first; prune only pairs whose
+     * straight-line lower bound exceeds an already validated walking route. */
+    private function meetingPlanOla(array $baseline, array $origin, array $destination, string $mode, int $maxWalk): array
+    {
+        $deadline = $this->now() + self::DEADLINE_SECONDS;
+        $starts = $this->candidates($baseline['geometry'], $origin, 48);
+        $ends = $this->candidates($baseline['geometry'], $destination, 48);
+        $pairs = [];
+        foreach ($starts as $i => $start) foreach ($ends as $j => $end) {
+            $lower = $start['distance'] + $end['distance'];
+            if ($start['position'] < $end['position'] && $lower <= $maxWalk) $pairs[] = [$i, $j, $lower];
+        }
+        usort($pairs, static fn ($a, $b) => [$a[2], $starts[$a[0]]['position'], $ends[$a[1]]['position']] <=> [$b[2], $starts[$b[0]]['position'], $ends[$b[1]]['position']]);
+        $access = []; $egress = []; $best = null; $bestRank = null; $evaluated = 0;
+        foreach ($pairs as [$i, $j, $lower]) {
+            if ($bestRank !== null && $lower > $bestRank[0]) break;
+            if (! array_key_exists($i, $access)) {
+                $evaluated++;
+                try { $access[$i] = $this->walking($origin, $starts[$i]['point'], $deadline); }
+                catch (RoutingException $e) { if ($e->machineCode !== 'NO_ROUTE') throw $e; $access[$i] = null; }
+            }
+            if ($access[$i] === null) continue;
+            if (! array_key_exists($j, $egress)) {
+                $evaluated++;
+                try { $egress[$j] = $this->walking($ends[$j]['point'], $destination, $deadline); }
+                catch (RoutingException $e) { if ($e->machineCode !== 'NO_ROUTE') throw $e; $egress[$j] = null; }
+            }
+            if ($egress[$j] === null) continue;
+            $total = $access[$i]['total_meters'] + $egress[$j]['total_meters'];
+            $rank = [$total, $starts[$i]['position'], $ends[$j]['position']];
+            if ($total > $maxWalk || ($bestRank !== null && $rank >= $bestRank)) continue;
+            try { $vehicle = (new CanonicalRouteIntervalProjector())->slice($baseline, $starts[$i]['point'], $ends[$j]['point'], hash('sha256', json_encode($baseline, JSON_THROW_ON_ERROR)))['driver_path']; }
+            catch (\InvalidArgumentException) { continue; }
+            $ride = $vehicle['legs'][1];
+            if ($ride['distance_meters'] < 1 || $ride['duration_seconds'] < 1) continue;
+            $bestRank = $rank;
+            $best = ['available' => true, 'schema' => 'private-journey-proposal-v2', 'choice' => 'ON_ROUTE_MEETING_POINT',
+                'rider_origin' => $origin, 'rider_destination' => $destination,
+                'pickup' => $this->fromPair($vehicle['waypoints'][1]['location']), 'dropoff' => $this->fromPair($vehicle['waypoints'][2]['location']),
+                'pickup_route_position' => $starts[$i]['position'], 'dropoff_route_position' => $ends[$j]['position'],
+                'driver_path' => $vehicle, 'access' => $access[$i], 'riding' => $ride, 'egress' => $egress[$j],
+                'total_walking_meters' => $total, 'max_walk_meters' => $maxWalk,
+                'detour' => ['added_distance_meters' => 0, 'added_duration_seconds' => 0],
+                'pricing' => DemoFarePolicy::quote($mode, 'ON_ROUTE_MEETING_POINT', $ride['distance_meters']),
+                'driver_route_unchanged' => true, 'meeting_candidate_limit_per_endpoint' => 48, 'evaluated_candidates' => $evaluated,
+                'ranking' => 'least_actual_total_walking_among_evaluated_ordered_route_points',
+                'access_verified' => false, 'requires_access_acknowledgement' => true, 'booking_enabled' => false];
+        }
+        if ($best !== null) { $best['evaluated_candidates'] = $evaluated; return $best; }
         return $this->unavailable('NO_COMPATIBLE_JOURNEY_WITHIN_LIMITS') + ['evaluated_candidates' => $evaluated, 'meeting_candidate_limit_per_endpoint' => 48];
     }
 
@@ -171,8 +229,11 @@ final class JourneyPlanner
         $gaps = (int) ceil(max($path['waypoints'][0]['distance_meters'], self::distance($from, $first)))
             + (int) ceil(max($path['waypoints'][1]['distance_meters'], self::distance($last, $to)));
         $handoff = (int) ceil(self::distance($from, $first) + self::distance($last, $to));
+        // A lower bound keeps pruning conservative even if provider rounding understates distance.
+        if (($path['provider'] ?? null) === 'ola') $gaps = max($gaps, (int) ceil(self::distance($from, $to)) - $path['distance_meters']);
+        $total = $path['distance_meters'] + $gaps;
         return ['path' => $path, 'walking_distance_meters' => $path['distance_meters'], 'duration_seconds' => $path['duration_seconds'],
-            'unmapped_gap_meters' => $gaps, 'handoff_gap_meters' => $handoff, 'handoff_included_in_unmapped_gap' => true, 'total_meters' => $path['distance_meters'] + $gaps];
+            'unmapped_gap_meters' => $gaps, 'handoff_gap_meters' => $handoff, 'handoff_included_in_unmapped_gap' => true, 'total_meters' => $total];
     }
 
     private function path(array $points, string $mode, float $deadline): array
@@ -187,7 +248,7 @@ final class JourneyPlanner
     private function validate(array $path, array $points, string $mode): void
     {
         PickupPolicy::graph($mode, (string) ($path['data_version'] ?? ''));
-        if (($path['provider'] ?? '') !== 'osrm' || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
+        if (! \STS\Mobility\Routing\RouteDataVersion::validForProvider($path['data_version'] ?? null, $mode, $path['provider'] ?? null) || ! is_string($path['profile'] ?? null) || $path['profile'] === ''
             || ! is_array($path['waypoints'] ?? null) || ! array_is_list($path['waypoints']) || count($path['waypoints']) !== count($points)
             || ! is_array($path['legs'] ?? null) || ! array_is_list($path['legs']) || count($path['legs']) !== count($points) - 1
             || ! is_array($path['geometry'] ?? null) || ! array_is_list($path['geometry']) || count($path['geometry']) < 2 || count($path['geometry']) > 20000) throw new PickupException('JOURNEY_ROUTE_INVALID', 503);

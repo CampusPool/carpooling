@@ -56,8 +56,8 @@ final class PickupPolicy
 
     public static function graph(string $mode, string $stored): void
     {
-        $valid = $mode === 'foot' ? preg_match('/^foot\|crop_sha256=[a-f0-9]{64}\|profile_sha256=[a-f0-9]{64}$/D', $stored) === 1 : RouteDataVersion::valid($stored, $mode);
-        $expected = config('mobility_routing.'.$mode.'_expected_data_version');
+        $valid = RouteDataVersion::valid($stored, $mode);
+        $expected = RouteDataVersion::expected($mode);
         if (! $valid || ! is_string($expected) || ! hash_equals($expected, $stored)) {
             throw new PickupException('PICKUP_GRAPH_MISMATCH', 409);
         }

@@ -1,0 +1,132 @@
+# Separate, private Ola VPS staging stack. It never touches the legacy OSRM database.
+name: campuspool-ola-stage
+services:
+  mysql:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    env_file: ["${CAMPUSPOOL_MYSQL_ENV:?Private MySQL env file required}"]
+    command: ["--log-bin-trust-function-creators=1", "--mysqlx=OFF"]
+    volumes: [mysql-data:/var/lib/mysql]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 35s
+    networks: [database]
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/ola/Dockerfile.api
+      network: host
+      args:
+        HTTP_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+        HTTPS_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+        http_proxy: ${CAMPUSPOOL_BUILD_PROXY:-}
+        https_proxy: ${CAMPUSPOOL_BUILD_PROXY:-}
+    image: campuspool-ola-api:stage
+    env_file: ["${CAMPUSPOOL_LARAVEL_ENV:?Private Laravel env file required}"]
+    volumes: [laravel-storage:/var/www/storage]
+    command: ["php", "artisan", "migrate", "--force"]
+    restart: "no"
+    depends_on:
+      mysql: {condition: service_healthy}
+    networks: [database, appnet]
+
+  api:
+    image: campuspool-ola-api:stage
+    env_file: ["${CAMPUSPOOL_LARAVEL_ENV:?Private Laravel env file required}"]
+    volumes: [laravel-storage:/var/www/storage]
+    environment:
+      MOBILITY_ROUTING_PROVIDER: ola
+      MOBILITY_EXTENSION_ROOT: /opt/mobility-extension
+      HTTPS_PROXY: ${CAMPUSPOOL_CONTAINER_PROXY:-}
+      HTTP_PROXY: ${CAMPUSPOOL_CONTAINER_PROXY:-}
+      NO_PROXY: mysql,api,api-web,frontend,localhost,127.0.0.1
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1',9000) ? 0 : 1);"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [database, appnet, egress]
+
+  api-web:
+    build:
+      context: ../..
+      dockerfile: deploy/ola/Dockerfile.api-web
+      network: host
+      args:
+        HTTP_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+        HTTPS_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+    image: campuspool-ola-api-web:stage
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [appnet]
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/ola/Dockerfile.frontend
+      network: host
+      args:
+        HTTP_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+        HTTPS_PROXY: ${CAMPUSPOOL_BUILD_PROXY:-}
+        http_proxy: ${CAMPUSPOOL_BUILD_PROXY:-}
+        https_proxy: ${CAMPUSPOOL_BUILD_PROXY:-}
+    image: campuspool-ola-frontend:stage
+    env_file: ["${CAMPUSPOOL_FRONTEND_ENV:?Private frontend env file required}"]
+    environment:
+      NEXT_PUBLIC_MAP_PROVIDER: ola
+      NEXT_PUBLIC_CANONICAL_DEMO: "1"
+      OLA_MAPS_ENABLED: "1"
+      MOBILITY_API_ORIGIN: http://api-web:8080
+      HTTPS_PROXY: ${CAMPUSPOOL_CONTAINER_PROXY:-}
+      HTTP_PROXY: ${CAMPUSPOOL_CONTAINER_PROXY:-}
+      NO_PROXY: mysql,api,api-web,frontend,localhost,127.0.0.1
+    depends_on:
+      api-web: {condition: service_started}
+    ports: ["127.0.0.1:${CAMPUSPOOL_STAGE_PORT:-3040}:3000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 6s
+      retries: 10
+      start_period: 35s
+    networks: [appnet, egress]
+
+  https:
+    profiles: [public]
+    image: caddy:2.9-alpine
+    environment:
+      CAMPUSPOOL_DOMAIN: ${CAMPUSPOOL_DOMAIN:-invalid.example}
+      CAMPUSPOOL_GATE_USER: ${CAMPUSPOOL_GATE_USER:-__NOT_CONFIGURED__}
+      CAMPUSPOOL_GATE_BCRYPT_HASH: ${CAMPUSPOOL_GATE_BCRYPT_HASH:-__INVALID_BCRYPT__}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports: ["80:80", "443:443", "443:443/udp"]
+    depends_on:
+      frontend: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [appnet, egress]
+
+volumes:
+  mysql-data:
+  laravel-storage:
+  caddy-data:
+  caddy-config:
+
+networks:
+  database:
+    internal: true
+  appnet:
+    internal: true
+  egress: {}

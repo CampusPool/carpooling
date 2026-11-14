@@ -3,6 +3,10 @@
 import { emitUnauthorized } from "../lib/session-events";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import CanonicalPlacePicker from "./CanonicalPlacePicker";
+import CanonicalRouteMap from "./CanonicalRouteMap";
+import { loadMapsSdk } from "../lib/maps-loader.mjs";
+
+const studentPreview = process.env.NEXT_PUBLIC_STUDENT_ONLY === "1";
 
 type Json = Record<string, any>;
 type Point = { id: number; name: string; lat?: number; lng?: number };
@@ -58,6 +62,10 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
   const [mode, setMode] = useState<"find" | "publish" | "bookings">(initialMode);
   const [membership, setMembership] = useState<Json>();
   const [points, setPoints] = useState<Point[]>([]);
+  const [mapStatus, setMapStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [mapRetry, setMapRetry] = useState(0);
+  const [pickup, setPickup] = useState<Point>();
+  const [dropoff, setDropoff] = useState<Point>();
   const [cars, setCars] = useState<Json[]>([]);
   const [applications, setApplications] = useState<HostApplication[]>([]);
   const [onboardings, setOnboardings] = useState<Json[]>([]);
@@ -143,6 +151,18 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
   }, [token, refreshBookings]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!studentPreview || mode === "bookings") return;
+    setMapStatus("loading");
+    return loadMapsSdk({
+      fetchImpl: fetch,
+      documentRef: document,
+      google: (window as any).google,
+      onReady: () => setMapStatus("ready"),
+      onUnavailable: () => setMapStatus("unavailable"),
+    });
+  }, [mode, mapRetry]);
 
   async function find(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,14 +272,14 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
     {membership && process.env.NEXT_PUBLIC_CANONICAL_DEMO !== "1" && <p className="fine">Membership: <strong>{membership.membership?.status || "not applied"}</strong> · Discovery and requests: <strong>{capabilities.discover ? "enabled" : "approval required"}</strong> · Publishing: <strong>{capabilities.publish ? "enabled" : "host approval required"}</strong></p>}
     {catalogError && <p className="review-note">{catalogError}</p>}
     {error && <p className="error banner" role="alert">{error}</p>}{notice && <p className="banner" role="status">{notice}</p>}
-    <div className="pool-tabs">{accountRole !== "driver" && <button className={mode === "find" ? "primary" : "secondary"} onClick={() => { setMode("find"); setError(""); setNotice(""); }}>Find a seat</button>}{accountRole !== "rider" && <button className={mode === "publish" ? "primary" : "secondary"} onClick={() => { setMode("publish"); setError(""); setNotice(""); }}>Publish a ride</button>}<button className={mode === "bookings" ? "primary" : "secondary"} onClick={() => { setMode("bookings"); setError(""); setNotice(""); void refreshBookings(); }}>Booking requests</button></div>
+    <div className="pool-tabs">{accountRole !== "driver" && <button className={mode === "find" ? "primary" : "secondary"} onClick={() => { if (mode !== "find") { setPickup(undefined); setDropoff(undefined); } setMode("find"); setError(""); setNotice(""); }}>Find a seat</button>}{accountRole !== "rider" && <button className={mode === "publish" ? "primary" : "secondary"} onClick={() => { setMode("publish"); setError(""); setNotice(""); }}>Publish a ride</button>}<button className={mode === "bookings" ? "primary" : "secondary"} onClick={() => { setMode("bookings"); setError(""); setNotice(""); void refreshBookings(); }}>Booking requests</button></div>
 
     {mode === "find" ? <>
       {!capabilities.discover && <p className="review-note">Ride discovery is available after an operator approves your college membership.</p>}
       <form className="form-grid pool-form" onSubmit={find}>
         <label>Travel date<input name="service_date" type="date" min={todayIndia()} defaultValue={todayIndia()} required /></label>
-        <CanonicalPlacePicker label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
-        <CanonicalPlacePicker label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Pickup point" name="pickup_point_id" points={points} disabled={busy} mapsReady={!studentPreview || mapStatus === "ready"} onSelect={setPickup} />
+        <CanonicalPlacePicker token={token} label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} mapsReady={!studentPreview || mapStatus === "ready"} onSelect={setDropoff} />
         <details className="pool-search-options"><summary>Time and vehicle preferences <span>Optional</span></summary>
           <div className="form-grid pool-form pool-search-options-grid">
             <label>Earliest pickup<input name="from_time" type="time" defaultValue="00:00" required /></label>
@@ -270,8 +290,10 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
         </details>
         <button className="primary wide" disabled={busy || !capabilities.discover || points.length < 2}>{busy ? "Searching…" : "Search available seats"}</button>
       </form>
-      {points.length < 2 && !busy && <p className="review-note">The server has fewer than two pickup points configured. Ask the operator to prepare the route catalog.</p>}
-      {searched && matches.length === 0 && <p className="empty">No rides match these pickup points and date. Check the route and time. Your own offers are hidden; use a different rider account to test your offer.</p>}
+      {studentPreview && mapStatus === "ready" && <CanonicalRouteMap points={points} pickup={pickup} dropoff={dropoff} />}
+      {studentPreview && mapStatus === "unavailable" && <p className="review-note">Google Maps is unavailable. You can still choose pickup points by name. <button type="button" className="secondary" onClick={() => setMapRetry(value => value + 1)}>Retry Maps</button></p>}
+      {points.length < 2 && !busy && <p className="review-note">Ride search is unavailable until campus pickup points are added.</p>}
+      {searched && matches.length === 0 && <p className="empty">No rides match these pickup points and date. Try a different time or route.</p>}
       {!!matches.length && <div className="pool-results">{matches.map((match) => <article className="onboarding-panel pool-result" key={match.match_id}>
       <div><strong>{pointName(match.pickup_point_id)} → {pointName(match.dropoff_point_id)}</strong><p className="fine">Host: {match.host_name || "Host"} · Vehicle: {match.vehicle_label || (match.vehicle_type === "bike" ? "Motorbike" : "Car")}</p><p className="fine">Pickup {localTime(match.pickup_local)} IST · drop-off {localTime(match.dropoff_local)} IST · {Number(match.seats_available)} seat{Number(match.seats_available) === 1 ? "" : "s"} free · {price(match.seat_price_minor)} per passenger · no payment collected</p>{match.synthetic_only && <p className="review-note">Synthetic test quote</p>}</div>
         <button type="button" className="primary" disabled={busy || !capabilities.request || Number(match.seats_available) < 1} onClick={() => void requestSeat(match)}>Request one seat</button>
@@ -280,8 +302,8 @@ export default function CanonicalPool({ token, initialMode = "find", accountRole
       {!capabilities.publish && <p className="review-note">Publishing requires approved college membership and an operator approved vehicle. Start or review vehicle approval in Driver onboarding.</p>}
       <form className="form-grid pool-form" onSubmit={getQuote}>
         <label>Approved vehicle<select name="car_id" required defaultValue="">{pointOptions("Choose approved vehicle")}{approvedVehicles.map((app) => { const car = cars.find((item) => Number(item.id ?? item.car_id) === app.car_id); const name = car ? [vehiclePart(car.brand) || vehiclePart(car.brand_other), vehiclePart(car.model) || vehiclePart(car.model_other)].filter(Boolean).join(" ") : ""; return <option key={`${app.car_id}-${app.vehicle_type}`} value={app.car_id}>{app.vehicle_type === "bike" ? "Motorbike" : "Car"} #{app.car_id}{name ? ` · ${name}` : ""}</option>; })}</select></label>
-        <CanonicalPlacePicker label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
-        <CanonicalPlacePicker label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Pickup point" name="pickup_point_id" points={points} disabled={busy} />
+        <CanonicalPlacePicker token={token} label="Drop-off point" name="dropoff_point_id" points={points} disabled={busy} />
         <button className="primary wide" disabled={busy || !capabilities.publish || approvedVehicles.length === 0 || points.length < 2}>{busy ? "Getting quote…" : "Get route quote"}</button>
       </form>
       {approvedVehicles.length === 0 && <p className="fine">No approved host vehicle with a reviewed passenger-seat capacity is available. Use Driver onboarding to complete or correct the capacity, then wait for operator review.</p>}

@@ -1,0 +1,4 @@
+FROM nginx:1.27-alpine
+COPY research/vendor/carpoolear_hardened/public/ /var/www/public/
+COPY deploy/ola/api-nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 8080
