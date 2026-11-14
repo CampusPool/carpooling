@@ -61,13 +61,14 @@ it("searches with the two selected Places coordinates without a fixed pickup cat
   fireEvent.change(screen.getByRole("combobox", { name: "Destination" }), { target: { value: "Whitefield" } });
   fireEvent.click(await screen.findByRole("option", { name: locations.Whitefield.label }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Find rides" })).toBeEnabled());
+  fireEvent.change(screen.getByRole("combobox", { name: "Driver gender" }), { target: { value: "woman" } });
   fireEvent.click(screen.getByRole("button", { name: "Find rides" }));
   await screen.findByText(/No matching rides for/);
   expect(screen.getByText(/outside your search window/)).toBeVisible();
   expect(screen.getByText(/longer detour than the driver allowed/)).toBeVisible();
   const profile = requests.find(([url]) => url === "/api/mobility/address-rides/profile");
   expect(JSON.parse(profile[1].body)).toMatchObject({ home: locations.Indiranagar, campus: locations.Whitefield, role: "rider" });
-  expect(requests.some(([url]) => url.includes("/address-rides/rides?"))).toBe(true);
+  expect(requests.some(([url]) => url.includes("/address-rides/rides?") && url.includes("driver_gender=woman"))).toBe(true);
   expect(requests.some(([url]) => url.includes("pickup-points"))).toBe(false);
   expect(screen.queryByRole("combobox", { name: "Pickup point" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("tab", { name: "Offer a ride" }));

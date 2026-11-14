@@ -27,6 +27,7 @@ final class StudentDemoWalletTest extends TestCase
         }
         // Opt in only on a disposable configured host; keep normal CI deterministic.
         if (filter_var(getenv('ADDRESS_TEST_REAL_ROUTING'), FILTER_VALIDATE_BOOLEAN)) return;
+        config(['mobility_routing.provider' => 'osrm']);
         foreach (['car', 'bike', 'foot'] as $mode) {
             config(['mobility_routing.'.$mode.'_expected_data_version' => $mode.'|crop_sha256='.str_repeat('a', 64).'|profile_sha256='.str_repeat('b', 64)]);
         }
@@ -72,20 +73,22 @@ final class StudentDemoWalletTest extends TestCase
         $this->assertGreaterThan(0, $fare);
 
         $this->walletPost($driver, 'bookings/'.$booking.'/payment/pay', [], 'driver-cannot-pay')->assertForbidden();
-        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'held');
-        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'held');
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'paid');
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk()->assertJsonPath('data.wallet_state', 'paid');
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay-retry')->assertOk()->assertJsonPath('data.wallet_state', 'paid');
         $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()
-            ->assertJsonPath('wallet.available_minor', 10000 - $fare)->assertJsonPath('wallet.held_minor', $fare);
+            ->assertJsonPath('wallet.available_minor', 10000 - $fare)->assertJsonPath('wallet.held_minor', 0);
+        $this->actingAsApiUser($driver)->getJson(self::API.'wallet')->assertOk()
+            ->assertJsonPath('wallet.available_minor', $fare)->assertJsonPath('wallet.pending_release_minor', 0);
+        $this->walletPost($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'premature-receipt')->assertStatus(409);
+        $this->assertSame(1, DB::table('mobility_commute_demo_entries')->where('booking_id', $booking)->where('kind', 'driver_payment')->count());
+        $this->assertSame(1, DB::table('mobility_commute_demo_entries')->where('booking_id', $booking)->where('kind', 'ride_payment')->count());
 
         foreach (['start', 'board', 'alight', 'complete'] as $action) {
             $body = ['action' => $action] + (in_array($action, ['board', 'alight'], true) ? ['passenger_id' => $rider->id] : []);
             $this->walletPost($driver, 'trips/'.$trip.'/transition', $body, $action)->assertOk();
         }
-        $this->walletPost($rider, 'bookings/'.$booking.'/payment/arrive', [], 'arrive')->assertOk();
-        $this->walletPost($driver, 'wallet/release', [], 'not-due')->assertOk()->assertJsonPath('available_minor', 0);
-        $this->travel(3)->hours();
-        $this->walletPost($driver, 'wallet/release', [], 'due')->assertOk()->assertJsonPath('available_minor', $fare);
-        $this->walletPost($driver, 'wallet/release', [], 'due-retry')->assertOk()->assertJsonPath('available_minor', $fare);
+        $this->walletPost($driver, 'wallet/release', [], 'release')->assertOk()->assertJsonPath('available_minor', $fare);
         $receipt = $this->walletPost($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt')->assertOk()
             ->assertJsonPath('receipt.non_redeemable', true)->json('receipt.receipt_number');
         $this->walletPost($driver, 'bookings/'.$booking.'/payment/confirm-payment-received', [], 'receipt-retry')->assertOk()
@@ -94,7 +97,7 @@ final class StudentDemoWalletTest extends TestCase
         $this->assertDatabaseCount('mobility_commute_demo_receipts', 1);
     }
 
-    public function test_booking_and_whole_ride_cancellation_refund_held_credits_once(): void
+    public function test_booking_and_whole_ride_cancellation_reverse_immediate_payment_once(): void
     {
         putenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED=true');
         $driver = $this->student('refund.driver@stu.pes.edu');
@@ -112,8 +115,45 @@ final class StudentDemoWalletTest extends TestCase
             $this->assertDatabaseHas('mobility_commute_demo_holds', ['booking_id' => $booking, 'state' => 'refunded']);
             $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()
                 ->assertJsonPath('wallet.available_minor', 10000)->assertJsonPath('wallet.held_minor', 0);
+            $this->actingAsApiUser($driver)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('wallet.available_minor', 0);
         }
         $this->assertSame(2, DB::table('mobility_commute_demo_entries')->where('kind', 'refund')->count());
+        $this->assertSame(2, DB::table('mobility_commute_demo_entries')->where('kind', 'payment_reversal')->count());
+    }
+
+    public function test_cancelling_after_driver_spends_demo_credits_preserves_refund_and_records_negative_balance(): void
+    {
+        putenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED=true');
+        $driver = $this->student('spent.driver@stu.pes.edu');
+        $rider = $this->student('spent.rider@stu.pes.edu');
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk();
+        [, $booking, $fare] = $this->book($driver, $rider, 1);
+        $this->walletPost($rider, 'bookings/'.$booking.'/payment/pay', [], 'pay')->assertOk();
+        // Set up the state after those demo credits have been spent elsewhere.
+        DB::table('mobility_commute_demo_wallets')->where('user_id', $driver->id)->update(['available_minor' => 0]);
+        $this->walletPost($rider, 'bookings/'.$booking.'/cancel', [], 'cancel')->assertOk();
+        $this->walletPost($rider, 'bookings/'.$booking.'/cancel', [], 'cancel-retry')->assertOk();
+        $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('wallet.available_minor', 10000);
+        $this->actingAsApiUser($driver)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('wallet.available_minor', -$fare);
+        $this->assertSame(1, DB::table('mobility_commute_demo_entries')->where('booking_id', $booking)->where('kind', 'payment_reversal')->count());
+    }
+
+    public function test_cancellation_of_old_held_payment_does_not_debit_the_driver(): void
+    {
+        putenv('MOBILITY_STUDENT_DEMO_WALLET_ENABLED=true');
+        $driver = $this->student('legacy.driver@stu.pes.edu');
+        $rider = $this->student('legacy.rider@stu.pes.edu');
+        $this->walletPost($rider, 'wallet/topup', ['amount_minor' => 10000], 'credit')->assertOk();
+        [, $booking, $fare] = $this->book($driver, $rider, 1);
+        DB::table('mobility_commute_demo_wallets')->where('user_id', $rider->id)->decrement('available_minor', $fare);
+        DB::table('mobility_commute_demo_holds')->insert([
+            'booking_id' => $booking, 'rider_id' => $rider->id, 'driver_id' => $driver->id,
+            'amount_minor' => $fare, 'state' => 'held', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->walletPost($rider, 'bookings/'.$booking.'/cancel', [], 'legacy-cancel')->assertOk();
+        $this->actingAsApiUser($rider)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('wallet.available_minor', 10000);
+        $this->actingAsApiUser($driver)->getJson(self::API.'wallet')->assertOk()->assertJsonPath('wallet.available_minor', 0);
+        $this->assertDatabaseMissing('mobility_commute_demo_entries', ['booking_id' => $booking, 'kind' => 'payment_reversal']);
     }
 
     private function book(User $driver, User $rider, int $offset): array

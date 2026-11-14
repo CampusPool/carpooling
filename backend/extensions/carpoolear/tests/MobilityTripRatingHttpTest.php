@@ -155,6 +155,37 @@ final class MobilityTripRatingHttpTest extends TestCase
             ->assertJsonCount(2, 'data')->assertJsonPath('data.0.direction', 'received')->assertJsonPath('data.1.direction', 'authored');
     }
 
+    public function test_verified_students_can_rate_only_their_completed_ride_in_public_mode(): void
+    {
+        $previous = getenv('MOBILITY_PUBLIC_STUDENT_ONLY');
+        putenv('MOBILITY_PUBLIC_STUDENT_ONLY=true');
+        try {
+            [$driver, $trip, $rider] = $this->fixture();
+            $outsider = $this->member();
+            foreach ([$driver, $rider, $outsider] as $user) {
+                $user->email = 'rating'.$user->id.'@stu.pes.edu';
+                $user->save();
+                DB::table('mobility_verified_identities')->insert([
+                    'user_id' => $user->id, 'provider' => 'college_email_otp',
+                    'email' => $user->email, 'domain' => 'stu.pes.edu',
+                    'verified_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+            $this->actingAsApiUser($outsider)->postJson($this->path($trip), [
+                'ratee_id' => $driver->id, 'rating' => 5,
+            ], ['Idempotency-Key' => 'student-outsider'])->assertStatus(403)->assertJsonPath('error.code', 'TRIP_RATING_FORBIDDEN');
+            $this->actingAsApiUser($rider)->postJson($this->path($trip), [
+                'ratee_id' => $driver->id, 'rating' => 4, 'comment' => 'Good ride',
+            ], ['Idempotency-Key' => 'student-rider-rating'])->assertCreated()->assertJsonPath('data.rating', 4);
+            $this->actingAsApiUser($rider)->getJson($this->path($trip))->assertOk()
+                ->assertJsonPath('data.0.counterpart_id', $driver->id)
+                ->assertJsonPath('data.0.direction', 'authored')
+                ->assertJsonMissingPath('data.0.rater_id')->assertJsonMissingPath('data.0.ratee_id');
+        } finally {
+            putenv($previous === false ? 'MOBILITY_PUBLIC_STUDENT_ONLY' : 'MOBILITY_PUBLIC_STUDENT_ONLY='.$previous);
+        }
+    }
+
     private function fixture(): array
     {
         $driver = $this->member();

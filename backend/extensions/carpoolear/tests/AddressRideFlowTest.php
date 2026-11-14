@@ -95,6 +95,8 @@ final class AddressRideFlowTest extends TestCase
         $this->assertArrayNotHasKey('route_map', $card);
         $this->assertArrayNotHasKey('driver_route_origin_label', $card);
         $this->assertArrayNotHasKey('demo_fixture', $card);
+        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/tracking')
+            ->assertNotFound()->assertJsonPath('error.code', 'TRACKING_OUT_OF_SCOPE');
         $booking = $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], ['Idempotency-Key' => 'request-address'])->assertOk()->json('data');
         $this->assertArrayNotHasKey('route_map', $booking);
         $this->assertArrayNotHasKey('wallet_state', $booking);
@@ -102,13 +104,41 @@ final class AddressRideFlowTest extends TestCase
         $otherBooking = $this->actingAsApiUser($other)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $otherCard['quote_token']], ['Idempotency-Key' => 'request-other'])->assertOk()->json('data.booking_id');
         $tripBase = '/api/mobility/trips/'.$trip.'/';
         $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertForbidden();
-        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertForbidden();
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertNotFound();
         $notification = $this->actingAsApiUser($driver)->getJson($base.'notifications')->assertOk()->json('data.0.id');
         $this->actingAsApiUser($other)->postJson($base.'notifications/'.$notification.'/read')->assertNotFound();
         $this->actingAsApiUser($driver)->postJson($base.'notifications/'.$notification.'/read')->assertOk();
         $this->assertNotNull(DB::table('mobility_commute_booking_notifications')->where('id', $notification)->value('read_at'));
         $accepted = $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$booking['booking_id'].'/accept', [], ['Idempotency-Key' => 'accept-address'])->assertOk()->assertJsonPath('data.request_state', 1)->json('data');
         $this->assertArrayHasKey('route_map', $accepted);
+        $this->actingAsApiUser($other)->postJson('/api/mobility/trips/'.$trip.'/safety-check', ['safe' => false],
+            ['Idempotency-Key' => 'safety-outsider'])->assertForbidden();
+        $this->actingAsApiUser($rider)->putJson('/api/mobility/trusted-contact', [
+            'email' => 'trusted@example.test', 'consent_confirmed' => true,
+        ])->assertOk()->assertJsonPath('email', 'trusted@example.test');
+        $this->actingAsApiUser($driver)->getJson('/api/mobility/trusted-contact')->assertOk()->assertJsonPath('email', null);
+        $this->actingAsApiUser($rider)->postJson('/api/mobility/trips/'.$trip.'/safety-check', ['safe' => true],
+            ['Idempotency-Key' => 'safety-safe'])->assertOk()->assertJsonPath('data.notification_status', 'not_required');
+        putenv('MOBILITY_EMAIL_TRANSPORT=nylas_api');
+        putenv('MOBILITY_NYLAS_API_KEY=synthetic-key-for-testing-only');
+        putenv('MOBILITY_NYLAS_GRANT_ID=00000000-0000-4000-8000-000000000000');
+        \Illuminate\Support\Facades\Http::fake(['api.us.nylas.com/*' => \Illuminate\Support\Facades\Http::response(['data' => ['id' => 'synthetic-accepted']], 200)]);
+        try {
+            $safetyHeaders = ['Idempotency-Key' => 'safety-unsafe'];
+            $this->actingAsApiUser($rider)->postJson('/api/mobility/trips/'.$trip.'/safety-check', ['safe' => false], $safetyHeaders)
+                ->assertOk()->assertJsonPath('data.notification_status', 'provider_accepted');
+            $this->actingAsApiUser($rider)->postJson('/api/mobility/trips/'.$trip.'/safety-check', ['safe' => false], $safetyHeaders)->assertOk();
+            $this->actingAsApiUser($rider)->postJson('/api/mobility/trips/'.$trip.'/safety-check', ['safe' => true], $safetyHeaders)
+                ->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
+            \Illuminate\Support\Facades\Http::assertSentCount(1);
+            \Illuminate\Support\Facades\Http::assertSent(fn ($sent) =>
+                $sent['to'][0]['email'] === 'trusted@example.test'
+                && !str_contains((string)$sent['body'], '12.9716'));
+        } finally {
+            putenv('MOBILITY_EMAIL_TRANSPORT');
+            putenv('MOBILITY_NYLAS_API_KEY');
+            putenv('MOBILITY_NYLAS_GRANT_ID');
+        }
         $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$otherBooking.'/accept', [], ['Idempotency-Key' => 'accept-full'])->assertStatus(422)->assertJsonPath('error.code', 'NOT_SEAT_AVAILABLE');
         $this->actingAsApiUser($driver)->postJson($base.'bookings/'.$otherBooking.'/reject', [], ['Idempotency-Key' => 'reject-pending'])->assertOk()->assertJsonPath('data.request_state', 2);
         $this->actingAsApiUser($other)->getJson($tripBase.'messages')->assertForbidden();
@@ -116,14 +146,10 @@ final class AddressRideFlowTest extends TestCase
         $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertOk()->assertJsonPath('data.messages.0.id', $message)->assertJsonPath('data.can_send', true);
         $this->actingAsApiUser($rider)->postJson($tripBase.'messages/read', ['through_id' => $message])->assertOk();
         $this->actingAsApiUser($rider)->postJson($tripBase.'messages', ['text' => 'Synthetic rider acknowledgement'], ['Idempotency-Key' => 'address-rider-chat'])->assertOk();
-        $this->actingAsApiUser($rider)->postJson($tripBase.'tracking/session', ['consent' => true], ['Idempotency-Key' => 'rider-cannot-track'])->assertForbidden();
-        $session = $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/session', ['consent' => true], ['Idempotency-Key' => 'address-tracking'])->assertOk()->json('data.session_id');
-        $sample = ['session_id' => $session, 'sequence' => 1, 'lat' => 12.9716, 'lng' => 77.5946, 'accuracy_meters' => 10, 'recorded_at' => now('UTC')->format('Y-m-d\TH:i:s.v\Z')];
-        $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/locations', $sample, ['Idempotency-Key' => 'address-location'])->assertOk();
-        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertOk()->assertJsonPath('data.location.lat', 12.9716)->assertJsonPath('data.stale', false);
-        $this->actingAsApiUser($other)->getJson($tripBase.'tracking')->assertForbidden();
-        $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/stop', ['session_id' => $session], ['Idempotency-Key' => 'address-stop'])->assertOk();
-        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertOk()->assertJsonPath('data.location', null);
+        $this->actingAsApiUser($driver)->postJson($tripBase.'tracking/session', ['consent' => true], ['Idempotency-Key' => 'address-tracking'])
+            ->assertNotFound()->assertJsonPath('error.code', 'TRACKING_OUT_OF_SCOPE');
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')
+            ->assertNotFound()->assertJsonPath('error.code', 'TRACKING_OUT_OF_SCOPE');
         foreach (['start', 'board', 'alight', 'complete'] as $action) {
             $body = ['action' => $action] + (in_array($action, ['board', 'alight']) ? ['passenger_id' => $rider->id] : []);
             $this->actingAsApiUser($driver)->postJson($base.'trips/'.$trip.'/transition', $body, ['Idempotency-Key' => 'address-'.$action])->assertOk();
@@ -131,7 +157,7 @@ final class AddressRideFlowTest extends TestCase
         $this->assertDatabaseHas('mobility_trip_lifecycles', ['trip_id' => $trip, 'state' => 'completed']);
         $this->actingAsApiUser($rider)->getJson($tripBase.'messages')->assertOk()->assertJsonPath('data.can_send', false);
         $this->actingAsApiUser($rider)->postJson($tripBase.'messages', ['text' => 'Cannot send after completion'], ['Idempotency-Key' => 'closed-chat'])->assertStatus(409);
-        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertStatus(410);
+        $this->actingAsApiUser($rider)->getJson($tripBase.'tracking')->assertNotFound();
         $this->assertDatabaseCount('mobility_commute_demo_holds', 0);
         $this->assertDatabaseCount('mobility_commute_demo_wallets', 0);
         $this->assertDatabaseCount('mobility_pickup_points', 0);
@@ -161,7 +187,7 @@ final class AddressRideFlowTest extends TestCase
         $this->actingAsApiUser($rider)->postJson($base.'bookings/'.$booking.'/cancel', [], ['Idempotency-Key' => 'cancel-booking'])->assertOk()->assertJsonPath('data.request_state', 3);
         $this->actingAsApiUser($driver)->getJson($base.'offers')->assertOk()->assertJsonPath('data.0.seats_available', 1);
         $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/messages')->assertForbidden();
-        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/tracking')->assertForbidden();
+        $this->actingAsApiUser($rider)->getJson('/api/mobility/trips/'.$trip.'/tracking')->assertNotFound();
         $this->assertDatabaseCount('mobility_commute_demo_holds', 0);
         $card = $this->actingAsApiUser($rider)->getJson($base.'rides?direction=outbound&date='.$date.'&vehicle_type=car')->assertOk()->json('data.0');
         $pending = $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']], ['Idempotency-Key' => 'cancel-new-request'])->assertOk()->json('data.booking_id');
@@ -315,6 +341,34 @@ final class AddressRideFlowTest extends TestCase
         $this->assertLessThan(1000, $card['access_meters'] + $card['egress_meters']);
         $this->assertNotEmpty($card['pickup_approach']['walking_geometry']);
         $this->assertNotEmpty($card['pickup_approach']['pickup']);
+    }
+
+    public function test_driver_gender_filter_uses_student_profile_and_rejects_changed_quote(): void
+    {
+        $driver = $this->student('gender.driver@stu.pes.edu');
+        $rider = $this->student('gender.rider@stu.pes.edu');
+        DB::table('mobility_student_profiles')->insert([
+            'user_id' => $driver->id, 'srn_normalized' => 'SYNTH-GENDER-DRIVER',
+            'campus_code' => 'CAMPUS-BLR', 'gender_identity' => 'man', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        putenv('MOBILITY_DEMO_VEHICLES_ENABLED=true');
+        $base = '/api/mobility/address-rides/';
+        $car = $this->actingAsApiUser($driver)->postJson($base.'vehicles', ['registration' => 'KA00DE0007'])->assertOk()->json('data.id');
+        $this->actingAsApiUser($driver)->putJson($base.'profile', $this->profile('driver'))->assertOk();
+        $this->actingAsApiUser($rider)->putJson($base.'profile', $this->profile('rider'))->assertOk();
+        $date = now('Asia/Kolkata')->addDay()->toDateString();
+        $trip = $this->actingAsApiUser($driver)->postJson($base.'offers', [
+            'date' => $date, 'direction' => 'outbound', 'vehicle_type' => 'car', 'choice' => 'DIRECT_RIDER_PICKUP',
+            'car_id' => $car, 'total_seats' => 1,
+        ], ['Idempotency-Key' => 'gender-offer'])->assertOk()->json('data.trip_id');
+        $search = $base.'rides?direction=outbound&date='.$date.'&vehicle_type=car';
+        $this->actingAsApiUser($rider)->getJson($search.'&driver_gender=woman')->assertOk()->assertJsonCount(0, 'data');
+        $card = $this->actingAsApiUser($rider)->getJson($search.'&driver_gender=man')->assertOk()->assertJsonCount(1, 'data')->json('data.0');
+        $this->assertArrayNotHasKey('gender_identity', $card);
+        $this->actingAsApiUser($rider)->getJson($search.'&driver_gender=invalid')->assertUnprocessable();
+        DB::table('mobility_student_profiles')->where('user_id', $driver->id)->update(['gender_identity' => 'woman']);
+        $this->actingAsApiUser($rider)->postJson($base.'rides/'.$trip.'/request', ['quote_token' => $card['quote_token']],
+            ['Idempotency-Key' => 'gender-request'])->assertStatus(409)->assertJsonPath('error.code', 'COMMUTE_QUOTE_CHANGED');
     }
 
     private function student(string $email): User

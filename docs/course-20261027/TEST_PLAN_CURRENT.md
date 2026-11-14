@@ -1,5 +1,7 @@
 # MobilityPlatform test plan draft
 
+> **14 November scope review:** This historical working draft predates the current student/Ola scope. See [course requirements and scope review](COURSE_REVIEW_2026-11-14.md); reconcile and obtain any required instructor review before submission.
+
 This draft describes repeatable checks for the migrated repository. Replace `Pending` entries with dated, reviewable evidence before submission.
 
 ## Automated checks
