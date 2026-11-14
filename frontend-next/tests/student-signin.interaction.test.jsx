@@ -130,3 +130,16 @@ it("supports account login and requests an email code for password reset", async
     challenge_id: "reset-code", password_action: "reset", password: "new-password-123",
   }));
 });
+
+
+it("remembers a password login through the existing protected session endpoint", async () => {
+  const request = vi.fn(async path => path === "college-auth/config" ? { delivery_available: true, campuses: ["CAMPUS-BLR"] } : path === "college-auth/password-login" ? { token: "password-token" } : {});
+  const onSignedIn = vi.fn(async () => {});
+  render(<StudentSignIn request={request} onSignedIn={onSignedIn} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Account sign-in" }));
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "student.one" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password-1234" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("password-token"));
+  expect(request).toHaveBeenCalledWith("college-auth/session", "password-token", "POST");
+});

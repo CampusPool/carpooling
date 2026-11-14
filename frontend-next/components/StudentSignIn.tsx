@@ -82,6 +82,8 @@ export default function StudentSignIn({ request, onSignedIn, busy }: { request: 
     try {
       const result = await request("college-auth/password-login", "", "POST", { username: username.trim(), password });
       if (typeof result.token !== "string" || !result.token) throw new Error("Sign-in did not return a session.");
+      // The existing session endpoint sets the protected browser cookie at the edge.
+      await request("college-auth/session", result.token, "POST");
       setPassword(""); await onSignedIn(result.token);
     } catch (e: any) { setError(e?.message || "Could not sign in."); }
     finally { setPending(false); }

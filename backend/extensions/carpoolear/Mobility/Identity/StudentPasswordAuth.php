@@ -66,8 +66,7 @@ final class StudentPasswordAuth
                 ->where('provider', 'college_email_otp')->where('email', $user->email)->exists()) {
             throw new CollegeEmailAuthException('INVALID_CREDENTIALS', 401);
         }
-        $browser = StudentIdentityBoundary::publicMode() ? ['browser_session' => app(StudentBrowserSession::class)->issue($user)] : [];
-        return $browser + [
+        return [
             'token' => auth('api')->claims($this->tokenClaims($user))->fromUser($user),
             'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email],
             'verified_college_email' => true,

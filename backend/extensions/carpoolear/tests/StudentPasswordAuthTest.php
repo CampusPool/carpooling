@@ -60,7 +60,8 @@ final class StudentPasswordAuthTest extends TestCase
             ->assertUnauthorized()->assertJsonPath('error.code', 'INVALID_CREDENTIALS');
         $login = $this->postJson($base.'password-login', ['username' => 'STUDENT.TEST', 'password' => 'initial-secret-123'])->assertOk();
         $oldToken = $login->json('token');
-        $oldBrowser = $login->json('browser_session');
+        $login->assertJsonMissingPath('browser_session');
+        $oldBrowser = $this->postJson($base.'session', [], ['Authorization' => 'Bearer '.$oldToken])->assertOk()->json('browser_session');
         $this->getJson($base.'profile', ['Authorization' => 'Bearer '.$oldToken])->assertOk()->assertJsonPath('gender_identity', 'woman');
 
         $reset = $this->postJson($base.'verify', [
