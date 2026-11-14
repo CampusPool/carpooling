@@ -5,6 +5,8 @@ import AddressPlacePicker, { type AddressPlace } from "./AddressPlacePicker";
 import CanonicalRouteMap from "./CanonicalRouteMap";
 import OlaStaticRouteMap from "./OlaStaticRouteMap";
 import RideConversation from "./RideConversation";
+import RideRating from "./RideRating";
+import RideSafety from "./RideSafety";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import { emitUnauthorized } from "../lib/session-events";
 import { initialCommuteSchedule, isFutureCommute, istDateTime } from "../lib/commute-time";
@@ -110,6 +112,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
   const [searchReasons, setSearchReasons] = useState<string[]>([]);
   const [pickupWindow, setPickupWindow] = useState<number>();
   const [pickupChoice, setPickupChoice] = useState<"DIRECT_RIDER_PICKUP" | "ON_ROUTE_MEETING_POINT">("ON_ROUTE_MEETING_POINT");
+  const [driverGender, setDriverGender] = useState("any");
   const [detourKm, setDetourKm] = useState("4");
   const [detourMinutes, setDetourMinutes] = useState("10");
   const attempts = useRef(new Map<string, string>());
@@ -217,7 +220,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         setNotice("Your ride is published. Riders can now request a seat.");
         await refresh();
       } else {
-        const result = await api(`mobility/address-rides/rides?direction=outbound&date=${encodeURIComponent(date)}&vehicle_type=both&pickup_choice=both`, token);
+        const result = await api(`mobility/address-rides/rides?direction=outbound&date=${encodeURIComponent(date)}&vehicle_type=both&pickup_choice=both&driver_gender=${encodeURIComponent(driverGender)}`, token);
         setRides(rows(result)); setSearchSummary(result.route_summary);
         setPickupWindow(result.pickup_window_minutes);
         setSearchReasons(Array.isArray(result.excluded) ? result.excluded.map((item: Json) => item.reason) : []);
@@ -299,6 +302,11 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         <div className={styles.wide}><button type="button" className={styles.secondary} disabled={busy || !origin || !destination} onClick={() => {
           const from = origin; changePlace("origin", destination); changePlace("destination", from);
         }}>⇄ Swap locations</button></div>
+        {mode === "find" && <label>Driver gender
+          <select value={driverGender} disabled={busy} onChange={event => { setDriverGender(event.target.value); setSearched(false); setRides([]); }}>
+            <option value="any">Any driver</option><option value="woman">Female driver</option><option value="man">Male driver</option>
+          </select>
+        </label>}
         <label>Travel date<input type="date" disabled={busy} min={istDateTime(new Date()).date} value={date} onChange={event => { edited.current = true; setDate(event.target.value); setSearched(false); setRides([]); }} required /></label>
         <label>{mode === "offer" ? "Driver departure · IST" : "Preferred pickup · IST"}<input type="time" disabled={busy} value={time} onChange={event => { edited.current = true; setTime(event.target.value); setSearched(false); setRides([]); }} required /></label>
         {mode === "offer" && <>
@@ -394,14 +402,18 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
           <h3>{owner ? booking.rider_name : booking.driver_name}</h3>
           <p>{booking.pickup_label} → {booking.dropoff_label}</p>
           <p className={styles.meta}>{when(booking.departure_at)} · {status}</p>
-          {booking.wallet_state && accepted && <p className={styles.meta}>Demo fare {money(booking.fare_minor)} · {booking.wallet_state === "unpaid" ? "Unpaid" : booking.wallet_state === "held" ? "Credits held" : booking.wallet_state === "released" ? "Credits released" : "Credits refunded"}</p>}
+          {booking.wallet_state && accepted && <p className={styles.meta}>Demo fare {money(booking.fare_minor)} · {booking.wallet_state === "unpaid" ? "Unpaid" : booking.wallet_state === "held" ? "Credits held" : booking.wallet_state === "paid" ? "Paid to driver" : booking.wallet_state === "released" ? "Credits released" : "Credits refunded"}</p>}
           {booking.wallet_state === "refunded" && !accepted && <p className={styles.meta}>Demo credits refunded</p>}
           {booking.release_at && booking.wallet_state === "held" && <p className={styles.meta}>Driver payout eligible after {when(booking.release_at)}</p>}
           {booking.receipt?.receipt_number && <p className={styles.meta}>Demo receipt {booking.receipt.receipt_number}</p>}
+          {!owner && accepted && ["planned", "in_progress", "completed"].includes(booking.state) && <RideSafety token={token} tripId={Number(booking.trip_id)} />}
+          {accepted && booking.state === "completed" && Number.isSafeInteger(Number(owner ? booking.rider_id : booking.driver_id)) && Number(owner ? booking.rider_id : booking.driver_id) > 0 && <RideRating
+            token={token} tripId={Number(booking.trip_id)} counterpartId={Number(owner ? booking.rider_id : booking.driver_id)}
+            counterpartName={String((owner ? booking.rider_name : booking.driver_name) || (owner ? "your rider" : "your driver"))} />}
           <div className={styles.actions}>
-            {!owner && accepted && active && planned && booking.wallet_state === "unpaid" && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/payment/pay`, {}, "Demo credits held for this ride.")}>Pay with demo credits</button>}
+            {!owner && accepted && active && planned && booking.wallet_state === "unpaid" && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/payment/pay`, {}, "Demo credits sent to the driver. No real money was transferred.")}>Pay with demo credits</button>}
             {!owner && accepted && booking.state === "completed" && booking.wallet_state === "held" && !booking.rider_arrived_at && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/payment/arrive`, {}, "Arrival confirmed. Demo credits can be released after three hours.")}>Confirm arrival</button>}
-            {owner && booking.wallet_state === "released" && !booking.receipt && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/payment/confirm-payment-received`, {}, "Demo receipt issued.")}>Issue demo receipt</button>}
+            {owner && booking.state === "completed" && ["paid", "released"].includes(booking.wallet_state) && !booking.receipt && <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/payment/confirm-payment-received`, {}, "Demo receipt issued.")}>Issue demo receipt</button>}
             {owner && Number(booking.request_state) === 0 && planned && <>
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/accept`, {}, "Rider accepted.")}>Accept rider</button>
               <button type="button" disabled={busy} onClick={() => void action(`bookings/${booking.booking_id}/reject`, {}, "Request declined.")}>Decline</button>

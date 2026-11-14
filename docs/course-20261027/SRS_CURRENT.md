@@ -1,5 +1,7 @@
 # MobilityPlatform SRS — current engineering draft
 
+> **14 November scope review:** This historical working draft predates the current student/Ola scope. See [course requirements and scope review](COURSE_REVIEW_2026-11-14.md); reconcile and obtain any required instructor review before submission.
+
 This is a working draft for the MobilityPlatform course package. It is not teacher-approved and does not claim production readiness. The product covers scheduled and recurring carpooling plus on-demand work in a local synthetic environment. Timetable import, class-schedule integration and timetable-based matching are explicitly excluded.
 
 ## Actors and boundaries

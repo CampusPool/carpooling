@@ -19,8 +19,13 @@ final class CollegeEmailAuthController
     {
         $challenge = $request->input('challenge_id'); $code = $request->input('code');
         if (! is_string($challenge) || ! preg_match('/^[0-9a-f-]{36}$/iD', $challenge) || ! is_string($code) || ! preg_match('/^[0-9]{6}$/D', $code)) return $this->error('COLLEGE_OTP_INPUT_INVALID', 422);
-        $registration = ['name' => $request->input('name'), 'srn' => $request->input('srn'), 'campus_code' => $request->input('campus_code'), 'gender_identity' => $request->input('gender_identity'), 'phone' => $request->input('phone')];
+        $registration = ['name' => $request->input('name'), 'srn' => $request->input('srn'), 'campus_code' => $request->input('campus_code'), 'gender_identity' => $request->input('gender_identity'), 'phone' => $request->input('phone'), 'password_action' => $request->input('password_action'), 'username' => $request->input('username'), 'password' => $request->input('password')];
         try { $this->auth->consumeRate([['verify-ip:'.($request->ip()?:'unknown'),30]],60); return $this->json($this->auth->verify($challenge, $code, $registration)); } catch (CollegeEmailAuthException $e) { return $this->error($e->machineCode, $e->httpStatus, $e->meta); }
+    }
+    public function passwordLogin(Request $request, StudentPasswordAuth $passwords): JsonResponse
+    {
+        try { return $this->json($passwords->login($request->input('username'), $request->input('password'), $request->ip())); }
+        catch (CollegeEmailAuthException $e) { return $this->error($e->machineCode, $e->httpStatus, $e->meta); }
     }
     public function studentProfile(Request $request, StudentProfile $profile): JsonResponse
     {

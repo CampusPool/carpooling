@@ -33,7 +33,7 @@ final class StudentIdentityBoundary
         }
 
         // OTP request/verification cannot require an authenticated user.
-        if (in_array($path, ['api/mobility/college-auth/config', 'api/mobility/college-auth/request', 'api/mobility/college-auth/verify'], true)) {
+        if (in_array($path, ['api/mobility/college-auth/config', 'api/mobility/college-auth/request', 'api/mobility/college-auth/verify', 'api/mobility/college-auth/password-login'], true)) {
             return $next($request);
         }
 
@@ -58,6 +58,15 @@ final class StudentIdentityBoundary
             if (! $verified) {
                 return response()->json(['error' => ['code' => 'STUDENT_EMAIL_VERIFICATION_REQUIRED']], 403)
                     ->header('Cache-Control', 'private, no-store, max-age=0');
+            }
+            $version = DB::table('mobility_student_password_accounts')->where('user_id', $user->id)->value('credential_version');
+            if ($version !== null) {
+                try { $tokenVersion = auth('api')->payload()->get('campuspool_credential_version'); }
+                catch (\Throwable) { $tokenVersion = null; }
+                if (!is_int($tokenVersion) || $tokenVersion !== (int) $version) {
+                    return response()->json(['error' => ['code' => 'STUDENT_SESSION_EXPIRED']], 401)
+                        ->header('Cache-Control', 'private, no-store, max-age=0');
+                }
             }
         }
 

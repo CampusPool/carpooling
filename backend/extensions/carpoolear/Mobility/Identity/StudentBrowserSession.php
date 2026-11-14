@@ -34,7 +34,7 @@ final class StudentBrowserSession
             ->where('user_id', $user->id)->where('provider', 'college_email_otp')->where('email', $user->email)->exists()) {
             throw new CollegeEmailAuthException('STUDENT_SESSION_EXPIRED', 401);
         }
-        return auth('api')->fromUser($user);
+        return auth('api')->claims(app(StudentPasswordAuth::class)->tokenClaims($user))->fromUser($user);
     }
 
     public function revoke(?string $token): void

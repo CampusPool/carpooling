@@ -196,12 +196,13 @@ const readWallet = (result: { enabled: boolean; wallet?: DemoWallet }) => result
 const credits = (minor: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(minor / 100);
 
 function DashboardWallet({ token }: { token: string }) {
-  const { data, error, reload } = useLoad(token, "wallet", readWallet);
+  const { data, error, reload } = useLoad(token, "wallet", readWallet, 10000);
   const [updated, setUpdated] = useState<DemoWallet>();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const actionKey = useRef<{ operation: string; key: string } | undefined>(undefined);
   const wallet = updated ?? data?.wallet;
+  useEffect(() => { if (data?.wallet) setUpdated(data.wallet); }, [data]);
 
   async function mutate(operation: "topup" | "release") {
     if (busy) return;
@@ -240,6 +241,7 @@ function DashboardWallet({ token }: { token: string }) {
     <h2>Demo wallet</h2>
     <p className={styles.muted}>Simulated ride payments use credits with no cash value.</p>
     <p><strong>{credits(wallet.available_minor)}</strong> available · {credits(wallet.held_minor)} held</p>
+    {wallet.available_minor < 0 && <p className={styles.muted}>A cancelled demo ride reversed credits you had already used. Add demo credits to restore your balance.</p>}
     <p className={styles.muted}>{credits(wallet.pending_release_minor)} in pending driver payouts</p>
     {problem && <p role="alert" className={styles.danger}>{problem}</p>}
     <div className={styles.actions}>

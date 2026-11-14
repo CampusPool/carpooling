@@ -1,5 +1,7 @@
 # MobilityPlatform architecture — current engineering draft
 
+> **14 November scope review:** This historical working draft predates the current student/Ola scope. See [course requirements and scope review](COURSE_REVIEW_2026-11-14.md); reconcile and obtain any required instructor review before submission.
+
 This document describes the current local implementation boundary. It is a draft for review, not an approved SAD or deployment design.
 
 ```text

@@ -31,9 +31,9 @@ final class CommuteService {
  public function saveProfile(User$u,array$v):array{
   return DB::transaction(function()use($u,$v){if(isset($v['name'])){$u->name=$v['name'];$u->save();}unset($v['name']);$v['onboarding_complete']=true;$existing=DB::table('mobility_commute_profiles')->where('user_id',$u->id)->lockForUpdate()->first(['gender_identity','same_gender_only']);$gender=array_key_exists('gender_identity',$v)?$v['gender_identity']:($existing->gender_identity??null);$same=(bool)(array_key_exists('same_gender_only',$v)?$v['same_gender_only']:($existing->same_gender_only??false));if($same&&(!$gender||in_array($gender,['prefer_not_to_say','self_described'],true)))throw new SegmentException($gender==='self_described'?'SAME_GENDER_IDENTITY_UNMATCHABLE':'SAME_GENDER_IDENTITY_REQUIRED',422);unset($v['gender_identity'],$v['same_gender_only']);DB::table('mobility_commute_profiles')->updateOrInsert(['user_id'=>$u->id],['preferences'=>json_encode($v,JSON_THROW_ON_ERROR),'gender_identity'=>$gender,'same_gender_only'=>$same,'created_at'=>now(),'updated_at'=>now()]);return$this->me($u);});
  }
- public function rides(User$rider,string$direction,string$date,string$vehicle,string$pickupChoice='both'):array {
+ public function rides(User$rider,string$direction,string$date,string$vehicle,string$pickupChoice='both',string$driverGender='any'):array {
   $this->requireRole($rider,'rider');
-  return app(CommuteMatchingService::class)->rides($rider,$direction,$date,$vehicle,$pickupChoice);
+  return app(CommuteMatchingService::class)->rides($rider,$direction,$date,$vehicle,$pickupChoice,$driverGender);
  }
  public function joinWaitlist(User$rider,int$tripId,string$quote):array {
   $this->requireDemo($rider);$this->requireRole($rider,'rider');
@@ -122,19 +122,75 @@ final class CommuteService {
  public function readNotification(User$u,int$id):array{$this->requireDemo($u);return app(CommuteNotificationService::class)->read($u,$id);}
  private function walletLock(int$id):object{DB::table('mobility_commute_demo_wallets')->insertOrIgnore(['user_id'=>$id,'available_minor'=>0,'created_at'=>now(),'updated_at'=>now()]);return DB::table('mobility_commute_demo_wallets')->where('user_id',$id)->lockForUpdate()->first();}
  private function entry(int$id,string$kind,int$amount,?int$booking=null):void{DB::table('mobility_commute_demo_entries')->insert(['user_id'=>$id,'kind'=>$kind,'amount_minor'=>$amount,'booking_id'=>$booking,'created_at'=>now(),'updated_at'=>now()]);}
+ /** Lock both demo accounts in a stable order to avoid reciprocal-transfer deadlocks. */
+ private function lockWallets(int ...$ids): void {
+  $ids = array_values(array_unique($ids));
+  sort($ids, SORT_NUMERIC);
+  foreach ($ids as $id) $this->walletLock($id);
+ }
+
  public function refundCancelledStudentBooking(Passenger $booking): void
  {
   if (AddressRideContext::active() && AddressRideContext::publication((int) $booking->trip_id)) {
    $this->refund($booking);
   }
  }
- private function refund(Passenger$b):void{$hold=DB::table('mobility_commute_demo_holds')->where('booking_id',$b->id)->lockForUpdate()->first();if(!$hold||$hold->state!=='held')return;$w=$this->walletLock($b->user_id);DB::table('mobility_commute_demo_wallets')->where('user_id',$b->user_id)->increment('available_minor',$hold->amount_minor);DB::table('mobility_commute_demo_holds')->where('booking_id',$b->id)->update(['state'=>'refunded','updated_at'=>now()]);$this->entry($b->user_id,'refund',$hold->amount_minor,$b->id);}
+ private function refund(Passenger $b): void {
+  $payment = DB::table('mobility_commute_demo_holds')->where('booking_id', $b->id)->lockForUpdate()->first();
+  if (!$payment || !in_array($payment->state, ['held', 'paid'], true)) return;
+  // Previously held payments were never credited to a driver. Immediate
+  // student-demo transfers must instead be reversed on cancellation.
+  if ($payment->state === 'paid') {
+   $this->lockWallets((int)$payment->rider_id, (int)$payment->driver_id);
+   DB::table('mobility_commute_demo_wallets')->where('user_id', $payment->driver_id)->decrement('available_minor', $payment->amount_minor);
+   $this->entry((int)$payment->driver_id, 'payment_reversal', -$payment->amount_minor, $b->id);
+  } else {
+   $this->walletLock((int)$payment->rider_id);
+  }
+  DB::table('mobility_commute_demo_wallets')->where('user_id', $payment->rider_id)->increment('available_minor', $payment->amount_minor);
+  DB::table('mobility_commute_demo_holds')->where('booking_id', $b->id)->update(['state'=>'refunded', 'updated_at'=>now()]);
+  $this->entry((int)$payment->rider_id, 'refund', $payment->amount_minor, $b->id);
+ }
  public function wallet(User$u):array{$this->requireDemo($u);$w=DB::table('mobility_commute_demo_wallets')->where('user_id',$u->id)->first();return['demo_only'=>true,'available_minor'=>(int)($w->available_minor??0),'held_minor'=>(int)DB::table('mobility_commute_demo_holds')->where('rider_id',$u->id)->where('state','held')->sum('amount_minor'),'pending_release_minor'=>(int)DB::table('mobility_commute_demo_holds')->where('driver_id',$u->id)->where('state','held')->sum('amount_minor'),'entries'=>DB::table('mobility_commute_demo_entries')->where('user_id',$u->id)->orderByDesc('id')->limit(30)->get()->all()];}
  public function topup(User$u,int$amount):array{$this->requireDemo($u);return DB::transaction(function()use($u,$amount){$w=$this->walletLock($u->id);if($w->available_minor+$amount>1000000)throw new SegmentException('DEMO_WALLET_LIMIT',422);DB::table('mobility_commute_demo_wallets')->where('user_id',$u->id)->increment('available_minor',$amount);$this->entry($u->id,'demo_credit',$amount);return$this->wallet($u);});}
- public function pay(User$u,int$id):array{$this->requireDemo($u);return DB::transaction(function()use($u,$id){$pre=Passenger::findOrFail($id);$trip=Trip::whereKey($pre->trip_id)->lock('for update nowait')->firstOrFail();$b=Passenger::whereKey($id)->lockForUpdate()->firstOrFail();if((int)$b->user_id!==$u->id)throw new SegmentException('RIDER_REQUIRED',403);$this->planned($trip);if((int)$b->request_state!==1)throw new SegmentException('ACCEPTED_BOOKING_REQUIRED',409);$meta=DB::table('mobility_commute_demo_trips')->where('trip_id',$trip->id)->first();if(!$meta)throw new SegmentException('DEMO_TRIP_REQUIRED',403);if($meta->is_publication){$meta=app(CommuteMatchingService::class)->terms($b);if(!$meta)throw new SegmentException('COMMUTE_QUOTE_CHANGED',409);}$hold=DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->first();if($hold)return['data'=>$this->bookingDto($b,$u)];$wallet=$this->walletLock($u->id);if($wallet->available_minor<$meta->fare_minor)throw new SegmentException('INSUFFICIENT_DEMO_CREDITS',422);DB::table('mobility_commute_demo_wallets')->where('user_id',$u->id)->decrement('available_minor',$meta->fare_minor);DB::table('mobility_commute_demo_holds')->insert(['booking_id'=>$id,'rider_id'=>$u->id,'driver_id'=>$trip->user_id,'amount_minor'=>$meta->fare_minor,'state'=>'held','created_at'=>now(),'updated_at'=>now()]);$this->entry($u->id,'ride_hold',-$meta->fare_minor,$id);return['data'=>$this->bookingDto($b,$u)];});}
+ public function pay(User $u, int $id): array {
+  $this->requireDemo($u);
+  return DB::transaction(function () use ($u, $id) {
+   $pre = Passenger::findOrFail($id);
+   $trip = Trip::whereKey($pre->trip_id)->lock('for update nowait')->firstOrFail();
+   $booking = Passenger::whereKey($id)->lockForUpdate()->firstOrFail();
+   if ((int)$booking->user_id !== $u->id) throw new SegmentException('RIDER_REQUIRED', 403);
+   $this->planned($trip);
+   if ((int)$booking->request_state !== 1) throw new SegmentException('ACCEPTED_BOOKING_REQUIRED', 409);
+   $meta = DB::table('mobility_commute_demo_trips')->where('trip_id', $trip->id)->first();
+   if (!$meta) throw new SegmentException('DEMO_TRIP_REQUIRED', 403);
+   if ($meta->is_publication) {
+    $meta = app(CommuteMatchingService::class)->terms($booking);
+    if (!$meta) throw new SegmentException('COMMUTE_QUOTE_CHANGED', 409);
+   }
+   if (DB::table('mobility_commute_demo_holds')->where('booking_id', $id)->exists()) return ['data'=>$this->bookingDto($booking, $u)];
+   $immediate = AddressRideContext::active();
+   $this->lockWallets($u->id, ...($immediate ? [(int)$trip->user_id] : []));
+   $wallet = DB::table('mobility_commute_demo_wallets')->where('user_id', $u->id)->first();
+   $fare = (int)$meta->fare_minor;
+   if ($fare < 0) throw new SegmentException('COMMUTE_QUOTE_CHANGED', 409);
+   if ($wallet->available_minor < $fare) throw new SegmentException('INSUFFICIENT_DEMO_CREDITS', 422);
+   DB::table('mobility_commute_demo_wallets')->where('user_id', $u->id)->decrement('available_minor', $fare);
+   DB::table('mobility_commute_demo_holds')->insert([
+    'booking_id'=>$id, 'rider_id'=>$u->id, 'driver_id'=>$trip->user_id, 'amount_minor'=>$fare,
+    'state'=>$immediate ? 'paid' : 'held', 'created_at'=>now(), 'updated_at'=>now(),
+   ]);
+   $this->entry($u->id, $immediate ? 'ride_payment' : 'ride_hold', -$fare, $id);
+   if ($immediate) {
+    DB::table('mobility_commute_demo_wallets')->where('user_id', $trip->user_id)->increment('available_minor', $fare);
+    $this->entry((int)$trip->user_id, 'driver_payment', $fare, $id);
+   }
+   return ['data'=>$this->bookingDto($booking, $u)];
+  });
+ }
  public function arrive(User$u,int$id):array{$this->requireDemo($u);return DB::transaction(function()use($u,$id){$pre=Passenger::findOrFail($id);Trip::whereKey($pre->trip_id)->lock('for update nowait')->firstOrFail();$b=Passenger::whereKey($id)->lockForUpdate()->firstOrFail();if((int)$b->user_id!==$u->id)throw new SegmentException('RIDER_REQUIRED',403);$hold=DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->lockForUpdate()->first();if(!$hold||$hold->state!=='held'||DB::table('mobility_trip_lifecycles')->where('trip_id',$b->trip_id)->value('state')!=='completed')throw new SegmentException('COMPLETE_PAID_TRIP_REQUIRED',409);if(!$hold->arrived_at)DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->update(['arrived_at'=>now('UTC'),'release_at'=>now('UTC')->addHours(3),'updated_at'=>now()]);return['data'=>$this->bookingDto($b,$u)];});}
  public function release(User$u):array{$this->requireDemo($u);$ids=DB::table('mobility_commute_demo_holds')->where('driver_id',$u->id)->where('state','held')->whereNotNull('arrived_at')->where('release_at','<=',now('UTC'))->pluck('booking_id');foreach($ids as$id)DB::transaction(function()use($u,$id){$pre=Passenger::findOrFail($id);if(AddressRideContext::active()&&!AddressRideContext::publication((int)$pre->trip_id))return;Trip::whereKey($pre->trip_id)->lock('for update nowait')->firstOrFail();$h=DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->lockForUpdate()->first();if($h->state!=='held'||!$h->arrived_at||CarbonImmutable::parse($h->release_at,'UTC')->gt(now('UTC'))||DB::table('mobility_trip_lifecycles')->where('trip_id',$pre->trip_id)->value('state')!=='completed')return;$this->walletLock($u->id);DB::table('mobility_commute_demo_wallets')->where('user_id',$u->id)->increment('available_minor',$h->amount_minor);DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->update(['state'=>'released','updated_at'=>now()]);$this->entry($u->id,'driver_release',$h->amount_minor,$id);});return$this->wallet($u);}
- public function confirmPaymentReceived(User$u,int$id):array{$this->requireDemo($u);return DB::transaction(function()use($u,$id){$pre=Passenger::findOrFail($id);$trip=Trip::whereKey($pre->trip_id)->lockForUpdate()->firstOrFail();$b=Passenger::whereKey($id)->lockForUpdate()->firstOrFail();if((int)$trip->user_id!==$u->id)throw new SegmentException('TRIP_OWNER_REQUIRED',403);$hold=DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->lockForUpdate()->first();if(!$hold||$hold->state!=='released')throw new SegmentException('PAYMENT_RELEASE_REQUIRED',409);$existing=DB::table('mobility_commute_demo_receipts')->where('booking_id',$id)->first();if($existing)return['data'=>$this->bookingDto($b,$u),'receipt'=>$this->demoReceiptDto($existing)];$number='DEMO-'.$trip->id.'-'.$id.'-'.strtoupper(substr(hash('sha256',$id.':'.$hold->amount_minor),0,10));$rid=DB::table('mobility_commute_demo_receipts')->insertGetId(['booking_id'=>$id,'rider_id'=>$hold->rider_id,'driver_id'=>$hold->driver_id,'amount_minor'=>$hold->amount_minor,'currency'=>'INR','receipt_number'=>$number,'confirmed_at'=>now('UTC'),'created_at'=>now(),'updated_at'=>now()]);$receipt=DB::table('mobility_commute_demo_receipts')->where('id',$rid)->first();return['data'=>$this->bookingDto($b,$u),'receipt'=>$this->demoReceiptDto($receipt)];});}
+ public function confirmPaymentReceived(User$u,int$id):array{$this->requireDemo($u);return DB::transaction(function()use($u,$id){$pre=Passenger::findOrFail($id);$trip=Trip::whereKey($pre->trip_id)->lockForUpdate()->firstOrFail();$b=Passenger::whereKey($id)->lockForUpdate()->firstOrFail();if((int)$trip->user_id!==$u->id)throw new SegmentException('TRIP_OWNER_REQUIRED',403);$hold=DB::table('mobility_commute_demo_holds')->where('booking_id',$id)->lockForUpdate()->first();if(!$hold||!in_array($hold->state,['released','paid'],true)||($hold->state==='paid'&&DB::table('mobility_trip_lifecycles')->where('trip_id',$trip->id)->value('state')!=='completed'))throw new SegmentException('PAYMENT_RELEASE_REQUIRED',409);$existing=DB::table('mobility_commute_demo_receipts')->where('booking_id',$id)->first();if($existing)return['data'=>$this->bookingDto($b,$u),'receipt'=>$this->demoReceiptDto($existing)];$number='DEMO-'.$trip->id.'-'.$id.'-'.strtoupper(substr(hash('sha256',$id.':'.$hold->amount_minor),0,10));$rid=DB::table('mobility_commute_demo_receipts')->insertGetId(['booking_id'=>$id,'rider_id'=>$hold->rider_id,'driver_id'=>$hold->driver_id,'amount_minor'=>$hold->amount_minor,'currency'=>'INR','receipt_number'=>$number,'confirmed_at'=>now('UTC'),'created_at'=>now(),'updated_at'=>now()]);$receipt=DB::table('mobility_commute_demo_receipts')->where('id',$rid)->first();return['data'=>$this->bookingDto($b,$u),'receipt'=>$this->demoReceiptDto($receipt)];});}
  private function demoReceiptDto(object$r):array{return['receipt_number'=>$r->receipt_number,'booking_id'=>(int)$r->booking_id,'amount_minor'=>(int)$r->amount_minor,'currency'=>$r->currency,'confirmed_at'=>$r->confirmed_at,'demo_only'=>true,'synthetic'=>true,'non_redeemable'=>true,'provider_reference'=>null];}
  public function receipt(User$u,string$key,array$body,\Closure$action):array{if(!preg_match('/^[\x21-\x7E]{1,100}$/',$key))throw new SegmentException('INVALID_IDEMPOTENCY_KEY',422);$hash=hash('sha256',json_encode($body));try{return DB::transaction(function()use($u,$key,$hash,$action){User::whereKey($u->id)->lock('for update nowait')->first();$old=DB::table('mobility_commute_receipts')->where('user_id',$u->id)->where('key_hash',hash('sha256',$key))->first();if($old){if(!hash_equals($old->request_hash,$hash))throw new SegmentException('IDEMPOTENCY_CONFLICT',409);return json_decode($old->response,true);}$response=$action();DB::table('mobility_commute_receipts')->insert(['user_id'=>$u->id,'key_hash'=>hash('sha256',$key),'request_hash'=>$hash,'response'=>json_encode($response),'created_at'=>now(),'updated_at'=>now()]);return$response;});}catch(QueryException$e){if(in_array((int)($e->errorInfo[1]??0),[1205,1213,3572],true))throw new SegmentException('COMMUTE_BUSY_RETRY',409);throw$e;}}
 }
