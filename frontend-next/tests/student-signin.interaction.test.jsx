@@ -89,3 +89,44 @@ it("disables sending when the mail transport is unavailable", async () => {
   expect(screen.getByRole("button", { name: "Send code" })).toBeDisabled();
   expect(request).toHaveBeenCalledTimes(1);
 });
+it("collects the student profile and gender before verifying username registration", async () => {
+  const request = vi.fn(async path => path === "college-auth/config" ? { delivery_available: true, campuses: ["CAMPUS-BLR"] }
+    : path === "college-auth/request" ? { challenge_id: "register-code" } : { token: "registered-token" });
+  const onSignedIn = vi.fn(async () => {});
+  render(<StudentSignIn request={request} onSignedIn={onSignedIn} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "student.one" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password-1234" } });
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Student One" } });
+  fireEvent.change(screen.getByLabelText("SRN"), { target: { value: "PES1UG24CS123" } });
+  fireEvent.change(screen.getByLabelText("Gender"), { target: { value: "woman" } });
+  fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "9876543210" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send code" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+  fireEvent.change(await screen.findByLabelText("Verification code"), { target: { value: "123456" } });
+  fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }));
+  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("registered-token"));
+  expect(request).toHaveBeenCalledWith("college-auth/verify", "", "POST", expect.objectContaining({
+    password_action: "register", username: "student.one", gender_identity: "woman", name: "Student One",
+  }));
+});
+
+it("supports account login and requests an email code for password reset", async () => {
+  const request = vi.fn(async path => path === "college-auth/config" ? { delivery_available: true, campuses: ["CAMPUS-BLR"] }
+    : path === "college-auth/request" ? { challenge_id: "reset-code" } : { token: "reset-token" });
+  const onSignedIn = vi.fn(async () => {});
+  render(<StudentSignIn request={request} onSignedIn={onSignedIn} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Account sign-in" }));
+  fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+  fireEvent.change(screen.getByLabelText("College email or SRN"), { target: { value: "student@stu.pes.edu" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send code" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+  fireEvent.change(await screen.findByLabelText("Verification code"), { target: { value: "123456" } });
+  fireEvent.change(screen.getByLabelText("New password"), { target: { value: "new-password-123" } });
+  fireEvent.click(screen.getByRole("button", { name: "Reset password and sign in" }));
+  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("reset-token"));
+  expect(request).toHaveBeenCalledWith("college-auth/verify", "", "POST", expect.objectContaining({
+    challenge_id: "reset-code", password_action: "reset", password: "new-password-123",
+  }));
+});

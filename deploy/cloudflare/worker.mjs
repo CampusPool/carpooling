@@ -4,6 +4,7 @@ const STUDENT_COOKIE = '__Host-campuspool_student';
 const STUDENT_MAX_AGE = 30 * 86400;
 const STUDENT_SESSION_PATH = '/api/mobility/college-auth/session';
 const STUDENT_VERIFY_PATH = '/api/mobility/college-auth/verify';
+const STUDENT_PASSWORD_LOGIN_PATH = '/api/mobility/college-auth/password-login';
 const STUDENT_HEADER = 'X-CampusPool-Browser-Session';
 
 // Laravel checks the administrator password and authorizes each protected API.
@@ -210,7 +211,7 @@ export default {
     if (isSession && (request.method === 'DELETE' || upstream.status === 401)) {
       responseHeaders.append('Set-Cookie', studentCookie('', 0));
     }
-    if ([STUDENT_VERIFY_PATH, STUDENT_SESSION_PATH].includes(url.pathname) && request.method === 'POST' && upstream.ok) {
+    if ([STUDENT_VERIFY_PATH, STUDENT_PASSWORD_LOGIN_PATH, STUDENT_SESSION_PATH].includes(url.pathname) && request.method === 'POST' && upstream.ok) {
       let result;
       try { result = await upstream.json(); }
       catch { return reply('Sign-in response unavailable', 502); }

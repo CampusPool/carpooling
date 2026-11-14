@@ -120,3 +120,19 @@ test('anonymous admin ingress forwards only dashboard routes and static assets',
   }
   assert.equal(upstream.mock.callCount(), allowed.length);
 });
+
+test('password login stores the student browser session in a secure cookie', async () => {
+ const host = 'https://preview.workers.dev';
+ const login = await worker.fetch(new Request(host+'/_tester',{method:'POST',headers:{Origin:host},body:new URLSearchParams({password:env.TESTER_PASSWORD})}),env);
+ const tester = login.headers.get('set-cookie').split(';')[0];
+ const original = globalThis.fetch;
+ globalThis.fetch = async () => Response.json({token:'synthetic-jwt', browser_session:'b'.repeat(64)});
+ try {
+  const response = await worker.fetch(new Request(host+'/api/mobility/college-auth/password-login',{
+   method:'POST', headers:{Cookie:tester,Origin:host,'Content-Type':'application/json'}, body:'{}',
+  }), env);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('set-cookie'), /__Host-campuspool_student=.*Secure; HttpOnly; SameSite=Strict/);
+  assert.deepEqual(await response.json(), {token:'synthetic-jwt'});
+ } finally { globalThis.fetch = original; }
+});

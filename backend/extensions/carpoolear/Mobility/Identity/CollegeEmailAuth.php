@@ -173,6 +173,8 @@ final class CollegeEmailAuth
             }
             $user = User::query()->where('email', $challenge->email)->lockForUpdate()->first();
             if (! $user) {
+                // A password reset never creates a new student account.
+                if (($registration['password_action'] ?? null) === 'reset') throw new CollegeEmailAuthException('STUDENT_PASSWORD_RESET_UNAVAILABLE', 422);
                 try {
                     $user = User::query()->create(['name' => Str::before($challenge->email, '@'), 'email' => $challenge->email, 'password' => Hash::make(Str::random(64)), 'active' => true, 'banned' => false]);
                 } catch (QueryException $e) {
@@ -236,9 +238,10 @@ final class CollegeEmailAuth
                 DB::table('mobility_memberships')->where('id', $membership->id)->update(['status' => 'approved', 'version' => (int) $membership->version + 1, 'updated_at' => now()]);
                 DB::table('mobility_membership_audits')->insert(['membership_id' => $membership->id, 'user_id' => $user->id, 'actor_id' => $user->id, 'previous_status' => 'pending', 'new_status' => 'approved', 'version' => (int) $membership->version + 1, 'reason' => 'college_email_otp_verification', 'created_at' => now(), 'updated_at' => now()]);
             }
+            app(StudentPasswordAuth::class)->applyVerified($user, $registration);
             DB::table('mobility_college_email_challenges')->where('id', $challenge->id)->update(['consumed_at' => now(), 'updated_at' => now()]);
             $browser = StudentIdentityBoundary::publicMode() ? ['browser_session' => app(StudentBrowserSession::class)->issue($user)] : [];
-            return $browser + ['token' => auth('api')->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
+            return $browser + ['token' => auth('api')->claims(app(StudentPasswordAuth::class)->tokenClaims($user))->fromUser($user), 'user' => ['id' => (int) $user->id, 'name' => (string) $user->name, 'email' => (string) $user->email], 'student_profile' => ['srn' => (string) $profile->srn_normalized, 'campus_code' => (string) $profile->campus_code], 'verified_college_email' => true];
         });
         if (($result['error'] ?? null) === 'COLLEGE_OTP_INVALID') throw new CollegeEmailAuthException('COLLEGE_OTP_INVALID', 422);
         return $result;
