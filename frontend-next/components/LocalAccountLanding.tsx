@@ -62,6 +62,7 @@ export default function LocalAccountLanding({
           <h1>Share the<br /><em>way home.</em></h1>
           <p className="lede">Create separate rider and driver accounts. Use different browser profiles or a normal and private window, so each account keeps its own sign-in while you publish a ride, request a seat, and accept it.</p>
           <LocalAccountSignIn request={request} busy={busy} onSignedIn={onSignedIn} />
+          <p className="fine"><a href="/admin">Open the dedicated administrator control center →</a></p>
           <details className="admin-login">
             <summary>Administrator sign-in</summary>
             <p className="fine">Use an existing administrator account. This form does not create accounts or grant privileges.</p>

@@ -1,10 +1,24 @@
-// Tester-only HTTPS ingress. The origin remains an InstaBox private port.
+// HTTPS ingress for the tester preview and administrator sign-in. The origin remains an InstaBox private port.
 const COOKIE = '__Host-campuspool_tester';
 const STUDENT_COOKIE = '__Host-campuspool_student';
 const STUDENT_MAX_AGE = 30 * 86400;
 const STUDENT_SESSION_PATH = '/api/mobility/college-auth/session';
 const STUDENT_VERIFY_PATH = '/api/mobility/college-auth/verify';
 const STUDENT_HEADER = 'X-CampusPool-Browser-Session';
+
+// Laravel checks the administrator password and authorizes each protected API.
+function isAdminIngress(pathname, method) {
+  if (method === 'GET' || method === 'HEAD') {
+    return pathname === '/admin' || pathname === '/admin/'
+      || /^\/_next\/static\/(?:[\w~-][\w.~-]*\/)*[\w~-][\w.~-]*\.(?:js|css|woff2?)$/.test(pathname)
+      || /^\/api\/mobility\/operator\/(?:dashboard|analytics|memberships|host-applications|driver-onboarding|cash-disputes|dbms\/health|trips\/\d+)$/.test(pathname)
+      || /^\/api\/admin\/support\/tickets\/\d+$/.test(pathname);
+  }
+  return method === 'POST' && (
+    /^\/api\/mobility\/operator\/(?:login|logout|memberships\/\d+\/decision|driver-onboarding\/\d+\/review)$/.test(pathname)
+    || /^\/api\/admin\/support\/tickets\/\d+\/(?:assign-me|resolve)$/.test(pathname)
+  );
+}
 
 function studentCookie(value, maxAge) {
   return `${STUDENT_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
@@ -166,7 +180,7 @@ export default {
       if (['POST', 'DELETE'].includes(request.method) && request.headers.get('Origin') !== url.origin) return reply(null, 403);
       if (!student && request.method !== 'POST') return reply(null, request.method === 'GET' ? 401 : 204);
     }
-    if (!student && !await validSession(cookies, env.SESSION_SECRET)) {
+    if (!isAdminIngress(url.pathname, request.method) && !student && !await validSession(cookies, env.SESSION_SECRET)) {
       if (url.pathname.startsWith('/api/')) return reply('{"error":"tester_access_required"}',401,{'Content-Type':'application/json'});
       return reply(null,303,{'Location':'/_tester'});
     }

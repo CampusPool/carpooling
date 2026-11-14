@@ -77,3 +77,46 @@ test('remembered student credential is HttpOnly, can restore without tester cook
   assert.match(failedLogout.headers.get('set-cookie'), /Max-Age=0/);
  } finally {globalThis.fetch=original;}
 });
+
+test('anonymous admin ingress forwards only dashboard routes and static assets', async (t) => {
+  const host = 'https://preview.workers.dev';
+  const upstream = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 418 }));
+  const allowed = [
+    ['GET', '/admin'],
+    ['HEAD', '/admin/'],
+    ['GET', '/_next/static/chunks/2eim0gx_cb-2q.css'],
+    ['GET', '/_next/static/chunks/turbopack-3-ry682tkyiqk.js'],
+    ['POST', '/api/mobility/operator/login'],
+    ['POST', '/api/mobility/operator/logout'],
+    ['GET', '/api/mobility/operator/analytics?days=7'],
+    ['GET', '/api/mobility/operator/trips/12'],
+    ['POST', '/api/mobility/operator/memberships/12/decision'],
+    ['POST', '/api/mobility/operator/driver-onboarding/12/review'],
+    ['GET', '/api/admin/support/tickets/12'],
+    ['POST', '/api/admin/support/tickets/12/resolve'],
+  ];
+  for (const [method, path] of allowed) {
+    const response = await worker.fetch(new Request(host + path, {
+      method, headers: { Authorization: 'Bearer synthetic-session' },
+    }), env);
+    assert.equal(response.status, 418, path);
+    const [target, options] = upstream.mock.calls.at(-1).arguments;
+    assert.equal(target.pathname + target.search, path);
+    assert.equal(options.headers.get('Authorization'), 'Bearer synthetic-session');
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  }
+  for (const [method, path, status] of [
+    ['GET', '/', 303],
+    ['GET', '/admin-other', 303],
+    ['GET', '/_next/static/chunks/student.js.map', 303],
+    ['POST', '/_next/static/chunks/asset.js', 303],
+    ['GET', '/api/mobility/college-auth/config', 401],
+    ['GET', '/api/mobility/operator/unknown', 401],
+    ['GET', '/api/admin/support/tickets', 401],
+    ['GET', '/api/mobility/operator/login', 401],
+    ['DELETE', '/api/admin/support/tickets/12', 401],
+  ]) {
+    assert.equal((await worker.fetch(new Request(host + path, { method }), env)).status, status, path);
+  }
+  assert.equal(upstream.mock.callCount(), allowed.length);
+});

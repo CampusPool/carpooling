@@ -40,6 +40,13 @@ final class StudentIdentityBoundary
         // Resolve the JWT guard even if upstream "logged" middleware runs later.
         try { $user = $request->user('api') ?: auth('api')->user(); } catch (\Throwable) { $user = null; }
         if ($user !== null) {
+            // Operator APIs already apply administrative authorization; the
+            // preview admin is not a student and does not impersonate one.
+            if ($user->is_admin && $user->active && ! $user->banned
+                && (str_starts_with($path, 'api/mobility/operator/')
+                    || str_starts_with($path, 'api/admin/support/'))) {
+                return $next($request);
+            }
             $email = (string) ($user->email ?? '');
             $normalized = app(CollegeEmailAuth::class)->normalizeEmail($email);
             $verified = $normalized !== null && $normalized === $email

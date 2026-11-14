@@ -11,7 +11,7 @@ Request path:
 
 The Worker requires a high-entropy tester key, then issues an eight-hour
 HMAC-signed Secure/HttpOnly/SameSite cookie. Application bearer tokens remain
-separate. Anonymous API requests return 401; pages redirect to `/_tester`.
+separate. The student preview redirects anonymous page requests to `/_tester` and returns 401 for anonymous student API requests. The Worker also serves `/admin`, shared Next.js scripts, styles and fonts, and an allowlist of dashboard API routes and methods. Laravel handles administrator sign-in and authorization.
 The InstaBox port independently rejects requests without its private token.
 The Worker forwards that token only to the configured HTTPS InstaBox origin.
 No database, Mailpit, or analytics port is published.
