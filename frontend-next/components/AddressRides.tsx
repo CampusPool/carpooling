@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import AddressPlacePicker, { type AddressPlace } from "./AddressPlacePicker";
 import CanonicalRouteMap from "./CanonicalRouteMap";
-import OlaMapPanel from "./OlaMapPanel";
+import OlaStaticRouteMap from "./OlaStaticRouteMap";
 import RideConversation from "./RideConversation";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import { emitUnauthorized } from "../lib/session-events";
@@ -271,8 +271,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         pickup={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.pickup || details.ride.route_map.points.driver_start, 1, "Pickup") : pickup}
         dropoff={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.dropoff || details.ride.route_map.points.driver_end, 2, "Drop-off") : dropoff}
         geometry={details.ride.route_map?.driver_geometry} previewLabel={details.kind === "match" ? "Your pickup-to-destination preview" : undefined} />}
-      {useOla && mapStatus === "ready" && details.ride.route_map?.driver_geometry?.length > 1 && <OlaMapPanel
-        token={token} geometry={details.ride.route_map.driver_geometry} pick={null} onPick={() => {}} onState={() => {}} onError={setError} />}
+      {useOla && mapStatus === "ready" && details.ride.route_map?.driver_geometry?.length > 1 && <OlaStaticRouteMap token={token} geometry={details.ride.route_map.driver_geometry} />}
       {details.kind === "match" && <div className={styles.cardFooter}>
         <RideFare ride={details.ride} />
         <button type="button" className={styles.primary} disabled={busy || Number(details.ride.seats_available) < 1 || hasBooking(details.ride)} onClick={() => void requestRide(details.ride)}>Request ride</button>
@@ -315,7 +314,7 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       </form>
       {mapStatus === "unavailable" && <p className={styles.message}>Address search is temporarily unavailable. <button type="button" onClick={() => { setMapStatus("loading"); setMapRetry(value => value + 1); }}>Retry Maps</button></p>}
       {mapStatus === "ready" && origin && destination && !searched && <div className={styles.map}>{useOla
-        ? <OlaMapPanel token={token} origin={origin} destination={destination} pick={null} onPick={() => {}} onState={() => {}} onError={setError} />
+        ? <OlaStaticRouteMap token={token} origin={origin} destination={destination} />
         : <CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} />}</div>}
       {mode === "find" && searched && !rides.length && <div className={styles.message} role="status">
         <strong>No matching rides for {when(`${date}T${time}:00+05:30`)} IST.</strong>
