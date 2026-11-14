@@ -66,7 +66,7 @@ final class JourneyPlanner
                     'pricing' => DemoFarePolicy::quote($mode, $choice, $ride['distance_meters']),
                     'access_verified' => false, 'requires_access_acknowledgement' => true, 'booking_enabled' => false];
             } catch (RoutingException $error) {
-                if ($error->machineCode === 'NO_ROUTE') continue;
+                if (in_array($error->machineCode, ['NO_ROUTE', 'ROUTE_SNAP_TOO_FAR'], true)) continue;
                 throw new PickupException($error->machineCode, 503);
             }
         }
@@ -88,7 +88,7 @@ final class JourneyPlanner
                 if ($candidate['distance'] > $maxWalk) continue;
                 $evaluated++;
                 try { $walk = $this->walking($access ? $point : $candidate['point'], $access ? $candidate['point'] : $point, $deadline); }
-                catch (RoutingException $error) { if ($error->machineCode === 'NO_ROUTE') continue; throw $error; }
+                catch (RoutingException $error) { if (in_array($error->machineCode, ['NO_ROUTE', 'ROUTE_SNAP_TOO_FAR'], true)) continue; throw $error; }
                 if ($walk['total_meters'] <= $maxWalk) $options[] = $candidate + ['walk' => $walk];
             }
             return $options;
@@ -139,13 +139,13 @@ final class JourneyPlanner
             if (! array_key_exists($i, $access)) {
                 $evaluated++;
                 try { $access[$i] = $this->walking($origin, $starts[$i]['point'], $deadline); }
-                catch (RoutingException $e) { if ($e->machineCode !== 'NO_ROUTE') throw $e; $access[$i] = null; }
+                catch (RoutingException $e) { if (!in_array($e->machineCode, ['NO_ROUTE', 'ROUTE_SNAP_TOO_FAR'], true)) throw $e; $access[$i] = null; }
             }
             if ($access[$i] === null) continue;
             if (! array_key_exists($j, $egress)) {
                 $evaluated++;
                 try { $egress[$j] = $this->walking($ends[$j]['point'], $destination, $deadline); }
-                catch (RoutingException $e) { if ($e->machineCode !== 'NO_ROUTE') throw $e; $egress[$j] = null; }
+                catch (RoutingException $e) { if (!in_array($e->machineCode, ['NO_ROUTE', 'ROUTE_SNAP_TOO_FAR'], true)) throw $e; $egress[$j] = null; }
             }
             if ($egress[$j] === null) continue;
             $total = $access[$i]['total_meters'] + $egress[$j]['total_meters'];
@@ -212,7 +212,7 @@ final class JourneyPlanner
                 // No ambiguous interval or new off-route detour is admitted.
                 continue;
             } catch (RoutingException $error) {
-                if ($error->machineCode === 'NO_ROUTE') continue;
+                if (in_array($error->machineCode, ['NO_ROUTE', 'ROUTE_SNAP_TOO_FAR'], true)) continue;
                 throw new PickupException($error->machineCode, 503);
             }
         }

@@ -212,18 +212,14 @@ final class CommuteMatchingService {
    $baseline['points'] = [$publication['driver_origin'], $publication['driver_destination']];
   }
   $onRouteOnly = !empty($publication['student_address']) && ((int) $publication['max_detour_meters'] === 0 || (int) $publication['max_detour_seconds'] === 0);
-  $choice = $shared || $onRouteOnly ? 'ON_ROUTE_MEETING_POINT' : $publication['choice'];
+  // The driver's explicit choice applies until a shared route has been agreed.
+  // A later rider cannot silently replace a route accepted by someone else.
+  $choice = $agreed || $onRouteOnly ? 'ON_ROUTE_MEETING_POINT' : $publication['choice'];
   $maxWalk = min($walk, (int) $publication['max_walk_meters']);
   $planner = app(JourneyPlanner::class);
   $journey = ['available' => false, 'code' => 'PICKUP_CHOICE_MISMATCH'];
   if ($requestedChoice === 'both' || $requestedChoice === $choice) {
    $journey = $planner->plan($baseline, $from, $to, $mode, $choice, $maxWalk, (int) $publication['max_detour_meters'], (int) $publication['max_detour_seconds']);
-  }
-  // Before anyone accepts, a direct pickup can establish a shared detour.
-  // All later riders use meeting points on that agreed route.
-  if ($shared && !$onRouteOnly && !$agreed && !$journey['available'] && $publication['choice'] === 'DIRECT_RIDER_PICKUP'
-   && in_array($requestedChoice, ['both', 'DIRECT_RIDER_PICKUP'], true)) {
-   return $planner->plan($baseline, $from, $to, $mode, 'DIRECT_RIDER_PICKUP', $maxWalk, (int) $publication['max_detour_meters'], (int) $publication['max_detour_seconds']);
   }
   return $journey;
  }

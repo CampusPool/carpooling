@@ -31,6 +31,15 @@ final class AddressRidePresenter
 
     private static function card(array $card): array
     {
+        // The rider may see their own walking approach and meeting point;
+        // never expose the driver's complete private route before acceptance.
+        if (($card['choice'] ?? null) === 'ON_ROUTE_MEETING_POINT') {
+            $map = $card['route_map'] ?? [];
+            $card['pickup_approach'] = [
+                'pickup' => $map['points']['pickup'] ?? null,
+                'walking_geometry' => $map['access_geometry'] ?? [],
+            ];
+        }
         unset($card['demo_fixture'], $card['route_map'], $card['driver_route_origin_label'], $card['driver_route_destination_label']);
         if (isset($card['driver_name'])) $card['driver_name'] = self::firstName($card['driver_name']);
         $card['ranking_reasons'] = array_map(fn ($reason) => str_replace(' demo fare', ' estimated fare', $reason), $card['ranking_reasons'] ?? []);
