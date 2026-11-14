@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import AddressPlacePicker, { type AddressPlace } from "./AddressPlacePicker";
 import CanonicalRouteMap from "./CanonicalRouteMap";
+import OlaMapPanel from "./OlaMapPanel";
 import RideConversation from "./RideConversation";
 import { loadMapsSdk } from "../lib/maps-loader.mjs";
 import { emitUnauthorized } from "../lib/session-events";
@@ -115,9 +116,13 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
   const pickup = useMemo(() => origin ? { id: 1, name: origin.label, lat: origin.lat, lng: origin.lng } : undefined, [origin]);
   const dropoff = useMemo(() => destination ? { id: 2, name: destination.label, lat: destination.lat, lng: destination.lng } : undefined, [destination]);
 
-  useEffect(() => loadMapsSdk({ fetchImpl: fetch, documentRef: document, google: (window as any).google,
-    onReady: () => setMapStatus("ready"), onUnavailable: () => setMapStatus("unavailable"),
-  }), [mapRetry]);
+  const useOla = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
+  useEffect(() => {
+    if (useOla) { setMapStatus("ready"); return; }
+    return loadMapsSdk({ fetchImpl: fetch, documentRef: document, google: (window as any).google,
+      onReady: () => setMapStatus("ready"), onUnavailable: () => setMapStatus("unavailable"),
+    });
+  }, [mapRetry, useOla]);
 
   const refresh = useCallback(async () => {
     const generation = ++latestRefresh.current;
@@ -262,10 +267,12 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       {details.ride.driver_verified_pes === true && <p className={styles.verified}>✓ Verified PES email</p>}
       <RouteLabels ride={details.ride} />
       <RideMetrics ride={details.ride} />
-      {mapStatus === "ready" && (details.ride.route_map?.points || (details.kind === "match" && pickup && dropoff)) && <CanonicalRouteMap points={noPoints}
+      {!useOla && mapStatus === "ready" && (details.ride.route_map?.points || (details.kind === "match" && pickup && dropoff)) && <CanonicalRouteMap points={noPoints}
         pickup={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.pickup || details.ride.route_map.points.driver_start, 1, "Pickup") : pickup}
         dropoff={details.ride.route_map?.points ? mapPoint(details.ride.route_map.points.dropoff || details.ride.route_map.points.driver_end, 2, "Drop-off") : dropoff}
         geometry={details.ride.route_map?.driver_geometry} previewLabel={details.kind === "match" ? "Your pickup-to-destination preview" : undefined} />}
+      {useOla && mapStatus === "ready" && details.ride.route_map?.driver_geometry?.length > 1 && <OlaMapPanel
+        token={token} geometry={details.ride.route_map.driver_geometry} pick={null} onPick={() => {}} onState={() => {}} onError={setError} />}
       {details.kind === "match" && <div className={styles.cardFooter}>
         <RideFare ride={details.ride} />
         <button type="button" className={styles.primary} disabled={busy || Number(details.ride.seats_available) < 1 || hasBooking(details.ride)} onClick={() => void requestRide(details.ride)}>Request ride</button>
@@ -275,8 +282,8 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
       <form className={styles.form} onSubmit={submit}>
         <header className={styles.wide}><h2>{mode === "offer" ? "Create a ride" : "Find a ride"}</h2>
           <p>{mode === "offer" ? "Choose where you’ll drive and when you’ll leave." : "Choose your pickup, destination and departure time."}</p></header>
-        <AddressPlacePicker label={mode === "offer" ? "Driver pickup" : "Pickup"} value={origin} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("origin", place)} />
-        <AddressPlacePicker label="Destination" value={destination} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("destination", place)} />
+        <AddressPlacePicker token={token} label={mode === "offer" ? "Driver pickup" : "Pickup"} value={origin} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("origin", place)} />
+        <AddressPlacePicker token={token} label="Destination" value={destination} ready={mapStatus === "ready"} disabled={busy} onChange={place => changePlace("destination", place)} />
         <div className={styles.wide}><button type="button" className={styles.secondary} disabled={busy || !origin || !destination} onClick={() => {
           const from = origin; changePlace("origin", destination); changePlace("destination", from);
         }}>⇄ Swap locations</button></div>
@@ -307,7 +314,9 @@ export default function AddressRides({ token, onDriverOnboarding, initialMode = 
         </button>}
       </form>
       {mapStatus === "unavailable" && <p className={styles.message}>Address search is temporarily unavailable. <button type="button" onClick={() => { setMapStatus("loading"); setMapRetry(value => value + 1); }}>Retry Maps</button></p>}
-      {mapStatus === "ready" && pickup && dropoff && !searched && <div className={styles.map}><CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} /></div>}
+      {mapStatus === "ready" && origin && destination && !searched && <div className={styles.map}>{useOla
+        ? <OlaMapPanel token={token} origin={origin} destination={destination} pick={null} onPick={() => {}} onState={() => {}} onError={setError} />
+        : <CanonicalRouteMap points={noPoints} pickup={pickup} dropoff={dropoff} />}</div>}
       {mode === "find" && searched && !rides.length && <div className={styles.message} role="status">
         <strong>No matching rides for {when(`${date}T${time}:00+05:30`)} IST.</strong>
         {searchReasons.includes("PICKUP_TIME_MISMATCH") && <p>An offer’s pickup falls outside your search window{pickupWindow ? ` (±${pickupWindow} min)` : ""}.</p>}

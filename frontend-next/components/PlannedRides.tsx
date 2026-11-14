@@ -64,6 +64,7 @@ export default function PlannedRides({ token, onBack, onSaved }: {
   useEffect(() => {
     setMapsReady(false);
     setMapsError("");
+    if (process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola") { setMapsReady(true); return; }
     return loadMapsSdk({
       fetchImpl: fetch,
       documentRef: document,
@@ -123,8 +124,8 @@ export default function PlannedRides({ token, onBack, onSaved }: {
     {saved === undefined && !loadError && <p role="status">Loading your schedule…</p>}
     {saved !== undefined && <form className={styles.form} onSubmit={save} aria-busy={saving}>
       <div className={styles.fields}>
-        <AddressPlacePicker label="Home location" value={draft.home} ready={mapsReady} disabled={saving} onChange={place => update("home", place)} />
-        <AddressPlacePicker label="Campus location" value={draft.campus} ready={mapsReady} disabled={saving} onChange={place => update("campus", place)} />
+        <AddressPlacePicker token={token} label="Home location" value={draft.home} ready={mapsReady} disabled={saving} onChange={place => update("home", place)} />
+        <AddressPlacePicker token={token} label="Campus location" value={draft.campus} ready={mapsReady} disabled={saving} onChange={place => update("campus", place)} />
       </div>
       {mapsError && <div className={styles.alert} role="alert">{mapsError} <button type="button" onClick={() => setMapsAttempt(value => value + 1)}>Retry address search</button></div>}
       <div className={styles.fields}>

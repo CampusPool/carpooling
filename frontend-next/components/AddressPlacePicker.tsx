@@ -1,18 +1,21 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { olaAutocomplete, olaDetails } from "../lib/ola-client";
 import styles from "./AddressRides.module.css";
 
 export type AddressPlace = { label: string; lat: number; lng: number };
 type Suggestion = { id: string; label: string; prediction: any };
 
-export default function AddressPlacePicker({ label, value, ready, disabled, onChange }: {
+export default function AddressPlacePicker({ label, value, ready, disabled, onChange, token = "" }: {
   label: string;
+  token?: string;
   value?: AddressPlace;
   ready: boolean;
   disabled?: boolean;
   onChange: (place?: AddressPlace) => void;
 }) {
+  const useOla = process.env.NEXT_PUBLIC_MAP_PROVIDER === "ola";
   const [query, setQuery] = useState(value?.label || "");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [busy, setBusy] = useState(false);
@@ -30,17 +33,20 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
       setBusy(true);
       setError("");
       try {
-        const { AutocompleteSuggestion } = await (window as any).google.maps.importLibrary("places");
-        const result = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
-          input: query.trim(), includedRegionCodes: ["in"],
-          locationBias: { south: 12.65, north: 13.35, west: 77.2, east: 77.95 },
-        });
-        if (generation.current !== requestId) return;
-        const next = (result.suggestions || []).flatMap((item: any) => {
-          const prediction = item.placePrediction;
-          const text = prediction?.text?.text || "";
-          return prediction?.toPlace && text ? [{ id: prediction.placeId || text, label: text, prediction }] : [];
-        }).slice(0, 6);
+        let next: Suggestion[];
+        if (useOla) {
+          const result = await olaAutocomplete(query.trim(), token);
+          if (generation.current !== requestId) return;
+          next = result.predictions.slice(0, 6).map(item => ({ id: item.placeId, label: item.description, prediction: item.placeId }));
+        } else {
+          const { AutocompleteSuggestion } = await (window as any).google.maps.importLibrary("places");
+          const result = await AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query.trim(), includedRegionCodes: ["in"], locationBias: { south: 12.65, north: 13.35, west: 77.2, east: 77.95 } });
+          if (generation.current !== requestId) return;
+          next = (result.suggestions || []).flatMap((item: any) => {
+            const prediction = item.placePrediction; const text = prediction?.text?.text || "";
+            return prediction?.toPlace && text ? [{ id: prediction.placeId || text, label: text, prediction }] : [];
+          }).slice(0, 6);
+        }
         setSuggestions(next);
         setActiveIndex(next.length ? 0 : -1);
         if (!next.length) setError("No addresses found. Try a nearby landmark.");
@@ -51,7 +57,7 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
       }
     }, 250);
     return () => { clearTimeout(timeout); generation.current++; };
-  }, [query, value, ready]);
+  }, [query, value, ready, token, useOla]);
 
   async function select(suggestion: Suggestion) {
     const requestId = ++generation.current;
@@ -60,17 +66,23 @@ export default function AddressPlacePicker({ label, value, ready, disabled, onCh
     setBusy(true);
     setError("");
     try {
-      const place = suggestion.prediction.toPlace();
-      await place.fetchFields({ fields: ["formattedAddress", "displayName", "location"] });
+      let lat: number, lng: number, label: string;
+      if (useOla) {
+        const result = await olaDetails(suggestion.prediction, token);
+        ({ lat, lng, label } = result.place);
+      } else {
+        const place = suggestion.prediction.toPlace();
+        await place.fetchFields({ fields: ["formattedAddress", "displayName", "location"] });
+        lat = place.location?.lat(); lng = place.location?.lng();
+        label = place.formattedAddress || place.displayName || suggestion.label;
+      }
       if (generation.current !== requestId) return;
-      const lat = place.location?.lat();
-      const lng = place.location?.lng();
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw Error("Missing coordinates");
       if (lat < 12.65 || lat > 13.35 || lng < 77.2 || lng > 77.95) {
         setError("Choose a location in Bengaluru.");
         return;
       }
-      const selected = { label: (place.formattedAddress || place.displayName || suggestion.label).slice(0, 160), lat, lng };
+      const selected = { label: (label || suggestion.label).slice(0, 160), lat, lng };
       setQuery(selected.label);
       onChange(selected);
     } catch {
