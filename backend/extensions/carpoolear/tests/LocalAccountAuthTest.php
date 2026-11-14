@@ -63,4 +63,17 @@ final class LocalAccountAuthTest extends TestCase
         ])->assertStatus(422)->assertJsonPath('error.code', 'PASSWORD_TOO_LONG_BYTES');
         $this->assertDatabaseMissing('mobility_local_accounts', ['username' => 'long_password']);
     }
+
+    public function test_registration_accepts_gender_and_stores_commute_profile(): void
+    {
+        $res = $this->postJson('/api/mobility/local-auth/register', [
+            'username' => 'gender_rider', 'password' => 'local-pass-123', 'role' => 'rider', 'gender' => 'female',
+        ])->assertCreated();
+
+        $userId = (int) $res->json('user.id');
+        $profile = DB::table('mobility_commute_profiles')->where('user_id', $userId)->first();
+        $this->assertNotNull($profile);
+        $this->assertSame('woman', $profile->gender_identity);
+        $this->assertSame(0, (int) $profile->same_gender_only);
+    }
 }

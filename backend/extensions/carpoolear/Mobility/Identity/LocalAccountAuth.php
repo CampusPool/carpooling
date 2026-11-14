@@ -19,13 +19,13 @@ final class LocalAccountAuth
         return CommuteService::demoEnabled() && ! StudentIdentityBoundary::publicMode();
     }
 
-    public function register(string $username, string $password, string $role): array
+    public function register(string $username, string $password, string $role, ?string $gender = null): array
     {
         $this->assertEnabled();
         $username = Str::lower(trim($username));
 
         try {
-            return DB::transaction(function () use ($username, $password, $role): array {
+            return DB::transaction(function () use ($username, $password, $role, $gender): array {
                 if (DB::table('mobility_local_accounts')->where('username', $username)->exists()) {
                     throw new LocalAccountAuthException('USERNAME_TAKEN', 409);
                 }
@@ -53,6 +53,27 @@ final class LocalAccountAuth
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+                if ($gender) {
+                    $genderIdentity = match ($gender) {
+                        'male' => 'man',
+                        'female' => 'woman',
+                        'other' => 'non_binary',
+                        default => $gender,
+                    };
+                    DB::table('mobility_commute_profiles')->insertOrIgnore([
+                        'user_id' => $user->id,
+                        'preferences' => json_encode([
+                            'role' => $role,
+                            'vehicle_preference' => 'both',
+                            'schedule_mode' => 'fixed',
+                            'weekdays' => [1, 2, 3, 4, 5],
+                        ], JSON_THROW_ON_ERROR),
+                        'gender_identity' => $genderIdentity,
+                        'same_gender_only' => false,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
                 if ($role === 'driver') {
                     $this->provisionSyntheticDriver($user);
                 }

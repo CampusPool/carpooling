@@ -74,6 +74,8 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
   const [destination, setDestination] = useState<Place | undefined>(() => validSavedPlace(savedProfile?.campus));
   const [date, setDate] = useState(() => initialCommuteSchedule(savedProfile?.outbound_time).date);
   const [time, setTime] = useState(() => initialCommuteSchedule(savedProfile?.outbound_time).time);
+  const [sameGenderOnly, setSameGenderOnly] = useState<boolean>(() => Boolean(savedProfile?.same_gender_only));
+  const [genderIdentity, setGenderIdentity] = useState<string>(() => savedProfile?.gender_identity || "");
   const [ready, setReady] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapPick, setMapPick] = useState<"origin" | "destination" | null>(null);
@@ -93,6 +95,23 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
   const [searchFeedback, setSearchFeedback] = useState("");
   const [activeTrip, setActiveTrip] = useState<number>();
   const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    if (savedProfile?.same_gender_only !== undefined) {
+      setSameGenderOnly(Boolean(savedProfile.same_gender_only));
+    }
+    if (savedProfile?.gender_identity) {
+      setGenderIdentity(savedProfile.gender_identity);
+    }
+  }, [savedProfile?.same_gender_only, savedProfile?.gender_identity]);
+
+  const displayGender = genderIdentity === "man" || genderIdentity === "male"
+    ? "Male"
+    : genderIdentity === "woman" || genderIdentity === "female"
+    ? "Female"
+    : genderIdentity === "non_binary" || genderIdentity === "other"
+    ? "Other"
+    : genderIdentity;
   const mapRoot = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const mapPickRef = useRef<"origin" | "destination" | null>(null);
@@ -179,12 +198,26 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
     if (!origin || !destination) { setError("Select your pickup and destination from map suggestions or the map."); return; }
     if (origin.lat === destination.lat && origin.lng === destination.lng) { setError("Choose different pickup and destination places."); return; }
     if (!isFutureCommute(date, time)) { setError("Choose a future departure at least 15 minutes from now (India Standard Time)."); return; }
+    if (sameGenderOnly && !genderIdentity) { setError("Please select your gender to enable same-gender matching."); return; }
     setBusy(true);
     try {
-      await api("profile", token, "PUT", { role: accountRole, vehicle_preference: "car", schedule_mode: "custom", home: origin, campus: destination, outbound_time: time, return_time: time, weekdays: [1, 2, 3, 4, 5, 6, 7], max_walk_meters: 999 });
+      await api("profile", token, "PUT", {
+        role: accountRole,
+        vehicle_preference: "car",
+        schedule_mode: "custom",
+        home: origin,
+        campus: destination,
+        outbound_time: time,
+        return_time: time,
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        max_walk_meters: 999,
+        same_gender_only: sameGenderOnly,
+        ...(genderIdentity ? { gender_identity: genderIdentity } : {}),
+      });
       if (isDriver) {
         await mutate("offers", { direction: "outbound", date, vehicle_type: "car", choice: "DIRECT_RIDER_PICKUP", max_detour_meters: 3000, max_detour_seconds: 600 });
-        setNotice("Ride published. Riders can now find it and request a seat."); await refresh();
+        setNotice(sameGenderOnly ? "Ride published with same-gender requests only. Riders of your gender can now find it and request a seat." : "Ride published. Riders can now find it and request a seat.");
+        await refresh();
       } else {
         const result = await api(`rides?direction=outbound&date=${encodeURIComponent(date)}&vehicle_type=both&pickup_choice=both`, token);
         const found = rows(result);
@@ -195,7 +228,9 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
             ? "Some driver rides were found, but their road route, walking distance or detour limits do not fit these pickup and destination places. Try a nearby road-accessible pickup point."
             : reasons.includes("PICKUP_TIME_MISMATCH")
               ? "Driver rides were found, but their pickup times do not fit your preferred time. Try another departure time."
-              : "");
+              : sameGenderOnly
+                ? "No matching rides from drivers of the same gender found for this route and time. Try adjusting your departure time or search without same-gender restriction."
+                : "");
         setSearched(true);
       }
     } catch (e: any) { setError(e.message); }
@@ -253,6 +288,49 @@ export default function LiveCarpool({ token, accountRole = "rider", savedProfile
         {mapPick && <small role="status">Click a road-accessible point on the map to set your {mapPick === "origin" ? "pickup" : "destination"}. This works when address suggestions are unavailable.</small>}
         <div className={styles.timeRow}><label>Travel date<input required disabled={busy} type="date" value={date} min={istDateTime(new Date()).date} onChange={e => { setDate(e.target.value); setRides([]); setSearched(false); setSearchFeedback(""); }} /></label><label>{isDriver ? "Departure time" : "Preferred pickup time"}<input required disabled={busy} type="time" value={time} onChange={e => { setTime(e.target.value); setRides([]); setSearched(false); setSearchFeedback(""); }} /></label></div>
         <small>Times are in India Standard Time. Rider search includes pickups within 15 minutes of your chosen time.</small>
+        <div className={styles.genderSection}>
+          <div className={styles.genderRow}>
+            <button
+              type="button"
+              className={sameGenderOnly ? styles.genderButtonActive : styles.genderButton}
+              aria-pressed={sameGenderOnly}
+              disabled={busy}
+              onClick={() => {
+                setSameGenderOnly(v => !v);
+                setRides([]);
+                setSearched(false);
+                setSearchFeedback("");
+              }}
+            >
+              {sameGenderOnly ? "✓ " : ""}
+              {isDriver ? "Same gender requests only" : "Same gender rides only"}
+            </button>
+            {displayGender ? (
+              <span className={styles.genderBadge}>Your gender: {displayGender}</span>
+            ) : (
+              <label style={{ display: "inline-flex", flexDirection: "row", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#38535b" }}>
+                Gender:
+                <select
+                  className={styles.genderSelect}
+                  value={genderIdentity}
+                  disabled={busy}
+                  onChange={e => {
+                    setGenderIdentity(e.target.value);
+                    setRides([]);
+                    setSearched(false);
+                    setSearchFeedback("");
+                  }}
+                >
+                  <option value="">Select gender</option>
+                  <option value="man">Male</option>
+                  <option value="woman">Female</option>
+                  <option value="non_binary">Other</option>
+                </select>
+              </label>
+            )}
+          </div>
+          <small>{isDriver ? "When active, you receive ride requests only from riders of your same gender." : "When active, you receive ride recommendations only from drivers of your same gender."}</small>
+        </div>
         <button className={styles.primary} type="submit" disabled={busy || !ready}>{busy ? "Please wait…" : isDriver ? "Publish ride" : "Find rides"}</button>
         {mapError && <div role="alert">{mapError} <button type="button" onClick={() => setRetry(v => v + 1)}>Retry Maps</button></div>}
       </form>

@@ -13,6 +13,7 @@ export default function LocalAccountSignIn({ request, busy, onSignedIn }: {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"rider" | "driver">("rider");
+  const [gender, setGender] = useState<"male" | "female" | "other">("male");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -28,7 +29,7 @@ export default function LocalAccountSignIn({ request, busy, onSignedIn }: {
     event.preventDefault(); setPending(true); setError("");
     try {
       const result = await request(`local-auth/${mode}`, "", "POST", {
-        username: username.trim(), password, ...(mode === "register" ? { role } : {}),
+        username: username.trim(), password, ...(mode === "register" ? { role, gender } : {}),
       });
       if (typeof result.token !== "string" || !result.token || !["rider", "driver"].includes(result.role)) {
         throw new Error("Sign-in did not return a valid account session.");
@@ -50,7 +51,10 @@ export default function LocalAccountSignIn({ request, busy, onSignedIn }: {
     <form onSubmit={submit} className="form-grid">
       <label>Username<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z0-9_]+" required /></label>
       <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={mode === "register" ? 8 : 1} maxLength={72} required /></label>
-      {mode === "register" && <label>Account type<select value={role} onChange={e => setRole(e.target.value as "rider" | "driver")}><option value="rider">Rider</option><option value="driver">Driver</option></select></label>}
+      {mode === "register" && <>
+        <label>Account type<select value={role} onChange={e => setRole(e.target.value as "rider" | "driver")}><option value="rider">Rider</option><option value="driver">Driver</option></select></label>
+        <label>Gender<select value={gender} onChange={e => setGender(e.target.value as "male" | "female" | "other")}><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></label>
+      </>}
       <button type="submit" className="secondary wide" disabled={busy || pending}>{mode === "register" ? "Create account" : "Sign in"}</button>
     </form>
     <button type="button" className="text-button" disabled={pending} onClick={() => { setMode(mode === "register" ? "login" : "register"); setError(""); }}>
