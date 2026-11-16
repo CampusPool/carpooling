@@ -362,72 +362,9 @@ Each user workflow traverses a deterministic pipeline: **Next.js UI Component** 
 
 > **Compliance Note:** This section provides **3 detailed UML Sequence Diagrams** (exceeding the template minimum of 2 sequence diagrams) covering our most critical end-to-end flows.
 
-#### 4.2.1 Sequence Diagram 1: Driver Onboarding & Ride Offer Publication with Server-Side Ola/OSRM Routing
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Driver as Student Driver
-    participant UI as Next.js Client (DriverOnboarding / LiveCarpool)
-    participant Proxy as Next.js / Laravel Route Proxy
-    participant Router as Ola Maps / OSRM Provider
-    participant API as Laravel CommuteController
-    participant DB as MySQL 8.0 (InnoDB)
-
-    Driver->>UI: Submit 4-field Vehicle & License Setup (or select Demo Vehicle)
-    UI->>API: POST /api/mobility/driver-onboarding (Bearer JWT)
-    API->>DB: Upsert cars + users.nro_doc + mobility_memberships(host_approved=1)
-    DB-->>API: Committed vehicle & approval state
-    API-->>UI: 200 OK (Driver Ready)
-
-    Driver->>UI: Enter Origin, Campus Gate, Departure Time, Seats, same_gender_only
-    UI->>Proxy: Request Place Autocomplete & Route Quote
-    Proxy->>Router: Fetch driving polyline, distance, ETA (Server API Key)
-    Router-->>Proxy: Route geometry & duration
-    Proxy-->>UI: Validated Quote + Static Route Map Preview
-    Driver->>UI: Click "Publish Commute Offer"
-    UI->>API: POST /api/mobility/commute/offers (Idempotency-Key)
-    API->>DB: BEGIN; INSERT trips, mobility_commute_demo_trips, mobility_trip_lifecycles, mobility_trip_events(action='publish'); COMMIT;
-    DB-->>API: Created trip_id & lifecycle v1
-    API-->>UI: 201 Created (Published Offer JSON)
 ```
 
-#### 4.2.2 Sequence Diagram 2: Symmetric Same-Gender Discovery, Atomic Seat Booking (`FOR UPDATE`) & Trigger Audit
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Rider as Student Rider
-    actor Driver as Student Driver
-    participant UI as Next.js Client
-    participant API as Laravel CommuteService
-    participant DB as MySQL 8.0 (InnoDB + Triggers)
-    participant Proj as Node/MongoDB 7.0 Projection
-
-    Rider->>UI: Toggle "Same gender rides only" & Search Route
-    UI->>API: GET /api/mobility/commute/offers?same_gender_only=1&direction=to_campus
-    API->>DB: SELECT active offers WHERE available_seats > 0 AND driver.gender = rider.gender
-    DB-->>API: Matching candidate offers (<1km walk verified)
-    API-->>UI: Render matching ride cards
-
-    Rider->>UI: Click "Request Seat"
-    UI->>API: POST /api/mobility/commute/bookings (Idempotency-Key)
-    API->>DB: BEGIN; Check rider_id <> driver_id; INSERT trip_passengers(request_state=0)
-    Note over DB: TRIGGER mobility_booking_decision_insert<br/>writes (prev: NULL -> next: 0, UTC_TIMESTAMP(6))
-    DB-->>API: COMMIT (Pending Booking)
-    API-->>UI: 201 Created (request_state = 0)
-
-    Driver->>UI: Click "Accept Request"
-    UI->>API: POST /api/mobility/commute/bookings/{id}/decision (state=1)
-    API->>DB: BEGIN; SELECT total_seats FROM trips WHERE id=? FOR UPDATE
-    API->>DB: Verify accepted_seats < total_seats; UPDATE trip_passengers SET request_state=1
-    Note over DB: TRIGGER mobility_booking_decision_update<br/>writes (prev: 0 -> next: 1, UTC_TIMESTAMP(6))
-    API->>DB: INSERT mobility_trip_events(action='accept'); COMMIT
-    DB-->>Proj: Async Snapshot Replay: Upsert {sourceEventId, tripId, action:'accept'}
-    API-->>UI: 200 OK (Seat Confirmed)
-```
-
-#### 4.2.3 Sequence Diagram 3: Dual-Database Operator Analytics (`MySQL 8.0` + `MongoDB 7.0`) & Outage Isolation
+#### 4.2.1 Sequence Diagram 1: Dual-Database Operator Analytics (`MySQL 8.0` + `MongoDB 7.0`) & Outage Isolation
 
 ```mermaid
 sequenceDiagram
